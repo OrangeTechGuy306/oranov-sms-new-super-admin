@@ -71,6 +71,19 @@ import { validateModuleRegistry } from '../modules/validator';
 import { evaluateLifecycleTransition } from '../lifecycle/evaluator';
 import { evaluateOrganizationReadiness, OrganizationReadinessReport } from '../readiness/evaluator';
 import { executeSimulatedProvisioning, SimulatedProvisioningEvent } from '../provisioning/simulator';
+import {
+  PlatformPermission,
+  PlatformRole,
+  CreateCustomRoleInput,
+} from '../types/iam';
+import {
+  INITIAL_PLATFORM_PERMISSIONS,
+  INITIAL_PLATFORM_ROLES,
+} from '../iam/fixtures';
+import {
+  validateRoleAssignment,
+  validateRoleDefinition,
+} from '../iam/evaluator';
 
 const STORAGE_KEY = 'sms_superadmin_dev_store_v1';
 
@@ -125,6 +138,8 @@ export class PlatformStore {
   private invoices: Invoice[];
   private payments: PaymentRecord[];
   private platformUsers: PlatformUser[];
+  private roles: PlatformRole[];
+  private permissions: PlatformPermission[];
   private auditEvents: AuditEvent[];
   private systemServices: PlatformServiceHealth[];
   private incidents: PlatformIncidentNotice[];
@@ -145,6 +160,8 @@ export class PlatformStore {
     this.invoices = structuredClone(INITIAL_INVOICES);
     this.payments = structuredClone(INITIAL_PAYMENTS);
     this.platformUsers = structuredClone(INITIAL_PLATFORM_USERS);
+    this.roles = structuredClone(INITIAL_PLATFORM_ROLES);
+    this.permissions = structuredClone(INITIAL_PLATFORM_PERMISSIONS);
     this.auditEvents = structuredClone(INITIAL_AUDIT_EVENTS);
     this.systemServices = structuredClone(INITIAL_SYSTEM_SERVICES);
     this.incidents = structuredClone(INITIAL_INCIDENTS);
@@ -172,6 +189,8 @@ export class PlatformStore {
         if (Array.isArray(parsed.invoices)) this.invoices = parsed.invoices;
         if (Array.isArray(parsed.payments)) this.payments = parsed.payments;
         if (Array.isArray(parsed.platformUsers)) this.platformUsers = parsed.platformUsers;
+        if (Array.isArray(parsed.roles)) this.roles = parsed.roles;
+        if (Array.isArray(parsed.permissions)) this.permissions = parsed.permissions;
         if (Array.isArray(parsed.auditEvents)) this.auditEvents = parsed.auditEvents;
         if (Array.isArray(parsed.features)) this.features = parsed.features;
         if (Array.isArray(parsed.modules)) this.modules = parsed.modules;
@@ -192,6 +211,8 @@ export class PlatformStore {
       this.invoices = [...INITIAL_INVOICES];
       this.payments = [...INITIAL_PAYMENTS];
       this.platformUsers = [...INITIAL_PLATFORM_USERS];
+      this.roles = [...INITIAL_PLATFORM_ROLES];
+      this.permissions = [...INITIAL_PLATFORM_PERMISSIONS];
       this.auditEvents = [...INITIAL_AUDIT_EVENTS];
       this.features = [...INITIAL_FEATURES];
       this.settings = { ...INITIAL_PLATFORM_SETTINGS };
@@ -216,6 +237,8 @@ export class PlatformStore {
           invoices: this.invoices,
           payments: this.payments,
           platformUsers: this.platformUsers,
+          roles: this.roles,
+          permissions: this.permissions,
           auditEvents: this.auditEvents,
           features: this.features,
           settings: this.settings,
@@ -1748,6 +1771,8 @@ export class PlatformStore {
     this.invoices = structuredClone(INITIAL_INVOICES);
     this.payments = structuredClone(INITIAL_PAYMENTS);
     this.platformUsers = structuredClone(INITIAL_PLATFORM_USERS);
+    this.roles = structuredClone(INITIAL_PLATFORM_ROLES);
+    this.permissions = structuredClone(INITIAL_PLATFORM_PERMISSIONS);
     this.auditEvents = structuredClone(INITIAL_AUDIT_EVENTS);
     this.systemServices = structuredClone(INITIAL_SYSTEM_SERVICES);
     this.incidents = structuredClone(INITIAL_INCIDENTS);
