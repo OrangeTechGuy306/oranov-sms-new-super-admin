@@ -8,5 +8,6 @@ export * from './campuses';
 export * from './student-oversight';
 export * from './academic-oversight';
 export * from './examination-governance';
+export * from './iam';
 export * from '../modules/types';
 export * from '../monetization/types';
