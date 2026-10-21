@@ -8,8 +8,6 @@
  * cryptographic enforcement and session authorization must be implemented on the backend.
  */
 
-import { PlatformRoleKey, PlatformUserStatus } from './platform-users';
-
 export type PlatformPermissionAction =
   | 'read'
   | 'create'

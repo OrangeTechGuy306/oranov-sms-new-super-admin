@@ -1,22 +1,31 @@
 /**
  * Domain contracts for Platform System Health and Operational Visibility.
- * NOTE: System health displays are explicit demonstration data fixtures until
- * real-time infrastructure metrics and backend telemetry endpoints are integrated.
+ * Phase E-09.14: Extended with comprehensive Observability & Platform Operations Governance.
  */
+
+export * from '../system-health/types';
+
+// Backwards-compatible aliases for legacy imports
+import type {
+  ComponentHealthStatus,
+  ComponentCategory,
+} from '../system-health/types';
 
 export type ServiceHealthStatus = 
   | 'operational' 
   | 'degraded' 
   | 'maintenance' 
   | 'outage' 
-  | 'not_provisioned';
+  | 'not_provisioned'
+  | ComponentHealthStatus;
 
 export type ServiceCategory = 
   | 'core_application' 
   | 'database_storage' 
   | 'external_integration' 
   | 'async_workers' 
-  | 'security_auth';
+  | 'security_auth'
+  | ComponentCategory;
 
 export interface PlatformServiceHealth {
   id: string;
@@ -24,8 +33,8 @@ export interface PlatformServiceHealth {
   category: ServiceCategory;
   status: ServiceHealthStatus;
   description: string;
-  uptimeEstimate: string; // e.g. "99.98% (Demo)"
-  latencyEstimate?: string; // e.g. "42ms (Demo)"
+  uptimeEstimate: string;
+  latencyEstimate?: string;
   lastChecked: string;
   dependencies: string[];
   isDemoFixture: true;

@@ -68,6 +68,8 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
       else if (part === 'platform-users') label = 'Platform Users';
       else if (part === 'audit-logs') label = 'Audit Logs';
       else if (part === 'system-health') label = 'System Health';
+      else if (part === 'communications') label = 'Communications & Delivery';
+      else if (part === 'support') label = 'Support Desk & Tenant Success';
       else if (part === 'settings') label = 'Settings';
       else if (part === 'features') label = 'Features';
       else {

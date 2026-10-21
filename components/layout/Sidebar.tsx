@@ -29,6 +29,8 @@ import {
   Clock,
   BarChart3,
   Tag,
+  Bell,
+  LifeBuoy,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -150,9 +152,10 @@ export function Sidebar({ isCollapsed, onToggleCollapse, onCloseMobile }: Sideba
           badge: metrics.activePlatformUsersCount,
         },
         {
-          label: 'Administrative Audit Logs',
+          label: 'Audit Logs & Compliance',
           href: '/audit-logs',
           icon: FileText,
+          badge: metrics.recentAuditCount,
         },
       ],
     },
@@ -164,6 +167,18 @@ export function Sidebar({ isCollapsed, onToggleCollapse, onCloseMobile }: Sideba
           href: '/system-health',
           icon: Activity,
           statusDot: metrics.systemServicesOperational === metrics.systemServicesTotal ? 'operational' : 'warning',
+        },
+        {
+          label: 'Communications & Delivery',
+          href: '/communications',
+          icon: Bell,
+        },
+        {
+          label: 'Support & Tenant Success',
+          href: '/support',
+          icon: LifeBuoy,
+          badge: metrics.openTicketsCount > 0 ? metrics.openTicketsCount : undefined,
+          badgeVariant: metrics.urgentTicketsCount > 0 ? 'warning' : 'default',
         },
         {
           label: 'Feature Availability',

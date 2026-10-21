@@ -1,25 +1,87 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import Link from 'next/link';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { Tabs, TabItem } from '@/components/ui/Tabs';
 import { Badge } from '@/components/ui/Badge';
 import { AlertBanner } from '@/components/ui/AlertBanner';
 import { formatDate } from '@/lib/utils/formatters';
+import { computeHealthSummary } from '@/lib/system-health/evaluator';
+import { OperationalComponent, PlatformIncident } from '@/lib/system-health/types';
+
+// Workspace Components
+import { SystemHealthNotice } from '@/components/system-health/SystemHealthNotice';
+import { SystemHealthSummaryCards } from '@/components/system-health/SystemHealthSummaryCards';
+import { ComponentInventoryTable } from '@/components/system-health/ComponentInventoryTable';
+import { ComponentDetailModal } from '@/components/system-health/ComponentDetailModal';
+import { MetricExplorerWorkspace } from '@/components/system-health/MetricExplorerWorkspace';
+import { IncidentManagementWorkspace } from '@/components/system-health/IncidentManagementWorkspace';
+import { MaintenanceWindowsWorkspace } from '@/components/system-health/MaintenanceWindowsWorkspace';
+import { DeploymentHistoryWorkspace } from '@/components/system-health/DeploymentHistoryWorkspace';
+import { BackgroundJobsAndIntegrationsWorkspace } from '@/components/system-health/BackgroundJobsAndIntegrationsWorkspace';
+import { CapacityMonitoringWorkspace } from '@/components/system-health/CapacityMonitoringWorkspace';
+import { BackupReadinessWorkspace } from '@/components/system-health/BackupReadinessWorkspace';
+import { AlertRulesWorkspace } from '@/components/system-health/AlertRulesWorkspace';
+import { TenantOperationalReadinessWorkspace } from '@/components/system-health/TenantOperationalReadinessWorkspace';
+
 import {
   Activity,
-  CheckCircle2,
-  Server,
-  Database,
-  Mail,
+  Layers,
+  LineChart,
+  AlertTriangle,
+  Wrench,
+  GitCommit,
+  Cpu,
+  HardDrive,
   ShieldCheck,
-  Radio,
+  Bell,
+  Building2,
   RefreshCw,
+  FileText,
+  Clock,
 } from 'lucide-react';
 
 export default function SystemHealthPage() {
-  const { systemServices, incidents } = usePlatformStore();
-  const [lastRefreshed, setLastRefreshed] = useState<string>('2026-03-17T09:30:00Z');
+  const {
+    operationalComponents,
+    platformIncidents,
+    maintenanceWindows,
+    deploymentRecords,
+    backgroundJobs,
+    externalIntegrations,
+    capacityObservations,
+    backupRecords,
+    alertRules,
+    organizations,
+    acknowledgeIncident,
+    transitionIncidentStatus,
+    addIncidentNote,
+    createMaintenanceWindow,
+    updateMaintenanceWindow,
+    cancelMaintenanceWindow,
+    createAlertRule,
+    updateAlertRule,
+    toggleAlertRule,
+    deleteAlertRule,
+  } = usePlatformStore();
+
+  // Active Tab
+  const [activeTab, setActiveTab] = useState<string>('overview');
+
+  // Component Inventory filter state
+  const [compSearchQuery, setCompSearchQuery] = useState('');
+  const [compCategoryFilter, setCompCategoryFilter] = useState('all');
+  const [compStatusFilter, setCompStatusFilter] = useState('all');
+  const [compEnvFilter, setCompEnvFilter] = useState('all');
+
+  // Inspection Drawer states
+  const [inspectComponent, setInspectComponent] = useState<OperationalComponent | null>(null);
+  const [selectedIncidentForManagement, setSelectedIncidentForManagement] = useState<PlatformIncident | null>(null);
+
+  // Simulated Telemetry Poll State
+  const [lastRefreshed, setLastRefreshed] = useState<string>('2026-10-19T07:30:00Z');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshToast, setRefreshToast] = useState(false);
 
@@ -29,195 +91,277 @@ export default function SystemHealthPage() {
       setLastRefreshed(new Date().toISOString());
       setIsRefreshing(false);
       setRefreshToast(true);
-      setTimeout(() => setRefreshToast(false), 3000);
-    }, 400);
+      setTimeout(() => setRefreshToast(false), 3500);
+    }, 450);
   };
 
-  const getServiceIcon = (category: string) => {
-    switch (category) {
-      case 'core_application':
-        return <Server className="w-4 h-4 text-primary" />;
-      case 'database_storage':
-        return <Database className="w-4 h-4 text-emerald-500" />;
-      case 'external_integration':
-        return <Mail className="w-4 h-4 text-amber-500" />;
-      case 'security_auth':
-        return <ShieldCheck className="w-4 h-4 text-purple-500" />;
-      default:
-        return <Activity className="w-4 h-4 text-blue-500" />;
-    }
+  // Health summary metrics
+  const healthSummary = useMemo(() => {
+    return computeHealthSummary(operationalComponents, platformIncidents, lastRefreshed);
+  }, [operationalComponents, platformIncidents, lastRefreshed]);
+
+  // Filtered operational components for tab 1
+  const filteredComponents = useMemo(() => {
+    return operationalComponents.filter((comp) => {
+      const matchesSearch =
+        compSearchQuery.trim() === '' ||
+        comp.name.toLowerCase().includes(compSearchQuery.toLowerCase()) ||
+        comp.description.toLowerCase().includes(compSearchQuery.toLowerCase()) ||
+        comp.dependencies.some((d) => d.toLowerCase().includes(compSearchQuery.toLowerCase()));
+
+      const matchesCat =
+        compCategoryFilter === 'all' || comp.category === compCategoryFilter;
+
+      let matchesStatus = true;
+      if (compStatusFilter === 'all') {
+        matchesStatus = true;
+      } else if (compStatusFilter === 'unverified') {
+        matchesStatus =
+          comp.status === 'unknown' || comp.status === 'stale' || comp.status === 'not_connected';
+      } else {
+        matchesStatus = comp.status === compStatusFilter;
+      }
+
+      const matchesEnv =
+        compEnvFilter === 'all' || comp.environment === compEnvFilter;
+
+      return matchesSearch && matchesCat && matchesStatus && matchesEnv;
+    });
+  }, [operationalComponents, compSearchQuery, compCategoryFilter, compStatusFilter, compEnvFilter]);
+
+  const handleResetComponentFilters = () => {
+    setCompSearchQuery('');
+    setCompCategoryFilter('all');
+    setCompStatusFilter('all');
+    setCompEnvFilter('all');
   };
+
+  const handleOpenIncidentFromModal = (inc: PlatformIncident) => {
+    setInspectComponent(null);
+    setSelectedIncidentForManagement(inc);
+    setActiveTab('incidents');
+  };
+
+  // Tabs navigation definition
+  const tabs: TabItem[] = [
+    {
+      id: 'overview',
+      label: 'Health & Components',
+      icon: <Layers className="w-3.5 h-3.5" />,
+      count: operationalComponents.length,
+    },
+    {
+      id: 'observability',
+      label: 'Metric Explorer',
+      icon: <LineChart className="w-3.5 h-3.5" />,
+    },
+    {
+      id: 'incidents',
+      label: 'Incidents & Triage',
+      icon: <AlertTriangle className="w-3.5 h-3.5" />,
+      count: healthSummary.openIncidentsCount > 0 ? healthSummary.openIncidentsCount : undefined,
+    },
+    {
+      id: 'maintenance',
+      label: 'Maintenance Windows',
+      icon: <Wrench className="w-3.5 h-3.5" />,
+      count: maintenanceWindows.filter((w) => w.status === 'scheduled' || w.status === 'in_progress').length,
+    },
+    {
+      id: 'deployments',
+      label: 'Release & Deployments',
+      icon: <GitCommit className="w-3.5 h-3.5" />,
+      count: deploymentRecords.length,
+    },
+    {
+      id: 'background',
+      label: 'Jobs & Integrations',
+      icon: <Cpu className="w-3.5 h-3.5" />,
+      count: backgroundJobs.length,
+    },
+    {
+      id: 'capacity',
+      label: 'Capacity & Saturation',
+      icon: <HardDrive className="w-3.5 h-3.5" />,
+    },
+    {
+      id: 'backups',
+      label: 'Backup & DR Readiness',
+      icon: <ShieldCheck className="w-3.5 h-3.5" />,
+      count: backupRecords.length,
+    },
+    {
+      id: 'alerts',
+      label: 'Alert Rules & Policies',
+      icon: <Bell className="w-3.5 h-3.5" />,
+      count: alertRules.length,
+    },
+    {
+      id: 'multi-tenant',
+      label: 'Tenant Readiness Oversight',
+      icon: <Building2 className="w-3.5 h-3.5" />,
+      count: organizations.length,
+    },
+  ];
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Platform Operational Visibility & System Health"
-        description="High-level operational health indicators across platform routing, multi-tenant databases, external gateways, and async workers."
+        title="System Health, Observability & Platform Operations Governance"
+        description="Comprehensive operational visibility across multi-tenant infrastructure, metric exploration, incident lifecycles, and disaster recovery readiness."
         actions={
-          <button
-            type="button"
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            className="inline-flex items-center gap-1.5 px-3 py-2 bg-card border border-border text-foreground font-semibold text-xs rounded-lg hover:bg-muted transition-colors shadow-2xs disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-            {isRefreshing ? 'Polling Mock Baseline...' : 'Refresh Telemetry Baseline'}
-          </button>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/audit-logs?category=system_configuration"
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-card border border-border text-foreground font-semibold text-xs rounded-lg hover:bg-muted transition-colors shadow-2xs"
+            >
+              <FileText className="w-3.5 h-3.5 text-primary" />
+              Operational Audit Logs
+            </Link>
+
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-card border border-border text-foreground font-semibold text-xs rounded-lg hover:bg-muted transition-colors shadow-2xs disabled:opacity-50 cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-primary ${isRefreshing ? 'animate-spin' : ''}`} />
+              {isRefreshing ? 'Polling Mock Baseline...' : 'Refresh Telemetry Baseline'}
+            </button>
+          </div>
         }
       />
 
       {refreshToast && (
-        <AlertBanner variant="info" title="Telemetry Refreshed">
-          Simulated telemetry baseline updated against development storage. Next poll interval in 60s.
+        <AlertBanner variant="info" title="Telemetry Baseline Updated">
+          Simulated telemetry baseline updated against local storage snapshot. Freshness checks evaluated against {formatDate(lastRefreshed, true)}.
         </AlertBanner>
       )}
 
-      <AlertBanner variant="notice" title="Demonstration Operational Model (Non-Production)">
-        <strong>Notice regarding telemetry integration:</strong> The services and metrics below are static development demonstration fixtures. They do not represent live production ping tests, real database replication latency, or actual Mailgun/Stripe API availability. Live telemetry will be powered by backend Prometheus, Datadog, and AWS CloudWatch integrations in production.
-      </AlertBanner>
+      {/* Non-Negotiable Source Notice */}
+      <SystemHealthNotice />
 
-      {/* Global Status Banner */}
-      <div className="p-5 rounded-2xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/50 dark:bg-emerald-950/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-900/60 dark:text-emerald-400 flex items-center justify-center shrink-0">
-            <Radio className="w-5 h-5 animate-pulse" />
-          </div>
-          <div>
-            <h2 className="text-base font-bold text-emerald-900 dark:text-emerald-200">
-              All Core SaaS Services Operational (Demo Fixture)
-            </h2>
-            <p className="text-xs text-emerald-800/80 dark:text-emerald-300/80">
-              7 of 7 platform components reporting normal development baseline.
-            </p>
-          </div>
-        </div>
+      {/* High-level Summary Cards */}
+      <SystemHealthSummaryCards
+        summary={healthSummary}
+        activeStatusFilter={compStatusFilter}
+        onSelectStatusFilter={(status) => {
+          setCompStatusFilter(status);
+          setActiveTab('overview');
+        }}
+        onOpenIncidentsTab={() => setActiveTab('incidents')}
+      />
 
-        <div className="flex items-center gap-2 self-start sm:self-center">
-          <Badge variant="success" size="md" dot>
-            Normal Operations
-          </Badge>
-          <span className="text-[11px] font-mono text-muted-foreground">
-            Updated: {formatDate(lastRefreshed, true)}
-          </span>
-        </div>
-      </div>
+      {/* Main Tabbed Navigation */}
+      <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
 
-      {/* Services Grid */}
-      <div className="space-y-4">
-        <h3 className="text-sm font-bold text-foreground uppercase tracking-wider">
-          Platform Architecture Components
-        </h3>
+      {/* TAB CONTENT AREAS */}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {systemServices.map((svc) => (
-            <div
-              key={svc.id}
-              className="bg-card text-card-foreground p-5 rounded-xl border border-border shadow-xs space-y-3"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-lg bg-muted shrink-0">
-                    {getServiceIcon(svc.category)}
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-xs text-foreground">{svc.name}</h4>
-                    <span className="text-[10px] text-muted-foreground capitalize">
-                      {svc.category.replace(/_/g, ' ')}
-                    </span>
-                  </div>
-                </div>
+      {/* TAB 1: HEALTH OVERVIEW & INVENTORY */}
+      {activeTab === 'overview' && (
+        <ComponentInventoryTable
+          components={filteredComponents}
+          searchQuery={compSearchQuery}
+          onSearchChange={setCompSearchQuery}
+          categoryFilter={compCategoryFilter}
+          onCategoryChange={setCompCategoryFilter}
+          statusFilter={compStatusFilter}
+          onStatusChange={setCompStatusFilter}
+          envFilter={compEnvFilter}
+          onEnvChange={setCompEnvFilter}
+          onResetFilters={handleResetComponentFilters}
+          onInspectComponent={(comp) => setInspectComponent(comp)}
+        />
+      )}
 
-                <Badge variant="success" size="sm" dot>
-                  Operational
-                </Badge>
-              </div>
+      {/* TAB 2: METRICS & OBSERVABILITY EXPLORER */}
+      {activeTab === 'observability' && (
+        <MetricExplorerWorkspace components={operationalComponents} />
+      )}
 
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                {svc.description}
-              </p>
+      {/* TAB 3: INCIDENT MANAGEMENT */}
+      {activeTab === 'incidents' && (
+        <IncidentManagementWorkspace
+          incidents={platformIncidents}
+          components={operationalComponents}
+          onAcknowledge={acknowledgeIncident}
+          onTransitionStatus={transitionIncidentStatus}
+          onAddNote={addIncidentNote}
+          selectedIncidentFromProps={selectedIncidentForManagement}
+          onClearSelectedIncident={() => setSelectedIncidentForManagement(null)}
+        />
+      )}
 
-              <div className="pt-2 border-t border-border/50 grid grid-cols-2 gap-2 text-[11px] font-mono">
-                <div>
-                  <span className="text-muted-foreground">Uptime Estimate:</span>
-                  <p className="font-semibold text-foreground">{svc.uptimeEstimate}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Ping Latency:</span>
-                  <p className="font-semibold text-foreground">{svc.latencyEstimate}</p>
-                </div>
-              </div>
+      {/* TAB 4: MAINTENANCE WINDOWS */}
+      {activeTab === 'maintenance' && (
+        <MaintenanceWindowsWorkspace
+          maintenanceWindows={maintenanceWindows}
+          components={operationalComponents}
+          onCreateWindow={createMaintenanceWindow}
+          onUpdateWindow={updateMaintenanceWindow}
+          onCancelWindow={cancelMaintenanceWindow}
+        />
+      )}
 
-              <div className="pt-2 text-[10px] text-muted-foreground flex flex-wrap items-center gap-1.5">
-                <span className="font-semibold text-foreground">Dependencies:</span>
-                {svc.dependencies.map((dep, idx) => (
-                  <span
-                    key={idx}
-                    className="px-1.5 py-0.2 rounded bg-muted text-muted-foreground font-mono"
-                  >
-                    {dep}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* TAB 5: RELEASE & DEPLOYMENTS */}
+      {activeTab === 'deployments' && (
+        <DeploymentHistoryWorkspace
+          deployments={deploymentRecords}
+          components={operationalComponents}
+        />
+      )}
 
-      {/* Operational Incident History */}
-      <div className="bg-card text-card-foreground p-6 rounded-xl border border-border shadow-xs space-y-4">
-        <div className="border-b border-border/50 pb-3 flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-sm text-foreground">Recent Operational Notices & Incidents</h3>
-            <p className="text-xs text-muted-foreground">Historical service notices and maintenance logs.</p>
-          </div>
-          <Badge variant="neutral" size="sm">
-            {incidents.length} Resolved Record
-          </Badge>
-        </div>
+      {/* TAB 6: BACKGROUND JOBS & INTEGRATIONS */}
+      {activeTab === 'background' && (
+        <BackgroundJobsAndIntegrationsWorkspace
+          backgroundJobs={backgroundJobs}
+          externalIntegrations={externalIntegrations}
+        />
+      )}
 
-        <div className="space-y-4">
-          {incidents.map((inc) => (
-            <div
-              key={inc.id}
-              className="p-4 rounded-xl border border-border/80 bg-muted/20 space-y-3 text-xs"
-            >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/40 pb-2">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                  <span className="font-bold text-foreground text-sm">{inc.title}</span>
-                </div>
-                <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
-                  <span>Created: {formatDate(inc.createdAt, true)}</span>
-                  <span>•</span>
-                  <Badge variant="success" size="sm">Resolved</Badge>
-                </div>
-              </div>
+      {/* TAB 7: CAPACITY & SATURATION */}
+      {activeTab === 'capacity' && (
+        <CapacityMonitoringWorkspace
+          capacityObservations={capacityObservations}
+        />
+      )}
 
-              <p className="text-muted-foreground">{inc.description}</p>
+      {/* TAB 8: BACKUP & DISASTER RECOVERY */}
+      {activeTab === 'backups' && (
+        <BackupReadinessWorkspace
+          backupRecords={backupRecords}
+        />
+      )}
 
-              {/* Updates timeline */}
-              <div className="space-y-2 pt-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  Incident Updates Timeline
-                </span>
-                <div className="border-l-2 border-border pl-3 space-y-2.5 ml-1">
-                  {inc.updates.map((update, idx) => (
-                    <div key={idx} className="space-y-0.5 text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-foreground">{update.author}</span>
-                        <span className="text-[10px] text-muted-foreground font-mono">
-                          {formatDate(update.timestamp, true)}
-                        </span>
-                      </div>
-                      <p className="text-muted-foreground text-[11px]">{update.message}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* TAB 9: ALERT RULES & POLICIES */}
+      {activeTab === 'alerts' && (
+        <AlertRulesWorkspace
+          alertRules={alertRules}
+          components={operationalComponents}
+          onCreateRule={createAlertRule}
+          onUpdateRule={updateAlertRule}
+          onToggleRule={toggleAlertRule}
+          onDeleteRule={deleteAlertRule}
+        />
+      )}
+
+      {/* TAB 10: MULTI-TENANT READINESS OVERSIGHT */}
+      {activeTab === 'multi-tenant' && (
+        <TenantOperationalReadinessWorkspace
+          organizations={organizations}
+          components={operationalComponents}
+          incidents={platformIncidents}
+        />
+      )}
+
+      {/* Component Detail Drawer / Modal */}
+      <ComponentDetailModal
+        component={inspectComponent}
+        onClose={() => setInspectComponent(null)}
+        incidents={platformIncidents}
+        maintenanceWindows={maintenanceWindows}
+        onSelectIncident={handleOpenIncidentFromModal}
+      />
     </div>
   );
 }
