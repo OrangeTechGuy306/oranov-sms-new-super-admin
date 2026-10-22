@@ -63,7 +63,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
       else if (part === 'invoices') label = 'Invoices & Ledger';
       else if (part === 'payments') label = 'Payment Monitoring';
       else if (part === 'renewals') label = 'Renewals & Trials';
-      else if (part === 'analytics') label = 'Monetization Analytics';
+      else if (part === 'analytics') label = cumulativeHref === '/analytics' ? 'Platform Analytics & BI' : 'Monetization Analytics';
       else if (part === 'discounts') label = 'Discount Policies';
       else if (part === 'platform-users') label = 'Platform Users';
       else if (part === 'audit-logs') label = 'Audit Logs';

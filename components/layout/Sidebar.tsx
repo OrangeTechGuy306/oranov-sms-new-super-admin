@@ -31,6 +31,7 @@ import {
   Tag,
   Bell,
   LifeBuoy,
+  Webhook,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -69,6 +70,11 @@ export function Sidebar({ isCollapsed, onToggleCollapse, onCloseMobile }: Sideba
           href: '/',
           icon: LayoutDashboard,
           exact: true,
+        },
+        {
+          label: 'Platform Analytics & BI',
+          href: '/analytics',
+          icon: BarChart3,
         },
         {
           label: 'School Organizations',
@@ -179,6 +185,13 @@ export function Sidebar({ isCollapsed, onToggleCollapse, onCloseMobile }: Sideba
           icon: LifeBuoy,
           badge: metrics.openTicketsCount > 0 ? metrics.openTicketsCount : undefined,
           badgeVariant: metrics.urgentTicketsCount > 0 ? 'warning' : 'default',
+        },
+        {
+          label: 'APIs & Integrations',
+          href: '/integrations',
+          icon: Webhook,
+          badge: metrics.failedDeliveriesCount > 0 ? `${metrics.failedDeliveriesCount} fail` : undefined,
+          badgeVariant: 'warning',
         },
         {
           label: 'Feature Availability',

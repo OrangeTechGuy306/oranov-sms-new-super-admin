@@ -76,6 +76,18 @@ import {
   SupportMetricsSummary,
   CustomerSuccessAccountSummary,
   SlaState,
+  IntegrationRecord,
+  ApiClientRecord,
+  WebhookEndpointRecord,
+  WebhookDeliveryRecord,
+  IntegrationHealthIndicator,
+  IntegrationMetricsSummary,
+  CreateIntegrationInput,
+  UpdateIntegrationInput,
+  CreateApiClientInput,
+  UpdateApiClientInput,
+  CreateWebhookEndpointInput,
+  UpdateWebhookEndpointInput,
 } from '@/lib/types';
 import {
   OperationalComponent,
@@ -339,6 +351,31 @@ interface PlatformStoreContextType {
   deleteCsTask: (id: string, actorName?: string) => { success: boolean; error?: string };
   getSupportMetrics: (refDate?: string) => SupportMetricsSummary;
   getCustomerSuccessSummaries: (refDate?: string) => CustomerSuccessAccountSummary[];
+  integrations: IntegrationRecord[];
+  apiClients: ApiClientRecord[];
+  webhookEndpoints: WebhookEndpointRecord[];
+  webhookDeliveries: WebhookDeliveryRecord[];
+  getIntegrations: (filters?: { query?: string; category?: string; status?: string; enabled?: string }) => IntegrationRecord[];
+  getIntegrationById: (id: string) => IntegrationRecord | undefined;
+  getApiClients: (filters?: { query?: string; clientType?: string; status?: string }) => ApiClientRecord[];
+  getApiClientById: (id: string) => ApiClientRecord | undefined;
+  getWebhookEndpoints: (filters?: { query?: string; enabled?: string }) => WebhookEndpointRecord[];
+  getWebhookEndpointById: (id: string) => WebhookEndpointRecord | undefined;
+  getWebhookDeliveries: (filters?: { query?: string; endpointId?: string; eventType?: string; outcome?: string }) => WebhookDeliveryRecord[];
+  getWebhookDeliveryById: (id: string) => WebhookDeliveryRecord | undefined;
+  getIntegrationMetrics: () => IntegrationMetricsSummary;
+  getIntegrationHealthIndicators: () => IntegrationHealthIndicator[];
+  updateIntegrationConfig: (id: string, updates: UpdateIntegrationInput, actorName?: string) => { success: boolean; integration?: IntegrationRecord; error?: string };
+  toggleIntegration: (id: string, actorName?: string) => { success: boolean; integration?: IntegrationRecord; error?: string };
+  simulateVerifyIntegration: (id: string, actorName?: string) => { success: boolean; verificationStatus: 'verified_demo' | 'failed'; message: string; integration?: IntegrationRecord };
+  createApiClient: (input: CreateApiClientInput, actorName?: string) => { success: boolean; client?: ApiClientRecord; error?: string; warnings?: string[] };
+  updateApiClient: (id: string, updates: UpdateApiClientInput, actorName?: string) => { success: boolean; client?: ApiClientRecord; error?: string };
+  revokeApiClient: (id: string, reason: string, actorName?: string) => { success: boolean; client?: ApiClientRecord; error?: string };
+  createWebhookEndpoint: (input: CreateWebhookEndpointInput, actorName?: string) => { success: boolean; endpoint?: WebhookEndpointRecord; error?: string };
+  updateWebhookEndpoint: (id: string, updates: UpdateWebhookEndpointInput, actorName?: string) => { success: boolean; endpoint?: WebhookEndpointRecord; error?: string };
+  toggleWebhookEndpoint: (id: string, actorName?: string) => { success: boolean; endpoint?: WebhookEndpointRecord; error?: string };
+  simulateTestWebhookDelivery: (endpointId: string, eventTypeId: string, simulateSuccess?: boolean, actorName?: string) => { success: boolean; delivery?: WebhookDeliveryRecord; error?: string };
+  simulateRetryWebhookDelivery: (deliveryId: string, simulateSuccess?: boolean, actorName?: string) => { success: boolean; delivery?: WebhookDeliveryRecord; error?: string };
 }
 
 const PlatformStoreContext = createContext<PlatformStoreContextType | undefined>(undefined);
@@ -1388,6 +1425,10 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     deploymentRecords: platformStore.getDeploymentRecords(),
     backgroundJobs: platformStore.getBackgroundJobs(),
     externalIntegrations: platformStore.getExternalIntegrations(),
+    integrations: platformStore.getIntegrations(),
+    apiClients: platformStore.getApiClients(),
+    webhookEndpoints: platformStore.getWebhookEndpoints(),
+    webhookDeliveries: platformStore.getWebhookDeliveries(),
     capacityObservations: platformStore.getCapacityObservations(),
     backupRecords: platformStore.getBackupRecords(),
     alertRules: platformStore.getAlertRules(),
@@ -1995,6 +2036,163 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     },
     getSupportMetrics: (refDate) => platformStore.getSupportMetrics(refDate),
     getCustomerSuccessSummaries: (refDate) => platformStore.getCustomerSuccessSummaries(refDate),
+    getIntegrations: (filters) => platformStore.getIntegrations(filters),
+    getIntegrationById: (id) => platformStore.getIntegrationById(id),
+    getApiClients: (filters) => platformStore.getApiClients(filters),
+    getApiClientById: (id) => platformStore.getApiClientById(id),
+    getWebhookEndpoints: (filters) => platformStore.getWebhookEndpoints(filters),
+    getWebhookEndpointById: (id) => platformStore.getWebhookEndpointById(id),
+    getWebhookDeliveries: (filters) => platformStore.getWebhookDeliveries(filters),
+    getWebhookDeliveryById: (id) => platformStore.getWebhookDeliveryById(id),
+    getIntegrationMetrics: () => platformStore.getIntegrationMetrics(),
+    getIntegrationHealthIndicators: () => platformStore.getIntegrationHealthIndicators(),
+    updateIntegrationConfig: (id, updates, actorName) => {
+      const res = platformStore.updateIntegrationConfig(id, updates, actorName);
+      if (res.success && res.integration) {
+        addToast({
+          type: 'success',
+          title: 'Integration Updated',
+          message: `Configuration saved for ${res.integration.name}.`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Update Failed', message: res.error });
+      }
+      return res;
+    },
+    toggleIntegration: (id, actorName) => {
+      const res = platformStore.toggleIntegration(id, actorName);
+      if (res.success && res.integration) {
+        addToast({
+          type: res.integration.isEnabled ? 'success' : 'warning',
+          title: res.integration.isEnabled ? 'Integration Activated' : 'Integration Deactivated',
+          message: `${res.integration.name} is now ${res.integration.isEnabled ? 'enabled' : 'disabled'}.`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Action Failed', message: res.error });
+      }
+      return res;
+    },
+    simulateVerifyIntegration: (id, actorName) => {
+      const res = platformStore.simulateVerifyIntegration(id, actorName);
+      if (res.success) {
+        addToast({
+          type: 'success',
+          title: 'Verification Passed (Demo)',
+          message: res.message,
+        });
+      } else {
+        addToast({
+          type: 'error',
+          title: 'Verification Failed',
+          message: res.message,
+        });
+      }
+      return res;
+    },
+    createApiClient: (input, actorName) => {
+      const res = platformStore.createApiClient(input, actorName);
+      if (res.success && res.client) {
+        addToast({
+          type: 'success',
+          title: 'API Client Registered',
+          message: `Generated client ${res.client.clientId} (${res.client.name}). Safe demo credential preview available.`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Registration Failed', message: res.error });
+      }
+      return res;
+    },
+    updateApiClient: (id, updates, actorName) => {
+      const res = platformStore.updateApiClient(id, updates, actorName);
+      if (res.success && res.client) {
+        addToast({
+          type: 'success',
+          title: 'Client Updated',
+          message: `Updated profile and scopes for ${res.client.name}.`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Update Failed', message: res.error });
+      }
+      return res;
+    },
+    revokeApiClient: (id, reason, actorName) => {
+      const res = platformStore.revokeApiClient(id, reason, actorName);
+      if (res.success && res.client) {
+        addToast({
+          type: 'warning',
+          title: 'API Client Revoked',
+          message: `Credentials for ${res.client.name} have been revoked. Incoming requests will be rejected.`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Revocation Failed', message: res.error });
+      }
+      return res;
+    },
+    createWebhookEndpoint: (input, actorName) => {
+      const res = platformStore.createWebhookEndpoint(input, actorName);
+      if (res.success && res.endpoint) {
+        addToast({
+          type: 'success',
+          title: 'Webhook Endpoint Created',
+          message: `Subscribed to ${res.endpoint.subscribedEvents.length} events at ${res.endpoint.destinationUrl}.`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Creation Failed', message: res.error });
+      }
+      return res;
+    },
+    updateWebhookEndpoint: (id, updates, actorName) => {
+      const res = platformStore.updateWebhookEndpoint(id, updates, actorName);
+      if (res.success && res.endpoint) {
+        addToast({
+          type: 'success',
+          title: 'Endpoint Updated',
+          message: `Saved configuration for ${res.endpoint.name}.`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Update Failed', message: res.error });
+      }
+      return res;
+    },
+    toggleWebhookEndpoint: (id, actorName) => {
+      const res = platformStore.toggleWebhookEndpoint(id, actorName);
+      if (res.success && res.endpoint) {
+        addToast({
+          type: res.endpoint.isEnabled ? 'success' : 'warning',
+          title: res.endpoint.isEnabled ? 'Endpoint Enabled' : 'Endpoint Disabled',
+          message: `${res.endpoint.name} is now ${res.endpoint.isEnabled ? 'active' : 'paused'}.`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Toggle Failed', message: res.error });
+      }
+      return res;
+    },
+    simulateTestWebhookDelivery: (endpointId, eventTypeId, simulateSuccess, actorName) => {
+      const res = platformStore.simulateTestWebhookDelivery(endpointId, eventTypeId, simulateSuccess, actorName);
+      if (res.success && res.delivery) {
+        addToast({
+          type: res.delivery.outcome === 'simulated_success' ? 'success' : 'warning',
+          title: res.delivery.outcome === 'simulated_success' ? 'Test Dispatch Delivered (Demo)' : 'Test Dispatch Failed (Demo)',
+          message: `Simulated dispatch of ${res.delivery.eventType} returned HTTP ${res.delivery.httpStatusCode} (${res.delivery.durationMs}ms). No external network request dispatched.`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Dispatch Blocked', message: res.error });
+      }
+      return res;
+    },
+    simulateRetryWebhookDelivery: (deliveryId, simulateSuccess, actorName) => {
+      const res = platformStore.simulateRetryWebhookDelivery(deliveryId, simulateSuccess, actorName);
+      if (res.success && res.delivery) {
+        addToast({
+          type: res.delivery.outcome === 'simulated_success' ? 'success' : 'warning',
+          title: res.delivery.outcome === 'simulated_success' ? 'Retry Succeeded (Demo)' : 'Retry Failed (Demo)',
+          message: `Attempt #${res.delivery.currentAttempt} resulted in ${res.delivery.outcome} (HTTP ${res.delivery.httpStatusCode}). Local demonstration state updated.`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Retry Rejected', message: res.error });
+      }
+      return res;
+    },
   };
 
 

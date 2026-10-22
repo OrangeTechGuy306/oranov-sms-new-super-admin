@@ -256,6 +256,41 @@ import {
   validateCsTask,
 } from '../support/validator';
 
+import {
+  IntegrationRecord,
+  ApiClientRecord,
+  WebhookEndpointRecord,
+  WebhookDeliveryRecord,
+  IntegrationHealthIndicator,
+  IntegrationMetricsSummary,
+  UpdateIntegrationInput,
+  CreateApiClientInput,
+  UpdateApiClientInput,
+  CreateWebhookEndpointInput,
+  UpdateWebhookEndpointInput,
+} from '../types/integrations';
+import {
+  INITIAL_INTEGRATIONS,
+  INITIAL_API_CLIENTS,
+  INITIAL_WEBHOOK_ENDPOINTS,
+  INITIAL_WEBHOOK_DELIVERIES,
+  INITIAL_INTEGRATION_AUDIT_EVENTS,
+  WEBHOOK_EVENT_CATALOGUE,
+} from '../integrations/fixtures';
+import {
+  computeIntegrationMetrics,
+  computeIntegrationHealthIndicators,
+  filterIntegrations,
+  filterApiClients,
+  filterWebhookEndpoints,
+  filterWebhookDeliveries,
+  validateApiClientInput,
+  validateWebhookEndpointInput,
+  executeSimulatedRetry,
+  executeSimulatedTestDelivery,
+  executeSimulatedConnectionVerification,
+} from '../integrations/evaluator';
+
 const STORAGE_KEY = 'sms_superadmin_dev_store_v1';
 
 export interface ModuleRegistryMetrics {
@@ -304,6 +339,7 @@ export interface PlatformMetrics {
   urgentTicketsCount: number;
   slaAtRiskTicketsCount: number;
   averageCsatScore: number | null;
+  failedDeliveriesCount: number;
 }
 
 export class PlatformStore {
@@ -359,6 +395,10 @@ export class PlatformStore {
   private kbArticles: KnowledgeBaseArticle[];
   private csatRecords: CustomerSatisfactionRecord[];
   private csTasks: CustomerSuccessTask[];
+  private integrations: IntegrationRecord[];
+  private apiClients: ApiClientRecord[];
+  private webhookEndpoints: WebhookEndpointRecord[];
+  private webhookDeliveries: WebhookDeliveryRecord[];
   private listeners: Set<() => void> = new Set();
 
   constructor() {
@@ -414,6 +454,17 @@ export class PlatformStore {
     this.kbArticles = structuredClone(INITIAL_KB_ARTICLES);
     this.csatRecords = structuredClone(INITIAL_CSAT_RECORDS);
     this.csTasks = structuredClone(INITIAL_CS_TASKS);
+    this.integrations = structuredClone(INITIAL_INTEGRATIONS);
+    this.apiClients = structuredClone(INITIAL_API_CLIENTS);
+    this.webhookEndpoints = structuredClone(INITIAL_WEBHOOK_ENDPOINTS);
+    this.webhookDeliveries = structuredClone(INITIAL_WEBHOOK_DELIVERIES);
+
+    // Seed integration audit events if not present
+    for (const event of INITIAL_INTEGRATION_AUDIT_EVENTS) {
+      if (!this.auditEvents.some((e) => e.id === event.id)) {
+        this.auditEvents.push(event);
+      }
+    }
 
     this.loadFromStorage();
   }
@@ -471,6 +522,10 @@ export class PlatformStore {
         if (Array.isArray(parsed.kbArticles)) this.kbArticles = parsed.kbArticles;
         if (Array.isArray(parsed.csatRecords)) this.csatRecords = parsed.csatRecords;
         if (Array.isArray(parsed.csTasks)) this.csTasks = parsed.csTasks;
+        if (Array.isArray(parsed.integrations)) this.integrations = parsed.integrations;
+        if (Array.isArray(parsed.apiClients)) this.apiClients = parsed.apiClients;
+        if (Array.isArray(parsed.webhookEndpoints)) this.webhookEndpoints = parsed.webhookEndpoints;
+        if (Array.isArray(parsed.webhookDeliveries)) this.webhookDeliveries = parsed.webhookDeliveries;
         if (parsed.notificationPreferenceGovernance && typeof parsed.notificationPreferenceGovernance === 'object') {
           this.notificationPreferenceGovernance = { ...NOTIFICATION_PREFERENCE_GOVERNANCE, ...parsed.notificationPreferenceGovernance };
         }
@@ -524,6 +579,15 @@ export class PlatformStore {
       this.kbArticles = structuredClone(INITIAL_KB_ARTICLES);
       this.csatRecords = structuredClone(INITIAL_CSAT_RECORDS);
       this.csTasks = structuredClone(INITIAL_CS_TASKS);
+      this.integrations = structuredClone(INITIAL_INTEGRATIONS);
+      this.apiClients = structuredClone(INITIAL_API_CLIENTS);
+      this.webhookEndpoints = structuredClone(INITIAL_WEBHOOK_ENDPOINTS);
+      this.webhookDeliveries = structuredClone(INITIAL_WEBHOOK_DELIVERIES);
+      for (const event of INITIAL_INTEGRATION_AUDIT_EVENTS) {
+        if (!this.auditEvents.some((e) => e.id === event.id)) {
+          this.auditEvents.push(event);
+        }
+      }
     }
   }
 
@@ -583,6 +647,10 @@ export class PlatformStore {
           kbArticles: this.kbArticles,
           csatRecords: this.csatRecords,
           csTasks: this.csTasks,
+          integrations: this.integrations,
+          apiClients: this.apiClients,
+          webhookEndpoints: this.webhookEndpoints,
+          webhookDeliveries: this.webhookDeliveries,
         })
       );
     } catch {
@@ -815,6 +883,9 @@ export class PlatformStore {
       urgentTicketsCount,
       slaAtRiskTicketsCount,
       averageCsatScore,
+      failedDeliveriesCount: (this.webhookDeliveries || []).filter(
+        (d) => d.outcome === 'simulated_failure' || d.outcome === 'exhausted_retries'
+      ).length,
     };
   }
 
@@ -6672,6 +6743,553 @@ export class PlatformStore {
       this.csTasks,
       refDate
     );
+  }
+
+  // --- E-09.19 Integrations, API Clients & Webhooks Operations ---
+
+  public getIntegrations(filters?: { query?: string; category?: string; status?: string; enabled?: string }): IntegrationRecord[] {
+    return filterIntegrations(this.integrations, filters?.query, filters?.category, filters?.status, filters?.enabled);
+  }
+
+  public getIntegrationById(id: string): IntegrationRecord | undefined {
+    return this.integrations.find((i) => i.id === id);
+  }
+
+  public getApiClients(filters?: { query?: string; clientType?: string; status?: string }): ApiClientRecord[] {
+    return filterApiClients(this.apiClients, filters?.query, filters?.clientType, filters?.status);
+  }
+
+  public getApiClientById(id: string): ApiClientRecord | undefined {
+    return this.apiClients.find((c) => c.id === id);
+  }
+
+  public getWebhookEndpoints(filters?: { query?: string; enabled?: string }): WebhookEndpointRecord[] {
+    return filterWebhookEndpoints(this.webhookEndpoints, filters?.query, filters?.enabled);
+  }
+
+  public getWebhookEndpointById(id: string): WebhookEndpointRecord | undefined {
+    return this.webhookEndpoints.find((e) => e.id === id);
+  }
+
+  public getWebhookDeliveries(filters?: { query?: string; endpointId?: string; eventType?: string; outcome?: string }): WebhookDeliveryRecord[] {
+    return filterWebhookDeliveries(this.webhookDeliveries, filters?.query, filters?.endpointId, filters?.eventType, filters?.outcome);
+  }
+
+  public getWebhookDeliveryById(id: string): WebhookDeliveryRecord | undefined {
+    return this.webhookDeliveries.find((d) => d.id === id);
+  }
+
+  public getIntegrationMetrics(): IntegrationMetricsSummary {
+    return computeIntegrationMetrics(this.integrations, this.apiClients, this.webhookEndpoints, this.webhookDeliveries);
+  }
+
+  public getIntegrationHealthIndicators(): IntegrationHealthIndicator[] {
+    return computeIntegrationHealthIndicators(this.integrations, this.apiClients, this.webhookEndpoints, this.webhookDeliveries);
+  }
+
+  public updateIntegrationConfig(
+    id: string,
+    updates: UpdateIntegrationInput,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; integration?: IntegrationRecord; error?: string } {
+    const idx = this.integrations.findIndex((i) => i.id === id);
+    if (idx === -1) return { success: false, error: `Integration "${id}" not found.` };
+
+    const prev = this.integrations[idx];
+    const updated: IntegrationRecord = {
+      ...prev,
+      ...updates,
+      config: {
+        ...prev.config,
+        ...(updates.config || {}),
+      },
+      lastConfigUpdatedAt: new Date().toISOString(),
+    };
+
+    if (updates.configStatus) {
+      updated.configStatus = updates.configStatus;
+    }
+
+    this.integrations[idx] = updated;
+
+    this.logAuditEvent({
+      category: 'integrations_governance',
+      action: 'INTEGRATION_CONFIG_UPDATED',
+      severity: 'info',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'IntegrationRecord',
+      targetId: id,
+      targetName: updated.name,
+      status: 'succeeded',
+      details: `Updated integration parameters for "${updated.name}" (${updated.provider}). Status: ${updated.configStatus}.`,
+    });
+
+    this.persist();
+    this.notify();
+    return { success: true, integration: updated };
+  }
+
+  public toggleIntegration(
+    id: string,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; integration?: IntegrationRecord; error?: string } {
+    const idx = this.integrations.findIndex((i) => i.id === id);
+    if (idx === -1) return { success: false, error: `Integration "${id}" not found.` };
+
+    const item = this.integrations[idx];
+    item.isEnabled = !item.isEnabled;
+    item.lastConfigUpdatedAt = new Date().toISOString();
+
+    this.logAuditEvent({
+      category: 'integrations_governance',
+      action: item.isEnabled ? 'INTEGRATION_ENABLED' : 'INTEGRATION_DISABLED',
+      severity: item.isEnabled ? 'info' : 'warning',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'IntegrationRecord',
+      targetId: id,
+      targetName: item.name,
+      status: 'succeeded',
+      details: `Integration "${item.name}" was ${item.isEnabled ? 'enabled' : 'disabled'} in local configuration store.`,
+    });
+
+    this.persist();
+    this.notify();
+    return { success: true, integration: item };
+  }
+
+  public simulateVerifyIntegration(
+    id: string,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; verificationStatus: 'verified_demo' | 'failed'; message: string; integration?: IntegrationRecord } {
+    const idx = this.integrations.findIndex((i) => i.id === id);
+    if (idx === -1) {
+      return { success: false, verificationStatus: 'failed', message: `Integration "${id}" not found.` };
+    }
+
+    const item = this.integrations[idx];
+    const result = executeSimulatedConnectionVerification(item);
+
+    item.verificationStatus = result.verificationStatus;
+    if (result.success) {
+      item.lastVerifiedAt = new Date().toISOString();
+    }
+
+    this.logAuditEvent({
+      category: 'integrations_governance',
+      action: 'INTEGRATION_CONNECTION_VERIFIED',
+      severity: result.success ? 'info' : 'warning',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'IntegrationRecord',
+      targetId: id,
+      targetName: item.name,
+      status: result.success ? 'succeeded' : 'failed',
+      details: result.message,
+    });
+
+    this.persist();
+    this.notify();
+    return { ...result, integration: item };
+  }
+
+  public createApiClient(
+    input: CreateApiClientInput,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; client?: ApiClientRecord; error?: string; warnings?: string[] } {
+    const validation = validateApiClientInput(input);
+    if (!validation.isValid) {
+      const firstError = Object.values(validation.errors)[0];
+      return { success: false, error: firstError, warnings: validation.warnings };
+    }
+
+    const now = new Date().toISOString();
+    const id = `client_${Date.now().toString(36)}`;
+    const randomHex = Math.random().toString(16).slice(2, 10);
+    const clientId = `sms_app_${input.name.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 16)}_${randomHex}`;
+    const expiresAt = input.expiresInDays
+      ? new Date(Date.now() + input.expiresInDays * 86400000).toISOString()
+      : new Date(Date.now() + 365 * 86400000).toISOString();
+
+    const client: ApiClientRecord = {
+      id,
+      clientId,
+      name: input.name.trim(),
+      description: input.description.trim(),
+      clientType: input.clientType,
+      status: 'active',
+      organizationId: input.organizationId || 'platform',
+      organizationName: input.organizationName || 'Platform General',
+      assignedScopes: [...input.assignedScopes],
+      ipWhitelist: input.ipWhitelist || [],
+      rateLimitRps: input.rateLimitRps || 30,
+      createdAt: now,
+      expiresAt,
+      lastRotatedAt: now,
+      isDemoFixture: false,
+      maskedCredentialPlaceholder: `sk_live_••••••••••••••••••••••••••••••••${randomHex.slice(0, 4)}`,
+    };
+
+    this.apiClients.unshift(client);
+
+    this.logAuditEvent({
+      category: 'integrations_governance',
+      action: 'API_CLIENT_CREATED',
+      severity: 'info',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'ApiClientRecord',
+      targetId: id,
+      targetName: client.name,
+      status: 'succeeded',
+      details: `Created API client "${client.name}" (${client.clientId}) with ${client.assignedScopes.length} scopes.`,
+    });
+
+    this.persist();
+    this.notify();
+    return { success: true, client, warnings: validation.warnings };
+  }
+
+  public updateApiClient(
+    id: string,
+    updates: UpdateApiClientInput,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; client?: ApiClientRecord; error?: string } {
+    const idx = this.apiClients.findIndex((c) => c.id === id);
+    if (idx === -1) return { success: false, error: `API client "${id}" not found.` };
+
+    const prev = this.apiClients[idx];
+    const updated: ApiClientRecord = {
+      ...prev,
+      name: updates.name !== undefined ? updates.name.trim() : prev.name,
+      description: updates.description !== undefined ? updates.description.trim() : prev.description,
+      assignedScopes: updates.assignedScopes !== undefined ? [...updates.assignedScopes] : prev.assignedScopes,
+      ipWhitelist: updates.ipWhitelist !== undefined ? [...updates.ipWhitelist] : prev.ipWhitelist,
+      rateLimitRps: updates.rateLimitRps !== undefined ? updates.rateLimitRps : prev.rateLimitRps,
+      status: updates.status !== undefined ? updates.status : prev.status,
+    };
+
+    this.apiClients[idx] = updated;
+
+    this.logAuditEvent({
+      category: 'integrations_governance',
+      action: 'API_CLIENT_METADATA_UPDATED',
+      severity: 'info',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'ApiClientRecord',
+      targetId: id,
+      targetName: updated.name,
+      status: 'succeeded',
+      details: `Updated metadata and access scopes for API client "${updated.name}".`,
+    });
+
+    this.persist();
+    this.notify();
+    return { success: true, client: updated };
+  }
+
+  public revokeApiClient(
+    id: string,
+    reason: string,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; client?: ApiClientRecord; error?: string } {
+    const idx = this.apiClients.findIndex((c) => c.id === id);
+    if (idx === -1) return { success: false, error: `API client "${id}" not found.` };
+
+    const client = this.apiClients[idx];
+    client.status = 'revoked';
+
+    this.logAuditEvent({
+      category: 'integrations_governance',
+      action: 'API_CLIENT_REVOKED',
+      severity: 'warning',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'ApiClientRecord',
+      targetId: id,
+      targetName: client.name,
+      status: 'succeeded',
+      details: `Revoked credentials for API client "${client.name}". Reason: ${reason}`,
+    });
+
+    this.persist();
+    this.notify();
+    return { success: true, client };
+  }
+
+  public createWebhookEndpoint(
+    input: CreateWebhookEndpointInput,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; endpoint?: WebhookEndpointRecord; error?: string } {
+    const validation = validateWebhookEndpointInput(input);
+    if (!validation.isValid) {
+      const firstError = Object.values(validation.errors)[0];
+      return { success: false, error: firstError };
+    }
+
+    const now = new Date().toISOString();
+    const id = `ep_${Date.now().toString(36)}`;
+    const randomHex = Math.random().toString(16).slice(2, 6);
+
+    const endpoint: WebhookEndpointRecord = {
+      id,
+      name: input.name.trim(),
+      destinationUrl: input.destinationUrl.trim(),
+      description: input.description.trim(),
+      associatedIntegrationId: input.associatedIntegrationId,
+      associatedClientId: input.associatedClientId,
+      subscribedEvents: [...input.subscribedEvents],
+      isEnabled: true,
+      signingSecretMasked: `whsec_demo_••••••••••••••••••••••••${randomHex}`,
+      timeoutMs: input.timeoutMs || 5000,
+      retryPolicy: {
+        maxRetries: input.retryPolicy?.maxRetries || 3,
+        backoffMultiplier: input.retryPolicy?.backoffMultiplier || 2,
+        initialIntervalSec: input.retryPolicy?.initialIntervalSec || 60,
+      },
+      rateLimitPerSec: input.rateLimitPerSec || 10,
+      createdAt: now,
+      updatedAt: now,
+      isDemoFixture: false,
+    };
+
+    this.webhookEndpoints.unshift(endpoint);
+
+    this.logAuditEvent({
+      category: 'integrations_governance',
+      action: 'WEBHOOK_ENDPOINT_CREATED',
+      severity: 'info',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'WebhookEndpointRecord',
+      targetId: id,
+      targetName: endpoint.name,
+      status: 'succeeded',
+      details: `Configured webhook endpoint "${endpoint.name}" to destination ${endpoint.destinationUrl} with ${endpoint.subscribedEvents.length} event subscriptions.`,
+    });
+
+    this.persist();
+    this.notify();
+    return { success: true, endpoint };
+  }
+
+  public updateWebhookEndpoint(
+    id: string,
+    updates: UpdateWebhookEndpointInput,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; endpoint?: WebhookEndpointRecord; error?: string } {
+    const idx = this.webhookEndpoints.findIndex((e) => e.id === id);
+    if (idx === -1) return { success: false, error: `Webhook endpoint "${id}" not found.` };
+
+    const prev = this.webhookEndpoints[idx];
+    const updated: WebhookEndpointRecord = {
+      ...prev,
+      name: updates.name !== undefined ? updates.name.trim() : prev.name,
+      destinationUrl: updates.destinationUrl !== undefined ? updates.destinationUrl.trim() : prev.destinationUrl,
+      description: updates.description !== undefined ? updates.description.trim() : prev.description,
+      subscribedEvents: updates.subscribedEvents !== undefined ? [...updates.subscribedEvents] : prev.subscribedEvents,
+      isEnabled: updates.isEnabled !== undefined ? updates.isEnabled : prev.isEnabled,
+      timeoutMs: updates.timeoutMs !== undefined ? updates.timeoutMs : prev.timeoutMs,
+      rateLimitPerSec: updates.rateLimitPerSec !== undefined ? updates.rateLimitPerSec : prev.rateLimitPerSec,
+      retryPolicy: {
+        ...prev.retryPolicy,
+        ...(updates.retryPolicy || {}),
+      },
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.webhookEndpoints[idx] = updated;
+
+    this.logAuditEvent({
+      category: 'integrations_governance',
+      action: 'WEBHOOK_ENDPOINT_UPDATED',
+      severity: 'info',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'WebhookEndpointRecord',
+      targetId: id,
+      targetName: updated.name,
+      status: 'succeeded',
+      details: `Updated webhook endpoint "${updated.name}" (${updated.destinationUrl}).`,
+    });
+
+    this.persist();
+    this.notify();
+    return { success: true, endpoint: updated };
+  }
+
+  public toggleWebhookEndpoint(
+    id: string,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; endpoint?: WebhookEndpointRecord; error?: string } {
+    const idx = this.webhookEndpoints.findIndex((e) => e.id === id);
+    if (idx === -1) return { success: false, error: `Webhook endpoint "${id}" not found.` };
+
+    const ep = this.webhookEndpoints[idx];
+    ep.isEnabled = !ep.isEnabled;
+    ep.updatedAt = new Date().toISOString();
+
+    this.logAuditEvent({
+      category: 'integrations_governance',
+      action: ep.isEnabled ? 'WEBHOOK_ENDPOINT_ENABLED' : 'WEBHOOK_ENDPOINT_DISABLED',
+      severity: ep.isEnabled ? 'info' : 'warning',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'WebhookEndpointRecord',
+      targetId: id,
+      targetName: ep.name,
+      status: 'succeeded',
+      details: `Webhook endpoint "${ep.name}" was ${ep.isEnabled ? 'enabled' : 'disabled'}.`,
+    });
+
+    this.persist();
+    this.notify();
+    return { success: true, endpoint: ep };
+  }
+
+  public simulateTestWebhookDelivery(
+    endpointId: string,
+    eventTypeId: string,
+    simulateSuccess = true,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; delivery?: WebhookDeliveryRecord; error?: string } {
+    const endpoint = this.webhookEndpoints.find((e) => e.id === endpointId);
+    if (!endpoint) return { success: false, error: `Endpoint "${endpointId}" not found.` };
+
+    const eventType = WEBHOOK_EVENT_CATALOGUE.find((ev) => ev.id === eventTypeId) || {
+      id: eventTypeId,
+      name: eventTypeId,
+      category: 'system' as const,
+      description: 'Custom simulated demonstration event',
+      availability: 'available' as const,
+      examplePayload: {
+        eventId: `evt_sim_${Date.now()}`,
+        eventType: eventTypeId,
+        timestamp: new Date().toISOString(),
+        data: { message: 'Demonstration test payload' },
+      },
+    };
+
+    const delivery = executeSimulatedTestDelivery(endpoint, eventType, simulateSuccess);
+    this.webhookDeliveries.unshift(delivery);
+
+    endpoint.lastDeliveryOutcome = delivery.outcome;
+    endpoint.lastDeliveryAt = delivery.createdAt;
+
+    this.logAuditEvent({
+      category: 'integrations_governance',
+      action: 'WEBHOOK_TEST_DELIVERY_DISPATCHED',
+      severity: simulateSuccess ? 'info' : 'warning',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'WebhookDeliveryRecord',
+      targetId: delivery.id,
+      targetName: endpoint.name,
+      status: simulateSuccess ? 'succeeded' : 'failed',
+      details: `Simulated test webhook dispatch of "${eventType.id}" to ${endpoint.destinationUrl}. Result: ${delivery.outcome} (${delivery.httpStatusCode}).`,
+    });
+
+    this.persist();
+    this.notify();
+    return { success: true, delivery };
+  }
+
+  public simulateRetryWebhookDelivery(
+    deliveryId: string,
+    simulateSuccess = true,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; delivery?: WebhookDeliveryRecord; error?: string } {
+    const idx = this.webhookDeliveries.findIndex((d) => d.id === deliveryId);
+    if (idx === -1) return { success: false, error: `Delivery record "${deliveryId}" not found.` };
+
+    const delivery = this.webhookDeliveries[idx];
+    const retryResult = executeSimulatedRetry(delivery, simulateSuccess);
+    if (!retryResult.success || !retryResult.delivery) {
+      return { success: false, error: retryResult.error || 'Retry could not be executed.' };
+    }
+
+    this.webhookDeliveries[idx] = retryResult.delivery;
+
+    // Update endpoint last outcome
+    const ep = this.webhookEndpoints.find((e) => e.id === delivery.endpointId);
+    if (ep) {
+      ep.lastDeliveryOutcome = retryResult.delivery.outcome;
+      ep.lastDeliveryAt = retryResult.delivery.completedAt || retryResult.delivery.createdAt;
+    }
+
+    this.logAuditEvent({
+      category: 'integrations_governance',
+      action: 'WEBHOOK_DELIVERY_RETRIED',
+      severity: simulateSuccess ? 'info' : 'warning',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'WebhookDeliveryRecord',
+      targetId: deliveryId,
+      targetName: delivery.endpointName,
+      status: simulateSuccess ? 'succeeded' : 'failed',
+      details: `Simulated retry attempt #${retryResult.delivery.currentAttempt} for delivery ${deliveryId} to ${delivery.destinationUrl}. Outcome: ${retryResult.delivery.outcome}.`,
+    });
+
+    this.persist();
+    this.notify();
+    return { success: true, delivery: retryResult.delivery };
   }
 }
 

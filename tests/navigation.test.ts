@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 describe('Navigation and Information Architecture Contracts', () => {
   const routes = [
     { path: '/', label: 'Platform Overview' },
+    { path: '/analytics', label: 'Platform Analytics & Business Intelligence' },
     { path: '/organizations', label: 'School Organizations' },
     { path: '/student-oversight', label: 'Student Information & Admissions Oversight' },
     { path: '/academic-oversight', label: 'Academics, Curriculum & Teaching Oversight' },
@@ -16,6 +17,7 @@ describe('Navigation and Information Architecture Contracts', () => {
     { path: '/platform-users', label: 'Platform Users & Roles' },
     { path: '/audit-logs', label: 'Administrative Audit Logs' },
     { path: '/system-health', label: 'System Health & Ops' },
+    { path: '/integrations', label: 'APIs & Integrations' },
     { path: '/settings', label: 'Platform Settings' },
     { path: '/features', label: 'Feature Availability' },
   ];

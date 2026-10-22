@@ -13,5 +13,8 @@ export * from './compliance';
 export * from './platform-config';
 export * from './communications';
 export * from './support-desk';
+export * from './analytics';
+export * from './integrations';
+export type { MetricDefinition } from './system-health';
 export * from '../modules/types';
 export * from '../monetization/types';
