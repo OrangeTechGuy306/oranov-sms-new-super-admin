@@ -290,6 +290,47 @@ import {
   executeSimulatedTestDelivery,
   executeSimulatedConnectionVerification,
 } from '../integrations/evaluator';
+import {
+  DataCategoryRecord,
+  GovernanceRetentionPolicy,
+  PrivacyRequestRecord,
+  DataLifecycleRuleRecord,
+  GovernanceExceptionRecord,
+  GovernanceAuditRecord,
+  GovernanceMetricsSummary,
+  TenantGovernanceSummary,
+  UpdateDataCategoryInput,
+  CreateRetentionPolicyInput,
+  UpdateRetentionPolicyInput,
+  PolicyApprovalStatus,
+  CreatePrivacyRequestInput,
+  PrivacyWorkflowStatus,
+  PrivacyResolutionCategory,
+  CreateLifecycleRuleInput,
+  CreateGovernanceExceptionInput,
+  ExceptionReviewStatus,
+} from '../types/data-governance';
+import {
+  INITIAL_DATA_CATEGORIES,
+  INITIAL_RETENTION_POLICIES,
+  INITIAL_PRIVACY_REQUESTS,
+  INITIAL_LIFECYCLE_RULES,
+  INITIAL_GOVERNANCE_EXCEPTIONS,
+  INITIAL_GOVERNANCE_AUDIT_LOGS,
+} from '../data-governance/fixtures';
+import {
+  computeGovernanceMetrics,
+  filterDataCategories,
+  filterGovernanceRetentionPolicies,
+  filterPrivacyRequests,
+  filterLifecycleRules,
+  filterGovernanceExceptions,
+  isValidPrivacyTransition,
+  computeTenantGovernanceSummaries,
+  simulatePrivacyRequestExecution,
+  isOverdue,
+  isReviewDue,
+} from '../data-governance/evaluator';
 
 const STORAGE_KEY = 'sms_superadmin_dev_store_v1';
 
@@ -340,6 +381,10 @@ export interface PlatformMetrics {
   slaAtRiskTicketsCount: number;
   averageCsatScore: number | null;
   failedDeliveriesCount: number;
+  openPrivacyRequestsCount: number;
+  overduePrivacyRequestsCount: number;
+  policiesDueForReviewCount: number;
+  uncoveredCategoriesCount: number;
 }
 
 export class PlatformStore {
@@ -399,6 +444,12 @@ export class PlatformStore {
   private apiClients: ApiClientRecord[];
   private webhookEndpoints: WebhookEndpointRecord[];
   private webhookDeliveries: WebhookDeliveryRecord[];
+  private dataCategories: DataCategoryRecord[];
+  private governanceRetentionPolicies: GovernanceRetentionPolicy[];
+  private privacyRequests: PrivacyRequestRecord[];
+  private lifecycleRules: DataLifecycleRuleRecord[];
+  private governanceExceptions: GovernanceExceptionRecord[];
+  private governanceAuditLogs: GovernanceAuditRecord[];
   private listeners: Set<() => void> = new Set();
 
   constructor() {
@@ -458,11 +509,24 @@ export class PlatformStore {
     this.apiClients = structuredClone(INITIAL_API_CLIENTS);
     this.webhookEndpoints = structuredClone(INITIAL_WEBHOOK_ENDPOINTS);
     this.webhookDeliveries = structuredClone(INITIAL_WEBHOOK_DELIVERIES);
+    this.dataCategories = structuredClone(INITIAL_DATA_CATEGORIES);
+    this.governanceRetentionPolicies = structuredClone(INITIAL_RETENTION_POLICIES);
+    this.privacyRequests = structuredClone(INITIAL_PRIVACY_REQUESTS);
+    this.lifecycleRules = structuredClone(INITIAL_LIFECYCLE_RULES);
+    this.governanceExceptions = structuredClone(INITIAL_GOVERNANCE_EXCEPTIONS);
+    this.governanceAuditLogs = structuredClone(INITIAL_GOVERNANCE_AUDIT_LOGS);
 
     // Seed integration audit events if not present
     for (const event of INITIAL_INTEGRATION_AUDIT_EVENTS) {
       if (!this.auditEvents.some((e) => e.id === event.id)) {
         this.auditEvents.push(event);
+      }
+    }
+
+    // Seed governance audit events if not present
+    for (const event of INITIAL_GOVERNANCE_AUDIT_LOGS) {
+      if (!this.auditEvents.some((e) => e.id === event.id)) {
+        this.auditEvents.push(event as any);
       }
     }
 
@@ -526,6 +590,12 @@ export class PlatformStore {
         if (Array.isArray(parsed.apiClients)) this.apiClients = parsed.apiClients;
         if (Array.isArray(parsed.webhookEndpoints)) this.webhookEndpoints = parsed.webhookEndpoints;
         if (Array.isArray(parsed.webhookDeliveries)) this.webhookDeliveries = parsed.webhookDeliveries;
+        if (Array.isArray(parsed.dataCategories)) this.dataCategories = parsed.dataCategories;
+        if (Array.isArray(parsed.governanceRetentionPolicies)) this.governanceRetentionPolicies = parsed.governanceRetentionPolicies;
+        if (Array.isArray(parsed.privacyRequests)) this.privacyRequests = parsed.privacyRequests;
+        if (Array.isArray(parsed.lifecycleRules)) this.lifecycleRules = parsed.lifecycleRules;
+        if (Array.isArray(parsed.governanceExceptions)) this.governanceExceptions = parsed.governanceExceptions;
+        if (Array.isArray(parsed.governanceAuditLogs)) this.governanceAuditLogs = parsed.governanceAuditLogs;
         if (parsed.notificationPreferenceGovernance && typeof parsed.notificationPreferenceGovernance === 'object') {
           this.notificationPreferenceGovernance = { ...NOTIFICATION_PREFERENCE_GOVERNANCE, ...parsed.notificationPreferenceGovernance };
         }
@@ -583,9 +653,20 @@ export class PlatformStore {
       this.apiClients = structuredClone(INITIAL_API_CLIENTS);
       this.webhookEndpoints = structuredClone(INITIAL_WEBHOOK_ENDPOINTS);
       this.webhookDeliveries = structuredClone(INITIAL_WEBHOOK_DELIVERIES);
+      this.dataCategories = structuredClone(INITIAL_DATA_CATEGORIES);
+      this.governanceRetentionPolicies = structuredClone(INITIAL_RETENTION_POLICIES);
+      this.privacyRequests = structuredClone(INITIAL_PRIVACY_REQUESTS);
+      this.lifecycleRules = structuredClone(INITIAL_LIFECYCLE_RULES);
+      this.governanceExceptions = structuredClone(INITIAL_GOVERNANCE_EXCEPTIONS);
+      this.governanceAuditLogs = structuredClone(INITIAL_GOVERNANCE_AUDIT_LOGS);
       for (const event of INITIAL_INTEGRATION_AUDIT_EVENTS) {
         if (!this.auditEvents.some((e) => e.id === event.id)) {
           this.auditEvents.push(event);
+        }
+      }
+      for (const event of INITIAL_GOVERNANCE_AUDIT_LOGS) {
+        if (!this.auditEvents.some((e) => e.id === event.id)) {
+          this.auditEvents.push(event as any);
         }
       }
     }
@@ -651,6 +732,12 @@ export class PlatformStore {
           apiClients: this.apiClients,
           webhookEndpoints: this.webhookEndpoints,
           webhookDeliveries: this.webhookDeliveries,
+          dataCategories: this.dataCategories,
+          governanceRetentionPolicies: this.governanceRetentionPolicies,
+          privacyRequests: this.privacyRequests,
+          lifecycleRules: this.lifecycleRules,
+          governanceExceptions: this.governanceExceptions,
+          governanceAuditLogs: this.governanceAuditLogs,
         })
       );
     } catch {
@@ -886,6 +973,14 @@ export class PlatformStore {
       failedDeliveriesCount: (this.webhookDeliveries || []).filter(
         (d) => d.outcome === 'simulated_failure' || d.outcome === 'exhausted_retries'
       ).length,
+      openPrivacyRequestsCount: (this.privacyRequests || []).filter(
+        (r) => r.workflowStatus !== 'completed_closed' && r.workflowStatus !== 'rejected_with_grounds'
+      ).length,
+      overduePrivacyRequestsCount: (this.privacyRequests || []).filter(
+        (r) => r.workflowStatus !== 'completed_closed' && r.workflowStatus !== 'rejected_with_grounds' && isOverdue(r.dueAt)
+      ).length,
+      policiesDueForReviewCount: (this.governanceRetentionPolicies || []).filter((p) => isReviewDue(p.nextReviewDueAt)).length,
+      uncoveredCategoriesCount: (this.dataCategories || []).filter((c) => !c.retentionPolicyId).length,
     };
   }
 
@@ -2541,6 +2636,15 @@ export class PlatformStore {
     this.kbArticles = structuredClone(INITIAL_KB_ARTICLES);
     this.csatRecords = structuredClone(INITIAL_CSAT_RECORDS);
     this.csTasks = structuredClone(INITIAL_CS_TASKS);
+    this.integrations = structuredClone(INITIAL_INTEGRATIONS);
+    this.apiClients = structuredClone(INITIAL_API_CLIENTS);
+    this.webhookEndpoints = structuredClone(INITIAL_WEBHOOK_ENDPOINTS);
+    this.webhookDeliveries = structuredClone(INITIAL_WEBHOOK_DELIVERIES);
+    this.dataCategories = structuredClone(INITIAL_DATA_CATEGORIES);
+    this.governanceRetentionPolicies = structuredClone(INITIAL_RETENTION_POLICIES);
+    this.privacyRequests = structuredClone(INITIAL_PRIVACY_REQUESTS);
+    this.lifecycleRules = structuredClone(INITIAL_LIFECYCLE_RULES);
+    this.governanceExceptions = structuredClone(INITIAL_GOVERNANCE_EXCEPTIONS);
 
     if (typeof window !== 'undefined') {
       try {
@@ -7290,6 +7394,824 @@ export class PlatformStore {
     this.persist();
     this.notify();
     return { success: true, delivery: retryResult.delivery };
+  }
+
+  // =========================================================================
+  // --- Phase E-09.20: Platform Data Governance, Retention & Privacy Methods ---
+  // =========================================================================
+
+  public getDataCategories(filters?: {
+    query?: string;
+    classification?: string;
+    subjectType?: string;
+    module?: string;
+    retentionCoverage?: string;
+  }): DataCategoryRecord[] {
+    return filterDataCategories(
+      this.dataCategories,
+      filters?.query,
+      filters?.classification,
+      filters?.subjectType,
+      filters?.module,
+      filters?.retentionCoverage
+    );
+  }
+
+  public getDataCategoryById(id: string): DataCategoryRecord | undefined {
+    return this.dataCategories.find((c) => c.id === id);
+  }
+
+  public updateDataCategory(
+    id: string,
+    updates: UpdateDataCategoryInput,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; category?: DataCategoryRecord; error?: string } {
+    const idx = this.dataCategories.findIndex((c) => c.id === id);
+    if (idx === -1) {
+      return { success: false, error: `Data category with ID "${id}" was not found.` };
+    }
+
+    const prev = this.dataCategories[idx];
+    const updated: DataCategoryRecord = {
+      ...prev,
+      ...updates,
+      lastReviewedAt: new Date().toISOString(),
+    };
+
+    this.dataCategories[idx] = updated;
+
+    this.logAuditEvent({
+      category: 'data_governance',
+      action: 'DATA_CATEGORY_UPDATED',
+      severity: 'info',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'DataCategoryRecord',
+      targetId: id,
+      targetName: updated.name,
+      status: 'succeeded',
+      details: `Updated metadata and classification (${updated.classificationLevel}) for data category ${updated.code}.`,
+      metadata: { previousClassification: prev.classificationLevel, newClassification: updated.classificationLevel },
+    });
+
+    this.persist();
+    this.notify();
+    return { success: true, category: updated };
+  }
+
+  public getGovernanceRetentionPolicies(filters?: {
+    query?: string;
+    status?: string;
+    trigger?: string;
+    reviewDueOnly?: boolean;
+  }): GovernanceRetentionPolicy[] {
+    return filterGovernanceRetentionPolicies(
+      this.governanceRetentionPolicies,
+      filters?.query,
+      filters?.status,
+      filters?.trigger,
+      filters?.reviewDueOnly
+    );
+  }
+
+  public getGovernanceRetentionPolicyById(id: string): GovernanceRetentionPolicy | undefined {
+    return this.governanceRetentionPolicies.find((p) => p.id === id);
+  }
+
+  public createGovernanceRetentionPolicy(
+    input: CreateRetentionPolicyInput,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; policy?: GovernanceRetentionPolicy; error?: string } {
+    if (!input.name?.trim()) {
+      return { success: false, error: 'Policy name is required.' };
+    }
+    if (!input.durationDisplay?.trim()) {
+      return { success: false, error: 'Duration display is required.' };
+    }
+
+    const id = `ret_pol_${Date.now().toString(36)}`;
+    const code = `RET-${input.retentionTrigger.substring(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
+
+    const newPolicy: GovernanceRetentionPolicy = {
+      id,
+      code,
+      name: input.name.trim(),
+      description: input.description?.trim() || '',
+      coveredCategoryIds: input.coveredCategoryIds || [],
+      durationDays: input.durationDays,
+      durationDisplay: input.durationDisplay.trim(),
+      retentionTrigger: input.retentionTrigger,
+      triggerDescription: input.triggerDescription || '',
+      policyOwner: input.policyOwner || 'Platform Legal & Compliance',
+      status: input.status || 'draft',
+      enforcementMode: 'simulated_advisory',
+      approvalStatus: input.approvalStatus || 'unreviewed',
+      lastReviewedAt: new Date().toISOString(),
+      nextReviewDueAt: input.nextReviewDueAt || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+      exceptionHandlingNotes: input.exceptionHandlingNotes || '',
+      legalSafeguardBasis: input.legalSafeguardBasis || '',
+      activeExceptionsCount: 0,
+      isDemonstration: true,
+    };
+
+    this.governanceRetentionPolicies.unshift(newPolicy);
+
+    // Link covered categories to this policy if specified
+    if (newPolicy.coveredCategoryIds.length > 0) {
+      this.dataCategories = this.dataCategories.map((c) =>
+        newPolicy.coveredCategoryIds.includes(c.id) ? { ...c, retentionPolicyId: newPolicy.id } : c
+      );
+    }
+
+    this.logAuditEvent({
+      category: 'data_governance',
+      action: 'RETENTION_POLICY_CREATED',
+      severity: 'info',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'GovernanceRetentionPolicy',
+      targetId: id,
+      targetName: newPolicy.name,
+      status: 'succeeded',
+      details: `Created demo retention schedule ${newPolicy.code} ("${newPolicy.name}"). Duration: ${newPolicy.durationDisplay}.`,
+      metadata: { policyId: id, policyCode: newPolicy.code, durationDays: newPolicy.durationDays },
+    });
+
+    this.persist();
+    this.notify();
+    return { success: true, policy: newPolicy };
+  }
+
+  public updateGovernanceRetentionPolicy(
+    id: string,
+    updates: UpdateRetentionPolicyInput,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; policy?: GovernanceRetentionPolicy; error?: string } {
+    const idx = this.governanceRetentionPolicies.findIndex((p) => p.id === id);
+    if (idx === -1) {
+      return { success: false, error: `Retention policy with ID "${id}" was not found.` };
+    }
+
+    const prev = this.governanceRetentionPolicies[idx];
+    const updated: GovernanceRetentionPolicy = {
+      ...prev,
+      ...updates,
+      lastReviewedAt: new Date().toISOString(),
+    };
+
+    this.governanceRetentionPolicies[idx] = updated;
+
+    // Synchronize category bindings if coveredCategoryIds changed
+    if (updates.coveredCategoryIds) {
+      this.dataCategories = this.dataCategories.map((c) => {
+        if (updates.coveredCategoryIds!.includes(c.id)) {
+          return { ...c, retentionPolicyId: id };
+        } else if (c.retentionPolicyId === id) {
+          return { ...c, retentionPolicyId: null };
+        }
+        return c;
+      });
+    }
+
+    this.logAuditEvent({
+      category: 'data_governance',
+      action: 'RETENTION_POLICY_UPDATED',
+      severity: 'info',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'GovernanceRetentionPolicy',
+      targetId: id,
+      targetName: updated.name,
+      status: 'succeeded',
+      details: `Updated demo retention schedule ${updated.code}. Status: ${updated.status}. Covered categories: ${updated.coveredCategoryIds.length}.`,
+      metadata: { policyId: id, policyCode: updated.code, coveredCategoriesCount: updated.coveredCategoryIds.length },
+    });
+
+    this.persist();
+    this.notify();
+    return { success: true, policy: updated };
+  }
+
+  public reviewGovernanceRetentionPolicy(
+    id: string,
+    reviewOutcome: PolicyApprovalStatus,
+    nextReviewDueAt: string,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; policy?: GovernanceRetentionPolicy; error?: string } {
+    const idx = this.governanceRetentionPolicies.findIndex((p) => p.id === id);
+    if (idx === -1) {
+      return { success: false, error: `Retention policy with ID "${id}" was not found.` };
+    }
+
+    const prev = this.governanceRetentionPolicies[idx];
+    const updated: GovernanceRetentionPolicy = {
+      ...prev,
+      approvalStatus: reviewOutcome,
+      status: reviewOutcome === 'approved_demo' ? 'active_config' : prev.status,
+      lastReviewedAt: new Date().toISOString(),
+      nextReviewDueAt: nextReviewDueAt || prev.nextReviewDueAt,
+    };
+
+    this.governanceRetentionPolicies[idx] = updated;
+
+    this.logAuditEvent({
+      category: 'data_governance',
+      action: 'RETENTION_POLICY_REVIEWED',
+      severity: 'info',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'GovernanceRetentionPolicy',
+      targetId: id,
+      targetName: updated.name,
+      status: 'succeeded',
+      details: `Simulated policy review completed for ${updated.code}. Outcome: ${reviewOutcome}. Next review: ${updated.nextReviewDueAt}.`,
+      metadata: { reviewOutcome, nextReviewDueAt },
+    });
+
+    this.persist();
+    this.notify();
+    return { success: true, policy: updated };
+  }
+
+  public getPrivacyRequests(filters?: {
+    query?: string;
+    category?: string;
+    status?: string;
+    tenantId?: string;
+    priority?: string;
+    dueStatus?: string;
+  }): PrivacyRequestRecord[] {
+    return filterPrivacyRequests(
+      this.privacyRequests,
+      filters?.query,
+      filters?.category,
+      filters?.status,
+      filters?.tenantId,
+      filters?.priority,
+      filters?.dueStatus
+    );
+  }
+
+  public getPrivacyRequestById(id: string): PrivacyRequestRecord | undefined {
+    return this.privacyRequests.find((r) => r.id === id);
+  }
+
+  public createPrivacyRequest(
+    input: CreatePrivacyRequestInput,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; request?: PrivacyRequestRecord; error?: string } {
+    if (!input.requestSummary?.trim()) {
+      return { success: false, error: 'Request summary is required.' };
+    }
+    if (!input.requestingPartyLabel?.trim()) {
+      return { success: false, error: 'Fictional requesting party label is required.' };
+    }
+
+    const id = `pr_req_${Date.now().toString(36)}`;
+    const code = `DSAR-2026-${Math.floor(100 + Math.random() * 900)}`;
+
+    const newRequest: PrivacyRequestRecord = {
+      id,
+      code,
+      category: input.category,
+      requestingPartyType: input.requestingPartyType,
+      requestingPartyLabel: input.requestingPartyLabel.trim(),
+      tenantId: input.tenantId,
+      tenantName: input.tenantName,
+      receivedAt: new Date().toISOString(),
+      dueAt: input.dueAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      workflowStatus: 'received',
+      assignedRole: input.assignedRole || 'Data Protection Officer (DPO)',
+      priority: input.priority || 'normal',
+      requestSummary: input.requestSummary.trim(),
+      reviewNotes: 'Intake created in platform privacy register.',
+      resolutionCategory: 'pending',
+      resolutionSummary: 'Awaiting triage and verification.',
+      completedAt: null,
+      isSimulatedWorkflow: true,
+      simulatedArtifactManifest: null,
+    };
+
+    this.privacyRequests.unshift(newRequest);
+
+    this.logAuditEvent({
+      category: 'data_governance',
+      action: 'PRIVACY_REQUEST_CREATED',
+      severity: 'info',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'PrivacyRequestRecord',
+      targetId: id,
+      targetName: newRequest.code,
+      status: 'succeeded',
+      details: `Intake logged for simulated privacy request ${newRequest.code} (${newRequest.category}) for ${newRequest.tenantName}.`,
+      metadata: { requestId: id, requestCode: newRequest.code, category: newRequest.category },
+    });
+
+    this.persist();
+    this.notify();
+    return { success: true, request: newRequest };
+  }
+
+  public updatePrivacyRequestStatus(
+    id: string,
+    targetStatus: PrivacyWorkflowStatus,
+    reviewNotes: string,
+    resolutionCategory?: PrivacyResolutionCategory,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; request?: PrivacyRequestRecord; error?: string } {
+    const idx = this.privacyRequests.findIndex((r) => r.id === id);
+    if (idx === -1) {
+      return { success: false, error: `Privacy request with ID "${id}" was not found.` };
+    }
+
+    const prev = this.privacyRequests[idx];
+    const validation = isValidPrivacyTransition(prev.workflowStatus, targetStatus);
+    if (!validation.valid) {
+      return { success: false, error: validation.reason };
+    }
+
+    const isTerminal = targetStatus === 'completed_closed' || targetStatus === 'rejected_with_grounds';
+
+    const updated: PrivacyRequestRecord = {
+      ...prev,
+      workflowStatus: targetStatus,
+      reviewNotes: reviewNotes?.trim() || prev.reviewNotes,
+      resolutionCategory: resolutionCategory || prev.resolutionCategory,
+      completedAt: isTerminal ? new Date().toISOString() : prev.completedAt,
+    };
+
+    this.privacyRequests[idx] = updated;
+
+    this.logAuditEvent({
+      category: 'data_governance',
+      action: 'PRIVACY_REQUEST_TRANSITIONED',
+      severity: targetStatus === 'rejected_with_grounds' ? 'warning' : 'info',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'PrivacyRequestRecord',
+      targetId: id,
+      targetName: updated.code,
+      status: 'succeeded',
+      details: `Privacy request ${updated.code} transitioned from "${prev.workflowStatus}" to "${targetStatus}". Notes: ${updated.reviewNotes}`,
+      metadata: { previousStatus: prev.workflowStatus, newStatus: targetStatus },
+    });
+
+    this.persist();
+    this.notify();
+    return { success: true, request: updated };
+  }
+
+  public simulatePrivacyRequestProcessing(
+    id: string,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; request?: PrivacyRequestRecord; error?: string } {
+    const idx = this.privacyRequests.findIndex((r) => r.id === id);
+    if (idx === -1) {
+      return { success: false, error: `Privacy request with ID "${id}" was not found.` };
+    }
+
+    const prev = this.privacyRequests[idx];
+    const { updatedRequest, auditDetails } = simulatePrivacyRequestExecution(prev);
+
+    this.privacyRequests[idx] = updatedRequest;
+
+    this.logAuditEvent({
+      category: 'data_governance',
+      action: 'PRIVACY_REQUEST_SIMULATED_PROCESSING',
+      severity: 'info',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'PrivacyRequestRecord',
+      targetId: id,
+      targetName: updatedRequest.code,
+      status: 'succeeded',
+      details: auditDetails,
+      metadata: {
+        artifactType: updatedRequest.simulatedArtifactManifest?.type || 'none',
+        fieldsCount: updatedRequest.simulatedArtifactManifest?.fieldsProcessedCount || 0,
+        artifactSummary: updatedRequest.simulatedArtifactManifest?.summary || 'none',
+      },
+    });
+
+    this.persist();
+    this.notify();
+    return { success: true, request: updatedRequest };
+  }
+
+  public getDataLifecycleRules(filters?: {
+    query?: string;
+    categoryId?: string;
+    status?: string;
+    stage?: string;
+  }): DataLifecycleRuleRecord[] {
+    return filterLifecycleRules(
+      this.lifecycleRules,
+      filters?.query,
+      filters?.categoryId,
+      filters?.status,
+      filters?.stage
+    );
+  }
+
+  public getDataLifecycleRuleById(id: string): DataLifecycleRuleRecord | undefined {
+    return this.lifecycleRules.find((r) => r.id === id);
+  }
+
+  public createDataLifecycleRule(
+    input: CreateLifecycleRuleInput,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; rule?: DataLifecycleRuleRecord; error?: string } {
+    if (!input.name?.trim()) {
+      return { success: false, error: 'Rule name is required.' };
+    }
+    if (!input.coveredCategoryId) {
+      return { success: false, error: 'Target data category is required.' };
+    }
+
+    const id = `lcr_${Date.now().toString(36)}`;
+    const code = `LCR-${input.targetLifecycleStage.substring(0, 4).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
+
+    const newRule: DataLifecycleRuleRecord = {
+      id,
+      code,
+      name: input.name.trim(),
+      coveredCategoryId: input.coveredCategoryId,
+      triggerEvent: input.triggerEvent,
+      triggerConditions: input.triggerConditions?.trim() || '',
+      targetLifecycleStage: input.targetLifecycleStage,
+      requiredApproval: input.requiredApproval || 'platform_super_admin',
+      exceptionHandling: input.exceptionHandling?.trim() || '',
+      status: input.status || 'enabled',
+      lastRunSimulatedAt: null,
+      lastReviewDate: new Date().toISOString(),
+      nextReviewDate: input.nextReviewDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+      isDemonstration: true,
+    };
+
+    this.lifecycleRules.unshift(newRule);
+
+    this.logAuditEvent({
+      category: 'data_governance',
+      action: 'LIFECYCLE_RULE_CREATED',
+      severity: 'info',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'DataLifecycleRuleRecord',
+      targetId: id,
+      targetName: newRule.name,
+      status: 'succeeded',
+      details: `Created data lifecycle rule ${newRule.code} ("${newRule.name}") transitioning to "${newRule.targetLifecycleStage}".`,
+      metadata: {
+        ruleId: id,
+        ruleCode: newRule.code,
+        targetStage: newRule.targetLifecycleStage,
+        triggerEvent: newRule.triggerEvent,
+      },
+    });
+
+    this.persist();
+    this.notify();
+    return { success: true, rule: newRule };
+  }
+
+  public updateDataLifecycleRule(
+    id: string,
+    updates: Partial<CreateLifecycleRuleInput>,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; rule?: DataLifecycleRuleRecord; error?: string } {
+    const idx = this.lifecycleRules.findIndex((r) => r.id === id);
+    if (idx === -1) {
+      return { success: false, error: `Lifecycle rule with ID "${id}" was not found.` };
+    }
+
+    const prev = this.lifecycleRules[idx];
+    const updated: DataLifecycleRuleRecord = {
+      ...prev,
+      ...updates,
+      lastReviewDate: new Date().toISOString(),
+    };
+
+    this.lifecycleRules[idx] = updated;
+
+    this.logAuditEvent({
+      category: 'data_governance',
+      action: 'LIFECYCLE_RULE_UPDATED',
+      severity: 'info',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'DataLifecycleRuleRecord',
+      targetId: id,
+      targetName: updated.name,
+      status: 'succeeded',
+      details: `Updated data lifecycle rule ${updated.code}. Status: ${updated.status}. Target stage: ${updated.targetLifecycleStage}.`,
+      metadata: {
+        ruleId: id,
+        ruleCode: updated.code,
+        previousStatus: prev.status,
+        newStatus: updated.status,
+      },
+    });
+
+    this.persist();
+    this.notify();
+    return { success: true, rule: updated };
+  }
+
+  public toggleDataLifecycleRule(
+    id: string,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; rule?: DataLifecycleRuleRecord; error?: string } {
+    const idx = this.lifecycleRules.findIndex((r) => r.id === id);
+    if (idx === -1) {
+      return { success: false, error: `Lifecycle rule with ID "${id}" was not found.` };
+    }
+
+    const prev = this.lifecycleRules[idx];
+    const newStatus = prev.status === 'enabled' ? 'disabled' : 'enabled';
+    const updated: DataLifecycleRuleRecord = {
+      ...prev,
+      status: newStatus,
+    };
+
+    this.lifecycleRules[idx] = updated;
+
+    this.logAuditEvent({
+      category: 'data_governance',
+      action: 'LIFECYCLE_RULE_TOGGLED',
+      severity: newStatus === 'enabled' ? 'info' : 'warning',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'DataLifecycleRuleRecord',
+      targetId: id,
+      targetName: updated.name,
+      status: 'succeeded',
+      details: `Lifecycle rule ${updated.code} toggled from "${prev.status}" to "${newStatus}".`,
+      metadata: { previousStatus: prev.status, newStatus },
+    });
+
+    this.persist();
+    this.notify();
+    return { success: true, rule: updated };
+  }
+
+  public getGovernanceExceptions(filters?: {
+    query?: string;
+    status?: string;
+    reason?: string;
+    tenantId?: string;
+  }): GovernanceExceptionRecord[] {
+    return filterGovernanceExceptions(
+      this.governanceExceptions,
+      filters?.query,
+      filters?.status,
+      filters?.reason,
+      filters?.tenantId
+    );
+  }
+
+  public getGovernanceExceptionById(id: string): GovernanceExceptionRecord | undefined {
+    return this.governanceExceptions.find((e) => e.id === id);
+  }
+
+  public createGovernanceException(
+    input: CreateGovernanceExceptionInput,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; exception?: GovernanceExceptionRecord; error?: string } {
+    if (!input.title?.trim()) {
+      return { success: false, error: 'Exception title is required.' };
+    }
+    if (!input.justificationText?.trim()) {
+      return { success: false, error: 'Legal or operational justification is required.' };
+    }
+
+    const id = `exc_${Date.now().toString(36)}`;
+    const code = `EXC-${input.reasonCategory.substring(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
+
+    const newException: GovernanceExceptionRecord = {
+      id,
+      code,
+      title: input.title.trim(),
+      relatedPolicyId: input.relatedPolicyId,
+      relatedCategoryId: input.relatedCategoryId,
+      tenantId: input.tenantId || 'platform_wide',
+      tenantName: input.tenantName || 'All Organizations (Platform-Wide)',
+      reasonCategory: input.reasonCategory,
+      reviewStatus: 'pending_review',
+      approvalRequirement: input.approvalRequirement || 'legal_counsel',
+      requestedAt: new Date().toISOString(),
+      reviewDueAt: input.reviewDueAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      expirationAt: input.expirationAt || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+      responsibleRole: input.responsibleRole || 'Legal Counsel',
+      justificationText: input.justificationText.trim(),
+      resolutionSummary: 'Submitted for legal and compliance review.',
+      isDemonstration: true,
+    };
+
+    this.governanceExceptions.unshift(newException);
+
+    // Update activeExceptionsCount on the related policy
+    const policyIdx = this.governanceRetentionPolicies.findIndex((p) => p.id === input.relatedPolicyId);
+    if (policyIdx !== -1) {
+      this.governanceRetentionPolicies[policyIdx].activeExceptionsCount++;
+    }
+
+    this.logAuditEvent({
+      category: 'data_governance',
+      action: 'GOVERNANCE_EXCEPTION_CREATED',
+      severity: 'warning',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'GovernanceExceptionRecord',
+      targetId: id,
+      targetName: newException.title,
+      status: 'succeeded',
+      details: `Created governance exception ${newException.code} ("${newException.title}") under reason category "${newException.reasonCategory}".`,
+      metadata: {
+        exceptionId: id,
+        exceptionCode: newException.code,
+        reasonCategory: newException.reasonCategory,
+        approvalRequirement: newException.approvalRequirement,
+      },
+    });
+
+    this.persist();
+    this.notify();
+    return { success: true, exception: newException };
+  }
+
+  public reviewGovernanceException(
+    id: string,
+    reviewStatus: ExceptionReviewStatus,
+    resolutionSummary: string,
+    actorName = 'Alexander Sterling'
+  ): { success: boolean; exception?: GovernanceExceptionRecord; error?: string } {
+    const idx = this.governanceExceptions.findIndex((e) => e.id === id);
+    if (idx === -1) {
+      return { success: false, error: `Governance exception with ID "${id}" was not found.` };
+    }
+
+    const prev = this.governanceExceptions[idx];
+    const updated: GovernanceExceptionRecord = {
+      ...prev,
+      reviewStatus,
+      resolutionSummary: resolutionSummary?.trim() || prev.resolutionSummary,
+    };
+
+    this.governanceExceptions[idx] = updated;
+
+    this.logAuditEvent({
+      category: 'data_governance',
+      action: 'GOVERNANCE_EXCEPTION_REVIEWED',
+      severity: reviewStatus === 'approved_demo' ? 'info' : 'warning',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName,
+        email: 'alexander.s@saas-platform.internal',
+        role: 'super_admin',
+        actorType: 'super_admin',
+      },
+      targetEntity: 'GovernanceExceptionRecord',
+      targetId: id,
+      targetName: updated.title,
+      status: 'succeeded',
+      details: `Reviewed governance exception ${updated.code}. Status: ${reviewStatus}. Resolution: ${updated.resolutionSummary}`,
+      metadata: { reviewStatus, resolutionSummary },
+    });
+
+    this.persist();
+    this.notify();
+    return { success: true, exception: updated };
+  }
+
+  public getTenantGovernanceSummaries(): TenantGovernanceSummary[] {
+    return computeTenantGovernanceSummaries(
+      this.organizations,
+      this.dataCategories,
+      this.governanceRetentionPolicies,
+      this.privacyRequests,
+      this.governanceExceptions
+    );
+  }
+
+  public getGovernanceMetrics(): GovernanceMetricsSummary {
+    const tenantSummaries = this.getTenantGovernanceSummaries();
+    return computeGovernanceMetrics(
+      this.dataCategories,
+      this.governanceRetentionPolicies,
+      this.privacyRequests,
+      this.lifecycleRules,
+      this.governanceExceptions,
+      tenantSummaries
+    );
+  }
+
+  public getGovernanceAuditLogs(filters?: {
+    query?: string;
+    action?: string;
+    severity?: string;
+  }): GovernanceAuditRecord[] {
+    // Extract auditEvents with category === 'data_governance'
+    const auditLogs: GovernanceAuditRecord[] = this.auditEvents
+      .filter((e) => e.category === 'data_governance')
+      .map((e) => ({
+        id: e.id,
+        timestamp: e.timestamp,
+        category: 'data_governance',
+        action: e.action,
+        severity: e.severity,
+        actor: {
+          id: e.actor.id,
+          name: e.actor.name,
+          email: e.actor.email,
+          role: e.actor.role,
+        },
+        targetEntity: e.targetEntity,
+        targetId: e.targetId,
+        targetName: e.targetName,
+        status: e.status === 'succeeded' ? 'succeeded' : 'failed',
+        details: e.details,
+        metadata: e.metadata,
+        isDemoFixture: true,
+      }));
+
+    let filtered = [...auditLogs];
+
+    if (filters?.query?.trim()) {
+      const q = filters.query.toLowerCase().trim();
+      filtered = filtered.filter(
+        (a) =>
+          a.action.toLowerCase().includes(q) ||
+          (a.targetName && a.targetName.toLowerCase().includes(q)) ||
+          a.actor.name.toLowerCase().includes(q) ||
+          a.details.toLowerCase().includes(q)
+      );
+    }
+
+    if (filters?.action && filters.action !== 'all') {
+      filtered = filtered.filter((a) => a.action === filters.action);
+    }
+
+    if (filters?.severity && filters.severity !== 'all') {
+      filtered = filtered.filter((a) => a.severity === filters.severity);
+    }
+
+    return filtered;
   }
 }
 

@@ -17,7 +17,8 @@ export type AuditEventCategory =
   | 'data_retention'
   | 'compliance_governance'
   | 'data_export'
-  | 'integrations_governance';
+  | 'integrations_governance'
+  | 'data_governance';
 
 export type AuditEventSeverity = 'info' | 'warning' | 'critical';
 

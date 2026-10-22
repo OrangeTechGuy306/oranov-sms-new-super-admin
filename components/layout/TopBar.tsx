@@ -72,6 +72,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
       else if (part === 'support') label = 'Support Desk & Tenant Success';
       else if (part === 'settings') label = 'Settings';
       else if (part === 'features') label = 'Features';
+      else if (part === 'data-governance') label = 'Data Governance & Privacy';
       else {
         // Dynamic ID (organization ID)
         const matchedOrg = organizations.find((o) => o.id === part);

@@ -88,6 +88,24 @@ import {
   UpdateApiClientInput,
   CreateWebhookEndpointInput,
   UpdateWebhookEndpointInput,
+  DataCategoryRecord,
+  GovernanceRetentionPolicy,
+  PrivacyRequestRecord,
+  DataLifecycleRuleRecord,
+  GovernanceExceptionRecord,
+  GovernanceAuditRecord,
+  GovernanceMetricsSummary,
+  TenantGovernanceSummary,
+  UpdateDataCategoryInput,
+  CreateRetentionPolicyInput,
+  UpdateRetentionPolicyInput,
+  PolicyApprovalStatus,
+  CreatePrivacyRequestInput,
+  PrivacyWorkflowStatus,
+  PrivacyResolutionCategory,
+  CreateLifecycleRuleInput,
+  CreateGovernanceExceptionInput,
+  ExceptionReviewStatus,
 } from '@/lib/types';
 import {
   OperationalComponent,
@@ -376,6 +394,37 @@ interface PlatformStoreContextType {
   toggleWebhookEndpoint: (id: string, actorName?: string) => { success: boolean; endpoint?: WebhookEndpointRecord; error?: string };
   simulateTestWebhookDelivery: (endpointId: string, eventTypeId: string, simulateSuccess?: boolean, actorName?: string) => { success: boolean; delivery?: WebhookDeliveryRecord; error?: string };
   simulateRetryWebhookDelivery: (deliveryId: string, simulateSuccess?: boolean, actorName?: string) => { success: boolean; delivery?: WebhookDeliveryRecord; error?: string };
+  dataCategories: DataCategoryRecord[];
+  governanceRetentionPolicies: GovernanceRetentionPolicy[];
+  privacyRequests: PrivacyRequestRecord[];
+  lifecycleRules: DataLifecycleRuleRecord[];
+  governanceExceptions: GovernanceExceptionRecord[];
+  governanceAuditLogs: GovernanceAuditRecord[];
+  getDataCategories: (filters?: { query?: string; classification?: string; subjectType?: string; module?: string; retentionCoverage?: string }) => DataCategoryRecord[];
+  getDataCategoryById: (id: string) => DataCategoryRecord | undefined;
+  updateDataCategory: (id: string, updates: UpdateDataCategoryInput, actorName?: string) => { success: boolean; category?: DataCategoryRecord; error?: string };
+  getGovernanceRetentionPolicies: (filters?: { query?: string; status?: string; trigger?: string; reviewDueOnly?: boolean }) => GovernanceRetentionPolicy[];
+  getGovernanceRetentionPolicyById: (id: string) => GovernanceRetentionPolicy | undefined;
+  createGovernanceRetentionPolicy: (input: CreateRetentionPolicyInput, actorName?: string) => { success: boolean; policy?: GovernanceRetentionPolicy; error?: string };
+  updateGovernanceRetentionPolicy: (id: string, updates: UpdateRetentionPolicyInput, actorName?: string) => { success: boolean; policy?: GovernanceRetentionPolicy; error?: string };
+  reviewGovernanceRetentionPolicy: (id: string, reviewOutcome: PolicyApprovalStatus, nextReviewDueAt: string, actorName?: string) => { success: boolean; policy?: GovernanceRetentionPolicy; error?: string };
+  getPrivacyRequests: (filters?: { query?: string; category?: string; status?: string; tenantId?: string; priority?: string; dueStatus?: string }) => PrivacyRequestRecord[];
+  getPrivacyRequestById: (id: string) => PrivacyRequestRecord | undefined;
+  createPrivacyRequest: (input: CreatePrivacyRequestInput, actorName?: string) => { success: boolean; request?: PrivacyRequestRecord; error?: string };
+  updatePrivacyRequestStatus: (id: string, targetStatus: PrivacyWorkflowStatus, reviewNotes: string, resolutionCategory?: PrivacyResolutionCategory, actorName?: string) => { success: boolean; request?: PrivacyRequestRecord; error?: string };
+  simulatePrivacyRequestProcessing: (id: string, actorName?: string) => { success: boolean; request?: PrivacyRequestRecord; error?: string };
+  getDataLifecycleRules: (filters?: { query?: string; categoryId?: string; status?: string; stage?: string }) => DataLifecycleRuleRecord[];
+  getDataLifecycleRuleById: (id: string) => DataLifecycleRuleRecord | undefined;
+  createDataLifecycleRule: (input: CreateLifecycleRuleInput, actorName?: string) => { success: boolean; rule?: DataLifecycleRuleRecord; error?: string };
+  updateDataLifecycleRule: (id: string, updates: Partial<CreateLifecycleRuleInput>, actorName?: string) => { success: boolean; rule?: DataLifecycleRuleRecord; error?: string };
+  toggleDataLifecycleRule: (id: string, actorName?: string) => { success: boolean; rule?: DataLifecycleRuleRecord; error?: string };
+  getGovernanceExceptions: (filters?: { query?: string; status?: string; reason?: string; tenantId?: string }) => GovernanceExceptionRecord[];
+  getGovernanceExceptionById: (id: string) => GovernanceExceptionRecord | undefined;
+  createGovernanceException: (input: CreateGovernanceExceptionInput, actorName?: string) => { success: boolean; exception?: GovernanceExceptionRecord; error?: string };
+  reviewGovernanceException: (id: string, reviewStatus: ExceptionReviewStatus, resolutionSummary: string, actorName?: string) => { success: boolean; exception?: GovernanceExceptionRecord; error?: string };
+  getTenantGovernanceSummaries: () => TenantGovernanceSummary[];
+  getGovernanceMetrics: () => GovernanceMetricsSummary;
+  getGovernanceAuditLogs: (filters?: { query?: string; action?: string; severity?: string }) => GovernanceAuditRecord[];
 }
 
 const PlatformStoreContext = createContext<PlatformStoreContextType | undefined>(undefined);
@@ -1429,6 +1478,12 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     apiClients: platformStore.getApiClients(),
     webhookEndpoints: platformStore.getWebhookEndpoints(),
     webhookDeliveries: platformStore.getWebhookDeliveries(),
+    dataCategories: platformStore.getDataCategories(),
+    governanceRetentionPolicies: platformStore.getGovernanceRetentionPolicies(),
+    privacyRequests: platformStore.getPrivacyRequests(),
+    lifecycleRules: platformStore.getDataLifecycleRules(),
+    governanceExceptions: platformStore.getGovernanceExceptions(),
+    governanceAuditLogs: platformStore.getGovernanceAuditLogs(),
     capacityObservations: platformStore.getCapacityObservations(),
     backupRecords: platformStore.getBackupRecords(),
     alertRules: platformStore.getAlertRules(),
@@ -2193,6 +2248,175 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       }
       return res;
     },
+    getDataCategories: (filters) => platformStore.getDataCategories(filters),
+    getDataCategoryById: (id) => platformStore.getDataCategoryById(id),
+    updateDataCategory: (id, updates, actorName) => {
+      const res = platformStore.updateDataCategory(id, updates, actorName);
+      if (res.success && res.category) {
+        addToast({
+          type: 'success',
+          title: 'Data Category Updated',
+          message: `Updated classification and metadata for ${res.category.code}.`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Update Failed', message: res.error });
+      }
+      return res;
+    },
+    getGovernanceRetentionPolicies: (filters) => platformStore.getGovernanceRetentionPolicies(filters),
+    getGovernanceRetentionPolicyById: (id) => platformStore.getGovernanceRetentionPolicyById(id),
+    createGovernanceRetentionPolicy: (input, actorName) => {
+      const res = platformStore.createGovernanceRetentionPolicy(input, actorName);
+      if (res.success && res.policy) {
+        addToast({
+          type: 'success',
+          title: 'Retention Schedule Created',
+          message: `Created demo schedule ${res.policy.code} (${res.policy.durationDisplay}).`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Creation Failed', message: res.error });
+      }
+      return res;
+    },
+    updateGovernanceRetentionPolicy: (id, updates, actorName) => {
+      const res = platformStore.updateGovernanceRetentionPolicy(id, updates, actorName);
+      if (res.success && res.policy) {
+        addToast({
+          type: 'success',
+          title: 'Policy Updated',
+          message: `Saved retention policy modifications for ${res.policy.code}.`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Update Failed', message: res.error });
+      }
+      return res;
+    },
+    reviewGovernanceRetentionPolicy: (id, reviewOutcome, nextReviewDueAt, actorName) => {
+      const res = platformStore.reviewGovernanceRetentionPolicy(id, reviewOutcome, nextReviewDueAt, actorName);
+      if (res.success && res.policy) {
+        addToast({
+          type: 'success',
+          title: 'Policy Review Recorded',
+          message: `Status recorded as ${reviewOutcome}. Next review: ${res.policy.nextReviewDueAt.split('T')[0]}.`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Review Failed', message: res.error });
+      }
+      return res;
+    },
+    getPrivacyRequests: (filters) => platformStore.getPrivacyRequests(filters),
+    getPrivacyRequestById: (id) => platformStore.getPrivacyRequestById(id),
+    createPrivacyRequest: (input, actorName) => {
+      const res = platformStore.createPrivacyRequest(input, actorName);
+      if (res.success && res.request) {
+        addToast({
+          type: 'success',
+          title: 'Privacy Request Logged',
+          message: `Registered request ${res.request.code} (${res.request.category}) for ${res.request.tenantName}.`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Intake Failed', message: res.error });
+      }
+      return res;
+    },
+    updatePrivacyRequestStatus: (id, targetStatus, reviewNotes, resolutionCategory, actorName) => {
+      const res = platformStore.updatePrivacyRequestStatus(id, targetStatus, reviewNotes, resolutionCategory, actorName);
+      if (res.success && res.request) {
+        addToast({
+          type: targetStatus === 'rejected_with_grounds' ? 'warning' : 'info',
+          title: 'Privacy Request Transitioned',
+          message: `Request ${res.request.code} is now "${targetStatus}".`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Transition Rejected', message: res.error });
+      }
+      return res;
+    },
+    simulatePrivacyRequestProcessing: (id, actorName) => {
+      const res = platformStore.simulatePrivacyRequestProcessing(id, actorName);
+      if (res.success && res.request) {
+        addToast({
+          type: 'success',
+          title: 'Simulated Execution Completed',
+          message: `Generated synthetic manifest (${res.request.simulatedArtifactManifest?.fieldsProcessedCount || 0} fields). Zero real customer data modified.`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Simulation Blocked', message: res.error });
+      }
+      return res;
+    },
+    getDataLifecycleRules: (filters) => platformStore.getDataLifecycleRules(filters),
+    getDataLifecycleRuleById: (id) => platformStore.getDataLifecycleRuleById(id),
+    createDataLifecycleRule: (input, actorName) => {
+      const res = platformStore.createDataLifecycleRule(input, actorName);
+      if (res.success && res.rule) {
+        addToast({
+          type: 'success',
+          title: 'Lifecycle Rule Created',
+          message: `Configured rule ${res.rule.code} to stage "${res.rule.targetLifecycleStage}".`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Creation Failed', message: res.error });
+      }
+      return res;
+    },
+    updateDataLifecycleRule: (id, updates, actorName) => {
+      const res = platformStore.updateDataLifecycleRule(id, updates, actorName);
+      if (res.success && res.rule) {
+        addToast({
+          type: 'success',
+          title: 'Lifecycle Rule Updated',
+          message: `Updated configuration for rule ${res.rule.code}.`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Update Failed', message: res.error });
+      }
+      return res;
+    },
+    toggleDataLifecycleRule: (id, actorName) => {
+      const res = platformStore.toggleDataLifecycleRule(id, actorName);
+      if (res.success && res.rule) {
+        addToast({
+          type: res.rule.status === 'enabled' ? 'success' : 'warning',
+          title: res.rule.status === 'enabled' ? 'Lifecycle Rule Enabled' : 'Lifecycle Rule Disabled',
+          message: `Rule ${res.rule.code} is now ${res.rule.status}.`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Action Failed', message: res.error });
+      }
+      return res;
+    },
+    getGovernanceExceptions: (filters) => platformStore.getGovernanceExceptions(filters),
+    getGovernanceExceptionById: (id) => platformStore.getGovernanceExceptionById(id),
+    createGovernanceException: (input, actorName) => {
+      const res = platformStore.createGovernanceException(input, actorName);
+      if (res.success && res.exception) {
+        addToast({
+          type: 'warning',
+          title: 'Governance Exception Registered',
+          message: `Logged exception ${res.exception.code} ("${res.exception.title}"). Requires ${res.exception.approvalRequirement}.`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Exception Failed', message: res.error });
+      }
+      return res;
+    },
+    reviewGovernanceException: (id, reviewStatus, resolutionSummary, actorName) => {
+      const res = platformStore.reviewGovernanceException(id, reviewStatus, resolutionSummary, actorName);
+      if (res.success && res.exception) {
+        addToast({
+          type: reviewStatus === 'approved_demo' ? 'success' : 'warning',
+          title: 'Exception Review Recorded',
+          message: `Exception ${res.exception.code} marked as ${reviewStatus}.`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Review Failed', message: res.error });
+      }
+      return res;
+    },
+    getTenantGovernanceSummaries: () => platformStore.getTenantGovernanceSummaries(),
+    getGovernanceMetrics: () => platformStore.getGovernanceMetrics(),
+    getGovernanceAuditLogs: (filters) => platformStore.getGovernanceAuditLogs(filters),
   };
 
 

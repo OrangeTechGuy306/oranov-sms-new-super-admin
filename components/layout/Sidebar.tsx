@@ -32,6 +32,7 @@ import {
   Bell,
   LifeBuoy,
   Webhook,
+  Database,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -162,6 +163,13 @@ export function Sidebar({ isCollapsed, onToggleCollapse, onCloseMobile }: Sideba
           href: '/audit-logs',
           icon: FileText,
           badge: metrics.recentAuditCount,
+        },
+        {
+          label: 'Data Governance & Privacy',
+          href: '/data-governance',
+          icon: Database,
+          badge: metrics.openPrivacyRequestsCount > 0 ? metrics.openPrivacyRequestsCount : undefined,
+          badgeVariant: metrics.overduePrivacyRequestsCount > 0 ? 'warning' : 'default',
         },
       ],
     },
