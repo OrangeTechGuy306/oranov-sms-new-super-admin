@@ -1,10 +1,12 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import {
   X,
   Shield,
   AlertTriangle,
+  ExternalLink,
 } from 'lucide-react';
 import { TenantGovernanceSummary } from '@/lib/types/data-governance';
 
@@ -53,8 +55,14 @@ export function TenantGovernanceDrawer({
                 </span>
               </div>
               <h2 className="text-base font-bold text-foreground">{tenant.tenantName}</h2>
-              <div className="text-xs text-muted-foreground">
-                Tier: <span className="font-semibold capitalize text-foreground">{tenant.tier}</span> • Code: <span className="font-mono">{tenant.tenantCode}</span>
+              <div className="text-xs text-muted-foreground flex items-center justify-between gap-2 mt-0.5">
+                <span>Tier: <span className="font-semibold capitalize text-foreground">{tenant.tier}</span> • Code: <span className="font-mono">{tenant.tenantCode}</span></span>
+                <Link
+                  href={`/organizations/${tenant.tenantId}`}
+                  className="text-primary hover:underline text-[11px] font-medium flex items-center gap-1 shrink-0"
+                >
+                  View School <ExternalLink className="w-3 h-3" />
+                </Link>
               </div>
             </div>
             <button

@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Tabs, TabItem } from '@/components/ui/Tabs';
@@ -34,7 +35,13 @@ import {
   Download,
 } from 'lucide-react';
 
-export default function AuditLogsPage() {
+function AuditLogsContent() {
+  const searchParams = useSearchParams();
+  const initialCategory = searchParams.get('category') || 'all';
+  const initialSearch = searchParams.get('searchQuery') || '';
+  const initialOrg = searchParams.get('organizationId') || 'all';
+  const initialTab = searchParams.get('tab') || 'explorer';
+
   const {
     auditEvents,
     securityEvents,
@@ -50,14 +57,14 @@ export default function AuditLogsPage() {
   } = usePlatformStore();
 
   // Active Tab state
-  const [activeTab, setActiveTab] = useState<string>('explorer');
+  const [activeTab, setActiveTab] = useState<string>(initialTab);
 
   // Filter state for Tab 1 (Explorer)
-  const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState(initialSearch);
+  const [categoryFilter, setCategoryFilter] = useState(initialCategory);
   const [severityFilter, setSeverityFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [orgFilter, setOrgFilter] = useState('all');
+  const [orgFilter, setOrgFilter] = useState(initialOrg);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [sortBy, setSortBy] = useState('timestamp_desc');
@@ -301,5 +308,13 @@ export default function AuditLogsPage() {
         onLogExportAction={handleLogExportAction}
       />
     </div>
+  );
+}
+
+export default function AuditLogsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-muted-foreground text-sm">Loading audit logs workspace...</div>}>
+      <AuditLogsContent />
+    </Suspense>
   );
 }

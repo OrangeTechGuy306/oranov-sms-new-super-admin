@@ -100,7 +100,7 @@ export default function PlatformSettingsPage() {
               <ArrowRight className="w-3 h-3 text-muted-foreground" />
             </Link>
             <Link
-              href="/audit"
+              href="/audit-logs"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
             >
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />

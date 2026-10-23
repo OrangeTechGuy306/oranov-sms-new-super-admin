@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { OrganizationStudentOversight } from '@/lib/types/student-oversight';
 import { Badge } from '@/components/ui/Badge';
 import {
@@ -10,6 +11,8 @@ import {
   ShieldCheck,
   AlertTriangle,
   Lock,
+  Building2,
+  ExternalLink,
 } from 'lucide-react';
 
 interface OrganizationStudentDetailModalProps {
@@ -257,7 +260,15 @@ export function OrganizationStudentDetailModal({
         </div>
 
         {/* Modal Footer */}
-        <div className="p-4 border-t border-border flex items-center justify-end bg-muted/20">
+        <div className="p-4 border-t border-border flex items-center justify-between bg-muted/20">
+          <Link
+            href={`/organizations/${organization.organizationId}`}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-primary/10 text-primary hover:bg-primary/20 font-semibold text-xs rounded-lg transition-colors"
+          >
+            <Building2 className="w-3.5 h-3.5" />
+            View Master School Profile
+            <ExternalLink className="w-3 h-3 ml-0.5" />
+          </Link>
           <button
             type="button"
             onClick={onClose}

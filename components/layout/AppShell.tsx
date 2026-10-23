@@ -54,10 +54,10 @@ function AppShellInner({ children }: AppShellInnerProps) {
           <div className="bg-gradient-to-r from-blue-900 to-indigo-900 text-white text-[11px] px-4 py-1.5 flex items-center justify-between gap-3 shrink-0 border-b border-indigo-700/50">
             <div className="flex items-center gap-2 overflow-hidden">
               <span className="font-extrabold px-1.5 py-0.2 bg-white/20 rounded text-[9px] tracking-wider uppercase shrink-0">
-                E-09.5 Audited Phase
+                Phase E-09.21 Certified Sandbox
               </span>
               <p className="truncate opacity-90">
-                Super-Admin UI Standard: All metrics, organizations, and actions run against local mock fixtures. Production backend & live payments begin in subsequent phases.
+                Super-Admin Consolidated Architecture: All metrics, organizations, and actions run against deterministic local state. Production backend & live payments begin in subsequent phases.
               </p>
             </div>
             <button

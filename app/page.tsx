@@ -59,7 +59,7 @@ export default function PlatformOverviewPage() {
       {/* Operational Disclaimer Alert */}
       <AlertBanner
         variant="notice"
-        title="Demonstration Operational Model (Phase E-09.5)"
+        title="Demonstration Operational Model (Phase E-09.21 Certified)"
         dismissible
       >
         All metrics, school directories, plan subscriptions, and audit trails displayed below are calculated from client-side development fixtures and local UI state. Live infrastructure telemetry, payment gateways, and backend authorization will be connected in future development phases.
