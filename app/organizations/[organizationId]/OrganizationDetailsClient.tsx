@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Badge } from '@/components/ui/Badge';
 import { Tabs } from '@/components/ui/Tabs';
@@ -25,19 +26,33 @@ import {
   Sparkles,
   Building,
   Server,
+  LifeBuoy,
+  CheckSquare,
+  ShieldAlert,
+  Lock,
+  Eye,
 } from 'lucide-react';
 import { OrganizationEntitlementsPanel } from '@/components/modules/OrganizationEntitlementsPanel';
 import { ModuleDetailModal } from '@/components/modules/ModuleDetailModal';
 import { TenantModuleDefinition } from '@/lib/modules/types';
 import { CampusManagementPanel } from '@/components/campuses/CampusManagementPanel';
 import { ReadinessAndProvisioningPanel } from '@/components/readiness/ReadinessAndProvisioningPanel';
-import { getAvailableTransitions } from '@/lib/lifecycle/evaluator';
+import {
+  getAvailableTransitions,
+  getTenantLifecycleStateMeta,
+} from '@/lib/lifecycle/evaluator';
+import { evaluateOnboardingChecklist } from '@/lib/lifecycle/canonical-onboarding';
+import { normalizeSchoolCategories } from '@/lib/api/tenantContractAdapter';
 
 interface ClientProps {
   organizationId: string;
 }
 
 export function OrganizationDetailsClient({ organizationId }: ClientProps) {
+  const { can } = usePlatformAuth();
+  const canManageLifecycle = can('organizations.lifecycle.manage');
+  const canUpdateOrg = can('organizations.update');
+  const canRecordPayment = can('billing.invoices.manage') || can('billing.subscriptions.manage');
   const {
     getOrganizationById,
     getSubscriptionByOrgId,
@@ -45,6 +60,10 @@ export function OrganizationDetailsClient({ organizationId }: ClientProps) {
     getAuditEvents,
     getCampusesByOrgId,
     evaluateOrganizationReadiness,
+    getSupportTickets,
+    csTasks,
+    platformApprovals,
+    operationalExceptions,
     plans,
     updateOrganization,
     setOrganizationStatus,
@@ -54,11 +73,51 @@ export function OrganizationDetailsClient({ organizationId }: ClientProps) {
   const org = getOrganizationById(organizationId);
   const subscription = getSubscriptionByOrgId(organizationId);
   const invoices = getInvoicesByOrgId(organizationId);
-  const orgAuditEvents = getAuditEvents().filter((e) => e.targetId === organizationId);
+  const orgAuditEvents = getAuditEvents().filter(
+    (e) => e.organizationId === organizationId || e.targetId === organizationId
+  );
+  const orgSupportTickets = getSupportTickets({ organizationId });
+  const orgTasks = csTasks.filter((t) => t.organizationId === organizationId);
+  const orgApprovals = platformApprovals.filter((a) => a.organizationId === organizationId);
+  const orgExceptions = operationalExceptions.filter(
+    (ex) => ex.organizationId === organizationId && ex.status !== 'resolved' && ex.status !== 'dismissed'
+  );
   const orgCampuses = getCampusesByOrgId(organizationId);
   const mainCampus = orgCampuses.find((c) => c.isMainCampus);
   const readiness = org ? evaluateOrganizationReadiness(organizationId) : null;
   const availableTransitions = org ? getAvailableTransitions(org.status) : [];
+  const lifecycleMeta = org ? getTenantLifecycleStateMeta(org.status) : null;
+  const orgCategories = org
+    ? normalizeSchoolCategories(org.classification, org.institutionCategories)
+    : [];
+  const onboardingSummary = org
+    ? evaluateOnboardingChecklist({
+        institutionCategories: orgCategories,
+        organizationName: org.name,
+        organizationCode: org.code,
+        organizationEmail: org.contact.email,
+        organizationPhone: org.contact.phone,
+        organizationCountry: org.contact.country,
+        hasClassification: Boolean(org.classification),
+        hasBranding: org.academicSetup?.hasBranding,
+        campusCount: orgCampuses.length,
+        hasMainCampus: Boolean(mainCampus),
+        mainCampusHasLocation: Boolean(mainCampus?.address?.city && mainCampus?.address?.country),
+        sessionsCount: org.academicSetup?.sessionsCount ?? (org.onboardingStatus === 'completed' ? 1 : 0),
+        termsCount: org.academicSetup?.termsCount ?? (org.onboardingStatus === 'completed' ? 3 : 0),
+        classesOrProgrammesCount:
+          org.academicSetup?.classesOrProgrammesCount ?? (org.onboardingStatus === 'completed' ? 1 : 0),
+        subjectsOrModulesCount:
+          org.academicSetup?.subjectsOrModulesCount ?? (org.onboardingStatus === 'completed' ? 1 : 0),
+        primaryAdminName: org.administrator.name,
+        primaryAdminEmail: org.administrator.email,
+        staffSetupCount: org.academicSetup?.staffSetupCount ?? 0,
+        hasPlanAssigned: Boolean(org.planId),
+        subscriptionStatus: subscription?.status || org.subscriptionStatus,
+        settingsReviewed: org.academicSetup?.settingsReviewed ?? org.onboardingStatus === 'completed',
+        skippedItemIds: org.academicSetup?.skippedItemIds,
+      })
+    : null;
 
   const [activeTab, setActiveTab] = useState('overview');
   const [inspectedModule, setInspectedModule] = useState<TenantModuleDefinition | null>(null);
@@ -70,10 +129,14 @@ export function OrganizationDetailsClient({ organizationId }: ClientProps) {
     variant: 'danger' | 'warning' | 'primary';
     requiresReason?: boolean;
     minReasonLength?: number;
+    requiresConfirmationCode?: boolean;
+    restrictions?: string[];
+    associatedSubscriptionGuidance?: string;
     description?: string;
     confirmLabel?: string;
   } | null>(null);
   const [lifecycleReason, setLifecycleReason] = useState('');
+  const [confirmationCode, setConfirmationCode] = useState('');
 
   // Payment Recording Modal State
   const [paymentModalInvoice, setPaymentModalInvoice] = useState<Invoice | null>(null);
@@ -137,9 +200,12 @@ export function OrganizationDetailsClient({ organizationId }: ClientProps) {
   const handleConfirmStatusChange = () => {
     if (!confirmModal || !org) return;
     const reason = confirmModal.requiresReason ? lifecycleReason : 'Super-admin manual lifecycle transition';
-    setOrganizationStatus(org.id, confirmModal.newStatus, reason);
+    setOrganizationStatus(org.id, confirmModal.newStatus, reason, {
+      confirmationCode: confirmModal.requiresConfirmationCode ? confirmationCode : undefined,
+    });
     setConfirmModal(null);
     setLifecycleReason('');
+    setConfirmationCode('');
   };
 
   const handleRecordPaymentSubmit = (e: React.FormEvent) => {
@@ -211,7 +277,7 @@ export function OrganizationDetailsClient({ organizationId }: ClientProps) {
       align: 'right',
       render: (inv) => {
         const bal = Math.max(0, (inv.amountDue || 0) - (inv.amountPaid || 0));
-        if (inv.status === 'paid' || bal <= 0 || inv.status === 'void') return null;
+        if (inv.status === 'paid' || bal <= 0 || inv.status === 'void' || !canRecordPayment) return null;
         return (
           <button
             type="button"
@@ -240,21 +306,21 @@ export function OrganizationDetailsClient({ organizationId }: ClientProps) {
         badge={
           <div className="flex items-center gap-1.5 ml-2 flex-wrap">
             <Badge status={org.status} dot size="md" />
-            <Badge status={org.onboardingStatus} size="sm" />
+            <Badge status={subscription?.status || org.subscriptionStatus || 'active'} size="sm">
+              Sub: {(subscription?.status || org.subscriptionStatus || 'active').replace(/_/g, ' ')}
+            </Badge>
+            <Badge status={org.paymentStatus || 'paid'} size="sm">
+              Pay: {(org.paymentStatus || 'paid').replace(/_/g, ' ')}
+            </Badge>
+            <Badge status={org.onboardingStatus} size="sm">
+              Onboarding: {onboardingSummary?.overallPercentage ?? 0}%
+            </Badge>
             <span className="text-[11px] px-2 py-0.5 rounded-full bg-muted font-medium text-muted-foreground border border-border">
               {orgCampuses.length} {orgCampuses.length === 1 ? 'Campus' : 'Campuses'}
             </span>
             {org.provisioningStatus && (
-              <Badge
-                variant={
-                  org.provisioningStatus === 'simulated_complete'
-                    ? 'success'
-                    : org.provisioningStatus === 'simulated_failed'
-                    ? 'error'
-                    : 'warning'
-                }
-              >
-                {org.provisioningStatus.replace(/_/g, ' ')}
+              <Badge status={org.provisioningStatus} size="sm">
+                Prep: {org.provisioningStatus.replace(/_/g, ' ')}
               </Badge>
             )}
           </div>
@@ -269,21 +335,26 @@ export function OrganizationDetailsClient({ organizationId }: ClientProps) {
               Manage Subscription
             </Link>
 
-            {availableTransitions.map((rule) => (
+            {canManageLifecycle && availableTransitions.map((rule) => (
               <button
                 key={rule.to}
                 type="button"
-                onClick={() =>
+                onClick={() => {
+                  setLifecycleReason('');
+                  setConfirmationCode('');
                   setConfirmModal({
                     newStatus: rule.to,
                     title: `${rule.actionLabel}: ${org.name}`,
                     variant: rule.variant === 'neutral' ? 'primary' : rule.variant,
                     requiresReason: rule.requiresReason,
                     minReasonLength: rule.minReasonLength || 5,
+                    requiresConfirmationCode: rule.requiresConfirmationCode,
+                    restrictions: rule.restrictions,
+                    associatedSubscriptionGuidance: rule.associatedSubscriptionGuidance,
                     description: rule.description,
                     confirmLabel: rule.actionLabel,
-                  })
-                }
+                  });
+                }}
                 className={`px-3 py-2 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer ${
                   rule.variant === 'danger'
                     ? 'bg-rose-600 text-white hover:bg-rose-700'
@@ -317,6 +388,18 @@ export function OrganizationDetailsClient({ organizationId }: ClientProps) {
           { id: 'entitlements', label: 'Feature Entitlements', icon: <Sparkles className="w-3.5 h-3.5" /> },
           { id: 'technical', label: 'Technical & Quotas', icon: <Sliders className="w-3.5 h-3.5" /> },
           { id: 'onboarding', label: 'Onboarding Checklist', icon: <CheckCircle className="w-3.5 h-3.5" /> },
+          {
+            id: 'support_ops',
+            label: 'Support & Issues',
+            icon: <LifeBuoy className="w-3.5 h-3.5" />,
+            count: orgSupportTickets.length + orgExceptions.length,
+          },
+          {
+            id: 'tasks_approvals',
+            label: 'Tasks & Approvals',
+            icon: <CheckSquare className="w-3.5 h-3.5" />,
+            count: orgTasks.length + orgApprovals.length,
+          },
           { id: 'activity', label: 'Activity History', icon: <Activity className="w-3.5 h-3.5" />, count: orgAuditEvents.length },
         ]}
       />
@@ -575,13 +658,15 @@ export function OrganizationDetailsClient({ organizationId }: ClientProps) {
               <h3 className="font-semibold text-sm text-foreground">Organization Profile Details</h3>
               <p className="text-xs text-muted-foreground">Update legal entity information and contact coordinates.</p>
             </div>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-primary text-primary-foreground font-semibold text-xs rounded-lg hover:bg-primary/90 flex items-center gap-1.5 shadow-xs"
-            >
-              <Save className="w-3.5 h-3.5" />
-              Save Changes
-            </button>
+            {canUpdateOrg && (
+              <button
+                type="submit"
+                className="px-4 py-2 bg-primary text-primary-foreground font-semibold text-xs rounded-lg hover:bg-primary/90 flex items-center gap-1.5 shadow-xs"
+              >
+                <Save className="w-3.5 h-3.5" />
+                Save Changes
+              </button>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -678,52 +763,265 @@ export function OrganizationDetailsClient({ organizationId }: ClientProps) {
         </div>
       )}
 
-      {/* Tab 4: Onboarding Progress */}
-      {activeTab === 'onboarding' && (
+      {/* Tab 4: Onboarding Progress (Live Adaptable Evaluator) */}
+      {activeTab === 'onboarding' && onboardingSummary && (
         <div className="bg-card text-card-foreground p-6 rounded-xl border border-border shadow-xs space-y-6">
-          <div className="border-b border-border/50 pb-3">
-            <h3 className="font-semibold text-sm text-foreground">Onboarding Milestones & Verification</h3>
-            <p className="text-xs text-muted-foreground">Status of institutional verification and technical setup.</p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/50 pb-4">
+            <div>
+              <h3 className="font-semibold text-sm text-foreground">
+                Adaptable Onboarding Progress & Setup Checklist
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Derived deterministically for category profile [{onboardingSummary.adaptedForCategories.join(', ')}] —
+                never calculated from hardcoded percentages.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Badge status={onboardingSummary.derivedStatus} size="md" />
+              <span className="text-xl font-extrabold text-foreground">
+                {onboardingSummary.overallPercentage}%
+              </span>
+            </div>
           </div>
 
-          <div className="space-y-4">
-            <div className="flex items-start gap-3 p-3.5 rounded-lg bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900 text-xs">
-              <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-semibold text-emerald-900 dark:text-emerald-200">Organization Identity & Profile</p>
-                <p className="text-emerald-800/80 dark:text-emerald-300/80 mt-0.5">School legal credentials and registration documents reviewed.</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div className="p-3 rounded-lg bg-muted/40 border border-border/50">
+              <span className="text-muted-foreground">Completed Items</span>
+              <p className="text-base font-bold text-foreground mt-0.5">
+                {onboardingSummary.completedCount} / {onboardingSummary.applicableCount}
+              </p>
+            </div>
+            <div className="p-3 rounded-lg bg-muted/40 border border-border/50">
+              <span className="text-muted-foreground">Mandatory Done</span>
+              <p className="text-base font-bold text-foreground mt-0.5">
+                {onboardingSummary.mandatoryCompleted} / {onboardingSummary.mandatoryTotal} ({onboardingSummary.mandatoryPercentage}%)
+              </p>
+            </div>
+            <div className="p-3 rounded-lg bg-muted/40 border border-border/50">
+              <span className="text-muted-foreground">Skipped Optional</span>
+              <p className="text-base font-bold text-foreground mt-0.5">{onboardingSummary.skippedCount}</p>
+            </div>
+            <div className="p-3 rounded-lg bg-muted/40 border border-border/50">
+              <span className="text-muted-foreground">Attention / Blocked</span>
+              <p className="text-base font-bold text-amber-600 dark:text-amber-400 mt-0.5">
+                {onboardingSummary.requiresAttentionCount + onboardingSummary.blockedCount}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2.5">
+            {onboardingSummary.items
+              .filter((item) => item.applicable)
+              .map((item) => (
+                <div
+                  key={item.id}
+                  className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3.5 rounded-lg border text-xs ${
+                    item.status === 'completed'
+                      ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900'
+                      : item.status === 'blocked' || item.status === 'requires_attention'
+                      ? 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900'
+                      : 'bg-muted/25 border-border'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    {item.status === 'completed' ? (
+                      <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    )}
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-semibold text-foreground">{item.title}</p>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium uppercase">
+                          {item.mandatory ? 'Mandatory' : 'Optional'}
+                        </span>
+                      </div>
+                      <p className="text-muted-foreground mt-0.5">{item.description}</p>
+                      {item.detailMessage && (
+                        <p className="text-amber-700 dark:text-amber-300 mt-0.5 font-medium">
+                          {item.detailMessage}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <Badge status={item.status} size="sm" />
+                </div>
+              ))}
+          </div>
+
+          {lifecycleMeta && (
+            <div className="p-3.5 rounded-lg bg-muted/35 border border-border/60 text-xs space-y-1">
+              <p className="font-semibold text-foreground">
+                Tenant Access Policy in Current Lifecycle ({lifecycleMeta.label})
+              </p>
+              <p className="text-muted-foreground">{lifecycleMeta.accessSummary}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tab: Support Cases, Operational Issues & Platform-vs-Tenant Boundary */}
+      {activeTab === 'support_ops' && (
+        <div className="space-y-5">
+          {/* Platform-Only vs Tenant-Visible Separation Card */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-card text-card-foreground p-4 rounded-xl border border-emerald-500/30 space-y-2 text-xs">
+              <div className="flex items-center gap-2 font-bold text-emerald-700 dark:text-emerald-300">
+                <Eye className="w-4 h-4" />
+                Tenant-Visible Summary Scope
+              </div>
+              <p className="text-muted-foreground leading-relaxed">
+                School admins can inspect public profile details, campus structure, plan entitlement matrix,
+                subscription/payment status, published notices, and non-internal replies on their support tickets.
+              </p>
+              <div className="p-2.5 rounded-lg bg-muted/40 border border-border/60 font-mono text-[11px] space-y-1">
+                <div>Lifecycle Access: {lifecycleMeta?.label || org.status}</div>
+                <div>Payment Status: {org.paymentStatus || 'paid'}</div>
+                <div>Open Support Threads (Redacted): {orgSupportTickets.filter((t) => t.status !== 'resolved' && t.status !== 'closed').length}</div>
               </div>
             </div>
 
-            <div className="flex items-start gap-3 p-3.5 rounded-lg bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900 text-xs">
-              <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-semibold text-emerald-900 dark:text-emerald-200">Tenant Subdomain Reservation</p>
-                <p className="text-emerald-800/80 dark:text-emerald-300/80 mt-0.5">
-                  Subdomain <span className="font-mono">{org.subdomain}.schoolsaas.internal</span> reserved in Edge routing table.
-                </p>
+            <div className="bg-card text-card-foreground p-4 rounded-xl border border-amber-500/30 space-y-2 text-xs">
+              <div className="flex items-center gap-2 font-bold text-amber-700 dark:text-amber-300">
+                <Lock className="w-4 h-4" />
+                Platform-Only Governance Scope (Restricted)
+              </div>
+              <p className="text-muted-foreground leading-relaxed">
+                Strictly invisible to the school tenant: internal operator support notes, engineering escalation tiers,
+                internal risk notes, provisioning exception internals, and pending platform approvals.
+              </p>
+              <div className="p-2.5 rounded-lg bg-muted/40 border border-border/60 text-[11px] space-y-1">
+                <div className="font-semibold text-foreground">
+                  Internal Operator Notes: {org.notes || 'No internal risk remarks recorded.'}
+                </div>
+                <div>Open Platform Exceptions: {orgExceptions.length}</div>
+                <div>Pending Governance Approvals: {orgApprovals.filter((a) => a.status === 'pending_review').length}</div>
               </div>
             </div>
+          </div>
 
-            <div className={`flex items-start gap-3 p-3.5 rounded-lg border text-xs ${
-              org.onboardingStatus === 'completed'
-                ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900'
-                : 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900'
-            }`}>
-              {org.onboardingStatus === 'completed' ? (
-                <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-              ) : (
-                <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-              )}
-              <div>
-                <p className="font-semibold text-foreground">Root Administrator Verification</p>
-                <p className="text-muted-foreground mt-0.5">
-                  {org.onboardingStatus === 'completed'
-                    ? 'Root administrator verified.'
-                    : 'Awaiting primary executive identity confirmation.'}
-                </p>
-              </div>
+          {/* Open Exceptions for Organization */}
+          <div className="bg-card text-card-foreground p-5 rounded-xl border border-border shadow-xs space-y-3">
+            <div className="flex items-center justify-between border-b border-border/50 pb-2.5">
+              <h3 className="font-semibold text-sm text-foreground flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-amber-500" />
+                Outstanding Operational Issues & Exceptions
+              </h3>
+              <Link href="/exceptions" className="text-xs text-primary hover:underline font-semibold">
+                Triage in Exceptions Center →
+              </Link>
             </div>
+            {orgExceptions.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-3">No open operational exceptions detected for this institution.</p>
+            ) : (
+              <div className="space-y-2">
+                {orgExceptions.map((exc) => (
+                  <div key={exc.id} className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/5 text-xs space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-foreground">{exc.referenceCode}: {exc.title}</span>
+                      <Badge status={exc.status} size="sm">{exc.severity}</Badge>
+                    </div>
+                    <p className="text-muted-foreground">{exc.description}</p>
+                    <p className="text-[11px] font-medium text-foreground">Next Action: {exc.recommendedAction}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Support Cases List */}
+          <div className="bg-card text-card-foreground p-5 rounded-xl border border-border shadow-xs space-y-3">
+            <div className="flex items-center justify-between border-b border-border/50 pb-2.5">
+              <h3 className="font-semibold text-sm text-foreground flex items-center gap-2">
+                <LifeBuoy className="w-4 h-4 text-primary" />
+                Recent Support Cases
+              </h3>
+              <Link href={`/support`} className="text-xs text-primary hover:underline font-semibold">
+                Open Support Desk →
+              </Link>
+            </div>
+            {orgSupportTickets.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-3">No support cases recorded for this institution.</p>
+            ) : (
+              <div className="space-y-2">
+                {orgSupportTickets.map((tck) => (
+                  <div key={tck.id} className="p-3 rounded-lg border border-border bg-muted/20 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="space-y-0.5 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono font-bold text-foreground">{tck.ticketNumber}</span>
+                        <Badge status={tck.status} size="sm" />
+                        <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{tck.priority}</span>
+                        {tck.campusName && <span className="text-[10px] text-primary font-medium">{tck.campusName}</span>}
+                      </div>
+                      <p className="font-semibold text-foreground truncate">{tck.subject}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Requester: {tck.requester.name} • Updated {formatDate(tck.updatedAt, true)}
+                      </p>
+                    </div>
+                    <Link
+                      href={`/support?ticket=${tck.id}`}
+                      className="px-2.5 py-1 rounded bg-primary/10 text-primary hover:bg-primary/20 text-xs font-semibold shrink-0"
+                    >
+                      Inspect Case
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Administrative Tasks & Controlled Approvals */}
+      {activeTab === 'tasks_approvals' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="bg-card text-card-foreground p-5 rounded-xl border border-border shadow-xs space-y-3">
+            <div className="flex items-center justify-between border-b border-border/50 pb-2.5">
+              <h3 className="font-semibold text-sm text-foreground">Administrative & Follow-Up Tasks</h3>
+              <Link href="/approvals" className="text-xs text-primary hover:underline font-semibold">Manage Tasks →</Link>
+            </div>
+            {orgTasks.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-3">No administrative tasks assigned to this institution.</p>
+            ) : (
+              <div className="space-y-2.5">
+                {orgTasks.map((task) => (
+                  <div key={task.id} className="p-3 rounded-lg border border-border bg-muted/20 text-xs space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-foreground">{task.title}</span>
+                      <Badge status={task.status} size="sm" />
+                    </div>
+                    <p className="text-muted-foreground">{task.description}</p>
+                    <p className="text-[10px] font-mono text-muted-foreground">Due: {task.dueDate} • Priority: {task.priority}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-card text-card-foreground p-5 rounded-xl border border-border shadow-xs space-y-3">
+            <div className="flex items-center justify-between border-b border-border/50 pb-2.5">
+              <h3 className="font-semibold text-sm text-foreground">Controlled Approval History</h3>
+              <Link href="/approvals" className="text-xs text-primary hover:underline font-semibold">Review Approvals →</Link>
+            </div>
+            {orgApprovals.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-3">No approval requests linked to this institution.</p>
+            ) : (
+              <div className="space-y-2.5">
+                {orgApprovals.map((apr) => (
+                  <div key={apr.id} className="p-3 rounded-lg border border-border bg-muted/20 text-xs space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono font-bold text-foreground">{apr.referenceCode}</span>
+                      <Badge status={apr.status} size="sm" />
+                    </div>
+                    <p className="font-semibold text-foreground">{apr.title}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Requested by {apr.requestedBy.name} ({apr.requestedBy.role})
+                      {apr.reviewedBy ? ` • Reviewed by ${apr.reviewedBy.name}` : ''}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -809,14 +1107,21 @@ export function OrganizationDetailsClient({ organizationId }: ClientProps) {
           onClose={() => {
             setConfirmModal(null);
             setLifecycleReason('');
+            setConfirmationCode('');
           }}
           onConfirm={handleConfirmStatusChange}
           title={confirmModal.title}
           variant={confirmModal.variant}
           confirmLabel={confirmModal.confirmLabel || 'Confirm Action'}
           isConfirmDisabled={
-            Boolean(confirmModal.requiresReason &&
-            lifecycleReason.trim().length < (confirmModal.minReasonLength || 5))
+            Boolean(
+              confirmModal.requiresReason &&
+                lifecycleReason.trim().length < (confirmModal.minReasonLength || 5)
+            ) ||
+            Boolean(
+              confirmModal.requiresConfirmationCode &&
+                confirmationCode.trim().toUpperCase() !== org.code.toUpperCase()
+            )
           }
           description={
             <div className="space-y-3">
@@ -825,10 +1130,34 @@ export function OrganizationDetailsClient({ organizationId }: ClientProps) {
                   <>
                     Confirming this action will update the lifecycle status of{' '}
                     <strong className="text-foreground">{org.name}</strong> to{' '}
-                    <strong className="text-foreground capitalize">{confirmModal.newStatus}</strong>.
+                    <strong className="text-foreground capitalize">
+                      {confirmModal.newStatus.replace(/_/g, ' ')}
+                    </strong>.
                   </>
                 )}
               </p>
+
+              {confirmModal.associatedSubscriptionGuidance && (
+                <div className="p-2.5 rounded-lg bg-muted/50 border border-border text-[11px] text-muted-foreground text-left">
+                  <strong className="text-foreground">Subscription Separation Note: </strong>
+                  {confirmModal.associatedSubscriptionGuidance}
+                </div>
+              )}
+
+              {confirmModal.requiresConfirmationCode && (
+                <div className="space-y-1.5 text-left">
+                  <label className="text-xs font-semibold text-foreground block">
+                    Confirm Organization Code ({org.code}) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={confirmationCode}
+                    onChange={(e) => setConfirmationCode(e.target.value)}
+                    placeholder={`Type ${org.code} to confirm`}
+                    className="w-full px-3 py-2 bg-background border border-border rounded-lg text-xs font-mono uppercase text-foreground"
+                  />
+                </div>
+              )}
 
               {confirmModal.requiresReason && (
                 <div className="space-y-1.5 text-left pt-1">

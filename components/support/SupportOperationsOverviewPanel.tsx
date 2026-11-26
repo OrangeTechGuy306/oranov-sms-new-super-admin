@@ -24,13 +24,11 @@ import { formatMinutesDuration, formatHoursDuration } from '@/lib/support/evalua
 interface SupportOperationsOverviewPanelProps {
   onNavigateTab: (tabId: string, filter?: Record<string, string | boolean>) => void;
   currentActorId: string;
-  onChangeActor: (actorId: string) => void;
 }
 
 export function SupportOperationsOverviewPanel({
   onNavigateTab,
   currentActorId,
-  onChangeActor,
 }: SupportOperationsOverviewPanelProps) {
   const {
     getSupportMetrics,
@@ -41,10 +39,12 @@ export function SupportOperationsOverviewPanel({
   } = usePlatformStore();
 
   const metrics = getSupportMetrics();
-  const currentActor = platformUsers.find((u) => u.id === currentActorId) || platformUsers[0];
+  const currentActor = platformUsers.find((u) => u.id === currentActorId);
+  const reopenedTicketsCount = supportTickets.filter((t) => t.status === 'reopened').length;
 
   const myAssignedTickets = supportTickets.filter(
     (t) =>
+      currentActorId &&
       t.assignedOperatorId === currentActorId &&
       t.status !== 'resolved' &&
       t.status !== 'closed'
@@ -52,45 +52,37 @@ export function SupportOperationsOverviewPanel({
 
   return (
     <div className="space-y-6">
-      {/* Operator Context Switcher Banner */}
+      {/* Authenticated Operator Perspective Banner (Read-Only — No Impersonation Switcher) */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl border border-primary/20 bg-primary/5 text-xs">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="p-1.5 rounded-lg bg-primary/20 text-primary shrink-0">
             <UserCheck className="w-4 h-4" />
           </div>
           <div>
-            <span className="font-semibold text-foreground">Current Operator Perspective: </span>
-            <span className="font-bold text-primary">{currentActor?.name}</span>
-            <span className="text-muted-foreground ml-1.5">
-              ({currentActor?.role} • {currentActor?.department})
-            </span>
+            <span className="font-semibold text-foreground">Signed-In Operator: </span>
+            <span className="font-bold text-primary">{currentActor?.name || 'Authenticated Operator'}</span>
+            {currentActor && (
+              <span className="text-muted-foreground ml-1.5">
+                ({currentActor.role} • {currentActor.department || 'Platform Support'})
+              </span>
+            )}
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <label htmlFor="actorSelect" className="text-muted-foreground font-medium">
-            Switch View Actor:
-          </label>
-          <select
-            id="actorSelect"
-            value={currentActorId}
-            onChange={(e) => onChangeActor(e.target.value)}
-            className="px-2.5 py-1 rounded-lg border border-border bg-background text-foreground text-xs focus:ring-1 focus:ring-primary"
-          >
-            {platformUsers.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name} ({u.role})
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => onNavigateTab('tickets', { assignedOperatorId: currentActorId })}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors shadow-2xs"
-          >
-            My Work ({myAssignedTickets.length})
-            <ArrowRight className="w-3 h-3" />
-          </button>
+          <span className="text-[11px] text-muted-foreground px-2 py-0.5 rounded bg-background border border-border">
+            {reopenedTicketsCount} Reopened Case(s)
+          </span>
+          {currentActorId && (
+            <button
+              type="button"
+              onClick={() => onNavigateTab('tickets', { assignedOperatorId: currentActorId })}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors shadow-2xs"
+            >
+              My Assigned Queue ({myAssignedTickets.length})
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -154,13 +146,13 @@ export function SupportOperationsOverviewPanel({
           </p>
         </div>
 
-        {/* SLA at Risk */}
+        {/* Sandbox Reference Thresholds (Not Contractual SLAs) */}
         <div
           onClick={() => onNavigateTab('tickets', { slaState: 'approaching_target' })}
           className="p-4 rounded-xl border border-border bg-card hover:border-amber-500/50 transition-all cursor-pointer group shadow-2xs"
         >
           <div className="flex items-center justify-between text-muted-foreground mb-2">
-            <span className="text-xs font-medium">SLA At Risk</span>
+            <span className="text-xs font-medium">Aging Follow-Up (Sample Ref)</span>
             <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-500 group-hover:scale-105 transition-transform">
               <Clock className="w-4 h-4" />
             </div>
@@ -169,18 +161,18 @@ export function SupportOperationsOverviewPanel({
             {metrics.slaAtRiskTickets}
           </div>
           <p className="text-[11px] text-muted-foreground mt-1 flex items-center justify-between">
-            <span>&gt;75% time elapsed</span>
+            <span>Unratified sandbox ref only</span>
             <span className="text-amber-600 dark:text-amber-400 group-hover:underline">Inspect →</span>
           </p>
         </div>
 
-        {/* SLA Breached */}
+        {/* Unratified Target Exceeded */}
         <div
           onClick={() => onNavigateTab('tickets', { slaState: 'breached' })}
           className="p-4 rounded-xl border border-border bg-card hover:border-red-500/50 transition-all cursor-pointer group shadow-2xs"
         >
           <div className="flex items-center justify-between text-muted-foreground mb-2">
-            <span className="text-xs font-medium">SLA Breached</span>
+            <span className="text-xs font-medium">Extended Queue Age</span>
             <div className="p-1.5 rounded-lg bg-red-500/10 text-red-500 group-hover:scale-105 transition-transform">
               <AlertTriangle className="w-4 h-4" />
             </div>
@@ -189,7 +181,7 @@ export function SupportOperationsOverviewPanel({
             {metrics.slaBreachedTickets}
           </div>
           <p className="text-[11px] text-muted-foreground mt-1 flex items-center justify-between">
-            <span>Target exceeded</span>
+            <span>No contractual SLA implied</span>
             <span className="text-red-600 dark:text-red-400 group-hover:underline">Review →</span>
           </p>
         </div>

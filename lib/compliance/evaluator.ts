@@ -59,6 +59,11 @@ export function filterAuditEvents(events: AuditEvent[], filter: AuditLogFilter):
     );
   }
 
+  // 4b. Campus Scope Filter
+  if (filter.campusId && filter.campusId !== 'all') {
+    list = list.filter((e) => e.campusId === filter.campusId);
+  }
+
   // 5. Actor Role Filter
   if (filter.actorRole && filter.actorRole !== 'all') {
     list = list.filter((e) => e.actor.role === filter.actorRole);

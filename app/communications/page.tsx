@@ -14,6 +14,7 @@ import { DeliveryHistoryPanel } from '@/components/communications/DeliveryHistor
 import { CampaignPlannerPanel } from '@/components/communications/CampaignPlannerPanel';
 import { TenantCommunicationConfigPanel } from '@/components/communications/TenantCommunicationConfigPanel';
 import { NotificationPreferencesPanel } from '@/components/communications/NotificationPreferencesPanel';
+import { PlatformNoticesPanel } from '@/components/communications/PlatformNoticesPanel';
 import { CommunicationExportModal } from '@/components/communications/CommunicationExportModal';
 import {
   Bell,
@@ -26,6 +27,7 @@ import {
   Lock,
   Download,
   ArrowRight,
+  Megaphone,
 } from 'lucide-react';
 
 export default function CommunicationsGovernancePage() {
@@ -36,12 +38,19 @@ export default function CommunicationsGovernancePage() {
     notificationRecords,
     campaignDrafts,
     tenantCommunicationConfigs,
+    platformNotices,
   } = usePlatformStore();
 
-  const [activeTab, setActiveTab] = useState<string>('overview');
+  const [activeTab, setActiveTab] = useState<string>('notices');
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   const tabs = [
+    {
+      id: 'notices',
+      label: 'Platform Notices (Tenant Broadcasts)',
+      icon: <Megaphone className="w-3.5 h-3.5" />,
+      count: platformNotices.length,
+    },
     {
       id: 'overview',
       label: 'Operations Overview',
@@ -129,6 +138,7 @@ export default function CommunicationsGovernancePage() {
 
       {/* Active Panel Content */}
       <div className="pt-2">
+        {activeTab === 'notices' && <PlatformNoticesPanel />}
         {activeTab === 'overview' && (
           <OperationsOverviewPanel onNavigateTab={setActiveTab} />
         )}

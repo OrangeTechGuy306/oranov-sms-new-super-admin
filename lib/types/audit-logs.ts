@@ -18,7 +18,11 @@ export type AuditEventCategory =
   | 'compliance_governance'
   | 'data_export'
   | 'integrations_governance'
-  | 'data_governance';
+  | 'data_governance'
+  | 'support_operations'
+  | 'administrative_approvals'
+  | 'operational_exceptions'
+  | 'platform_communications';
 
 export type AuditEventSeverity = 'info' | 'warning' | 'critical';
 
@@ -65,6 +69,13 @@ export interface AuditEvent {
   targetId: string;
   targetName?: string;
   organizationId?: string; // Optional school organization reference
+  campusId?: string;
+  campusName?: string;
+  sourceApp?: 'super_admin' | 'tenant_dashboard';
+  visibility?: 'platform_only' | 'tenant_visible';
+  reason?: string;
+  beforeState?: string;
+  afterState?: string;
   status: AuditEventOutcome;
   details: string;
   correlationId?: string;
@@ -79,6 +90,7 @@ export interface AuditLogFilter {
   severity?: AuditEventSeverity | 'all';
   status?: AuditEventOutcome | 'all';
   organizationId?: string | 'all';
+  campusId?: string | 'all';
   actorId?: string | 'all';
   actorRole?: string | 'all';
   searchQuery?: string;

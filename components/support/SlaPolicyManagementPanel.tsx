@@ -178,9 +178,7 @@ export function SlaPolicyManagementPanel() {
           <span>SLA Governance & Demonstration Policy Engine</span>
         </div>
         <p className="text-muted-foreground leading-relaxed">
-          Platform SLAs define service-level commitments for educational institutions across response and resolution
-          benchmarks. In this frontend demonstration, target evaluations calculate elapsed wall-clock minutes against active policy
-          thresholds with pause support for <code className="px-1 py-0.5 rounded bg-muted font-mono text-[11px]">awaiting_tenant</code> states.
+          <strong>Unratified Sandbox Reference Only:</strong> No contractual SLA response or resolution deadlines are defined or guaranteed under current product policy (future Product-Owner decision required). These E-09.17 sandbox models demonstrate theoretical evaluation logic on client mock fixtures with pause support for <code className="px-1 py-0.5 rounded bg-muted font-mono text-[11px]">awaiting_tenant</code> states.
         </p>
       </div>
 

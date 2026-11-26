@@ -260,12 +260,34 @@ export const PLATFORM_ROUTE_POLICIES: PlatformRoutePolicy[] = [
   {
     pattern: '/communications',
     label: 'Communications & Delivery Governance',
-    anyPermissions: ['system.maintenance.manage', 'platform.settings.update', 'organizations.update'],
+    anyPermissions: [
+      'communications.notices.read',
+      'communications.notices.manage',
+      'system.maintenance.manage',
+      'platform.settings.update',
+      'organizations.update',
+    ],
   },
   {
     pattern: '/support',
     label: 'Support & Tenant Success Desk',
-    anyPermissions: ['organizations.update', 'tenants.campuses.manage', 'platform.settings.update'],
+    anyPermissions: [
+      'support.tickets.read',
+      'support.tickets.manage',
+      'organizations.update',
+      'tenants.campuses.manage',
+      'platform.settings.update',
+    ],
+  },
+  {
+    pattern: '/approvals',
+    label: 'Administrative Tasks & Approval Workflows',
+    anyPermissions: ['operations.approvals.read', 'operations.approvals.manage', 'operations.tasks.manage'],
+  },
+  {
+    pattern: '/exceptions',
+    label: 'Operational Exceptions & Escalation Center',
+    anyPermissions: ['operations.exceptions.read', 'operations.exceptions.manage'],
   },
   {
     pattern: '/integrations',

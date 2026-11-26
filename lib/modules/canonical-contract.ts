@@ -362,6 +362,15 @@ export function normalizeTenantSchoolType(raw?: string | null): CanonicalSchoolT
   const normalized = raw.trim().toLowerCase();
   if (!normalized) return [];
 
+  if (/[,+|]/.test(normalized)) {
+    const parts = normalized
+      .split(/[,+|]/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+    const merged = parts.flatMap((part) => normalizeTenantSchoolType(part));
+    return Array.from(new Set(merged));
+  }
+
   if (normalized === "k12" || normalized === "multi_campus_k12") {
     return ["nursery", "primary", "secondary", "combined"];
   }

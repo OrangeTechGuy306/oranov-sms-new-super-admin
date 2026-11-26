@@ -21,6 +21,7 @@ import {
   projectOrganizationToTenantContract,
 } from "@/lib/api/tenantContractAdapter";
 import {
+  EXTENDED_P05_ORGANIZATIONS,
   INITIAL_CAMPUSES,
   INITIAL_ORGANIZATIONS,
   INITIAL_PLANS,
@@ -161,7 +162,10 @@ describe("P0-3 Super Admin Platform Contracts, Data-Source Reliability, and Fixt
       ]);
 
       assert.equal(orgs.success, true);
-      assert.equal(orgs.data.length, INITIAL_ORGANIZATIONS.length);
+      assert.equal(
+        orgs.data.length,
+        INITIAL_ORGANIZATIONS.length + EXTENDED_P05_ORGANIZATIONS.length
+      );
       assert.equal(plans.success, true);
       assert.ok(plans.data.length >= INITIAL_PLANS.length);
       assert.equal(students.success, true);

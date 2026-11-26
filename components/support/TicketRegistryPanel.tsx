@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import {
   SupportTicket,
   SupportTicketStatus,
@@ -46,6 +47,7 @@ import {
 
 interface TicketRegistryPanelProps {
   currentActorId: string;
+  initialSelectedTicketId?: string | null;
   initialFilters?: {
     status?: string;
     priority?: string;
@@ -58,7 +60,13 @@ interface TicketRegistryPanelProps {
   };
 }
 
-export function TicketRegistryPanel({ currentActorId, initialFilters }: TicketRegistryPanelProps) {
+export function TicketRegistryPanel({
+  currentActorId,
+  initialFilters,
+  initialSelectedTicketId,
+}: TicketRegistryPanelProps) {
+  const { can } = usePlatformAuth();
+  const canManageTickets = can('support.tickets.manage');
   const {
     supportTickets,
     organizations,
@@ -91,8 +99,10 @@ export function TicketRegistryPanel({ currentActorId, initialFilters }: TicketRe
 
   // Modals state
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
-  const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(
+    initialSelectedTicketId || null
+  );
+  const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(Boolean(initialSelectedTicketId));
   const [statusModalTicket, setStatusModalTicket] = useState<SupportTicket | null>(null);
   const [assignModalTicket, setAssignModalTicket] = useState<SupportTicket | null>(null);
   const [escalateModalTicket, setEscalateModalTicket] = useState<SupportTicket | null>(null);
@@ -356,6 +366,18 @@ export function TicketRegistryPanel({ currentActorId, initialFilters }: TicketRe
             Open
           </span>
         );
+      case 'assigned':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20">
+            Assigned
+          </span>
+        );
+      case 'reopened':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+            Reopened
+          </span>
+        );
       case 'in_progress':
         return (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
@@ -454,63 +476,75 @@ export function TicketRegistryPanel({ currentActorId, initialFilters }: TicketRe
         <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 scrollbar-none text-xs font-medium">
           <button
             onClick={() => handleSelectQuickView('all')}
-            className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap ${
-              quickView === 'all'
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'bg-muted/60 text-muted-foreground hover:bg-muted'
-            }`}
+            className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap ${quickView === 'all'
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'bg-muted/60 text-muted-foreground hover:bg-muted'
+              }`}
           >
             All ({supportTickets.length})
           </button>
           <button
             onClick={() => handleSelectQuickView('my_assigned')}
-            className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap ${
-              quickView === 'my_assigned'
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'bg-muted/60 text-muted-foreground hover:bg-muted'
-            }`}
+            className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap ${quickView === 'my_assigned'
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'bg-muted/60 text-muted-foreground hover:bg-muted'
+              }`}
           >
             My Queue
           </button>
           <button
             onClick={() => handleSelectQuickView('unassigned')}
-            className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap ${
-              quickView === 'unassigned'
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'bg-muted/60 text-muted-foreground hover:bg-muted'
-            }`}
+            className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap ${quickView === 'unassigned'
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'bg-muted/60 text-muted-foreground hover:bg-muted'
+              }`}
           >
             Unassigned
           </button>
           <button
             onClick={() => handleSelectQuickView('high_urgent')}
-            className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap ${
-              quickView === 'high_urgent'
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'bg-muted/60 text-muted-foreground hover:bg-muted'
-            }`}
+            className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap ${quickView === 'high_urgent'
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'bg-muted/60 text-muted-foreground hover:bg-muted'
+              }`}
           >
             High & Urgent
           </button>
           <button
             onClick={() => handleSelectQuickView('sla_risk')}
-            className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap ${
-              quickView === 'sla_risk'
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'bg-muted/60 text-muted-foreground hover:bg-muted'
-            }`}
+            className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap ${quickView === 'sla_risk'
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'bg-muted/60 text-muted-foreground hover:bg-muted'
+              }`}
           >
             SLA at Risk / Breached
           </button>
           <button
             onClick={() => handleSelectQuickView('escalated')}
-            className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap ${
-              quickView === 'escalated'
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'bg-muted/60 text-muted-foreground hover:bg-muted'
-            }`}
+            className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap ${quickView === 'escalated'
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'bg-muted/60 text-muted-foreground hover:bg-muted'
+              }`}
           >
             Escalated
+          </button>
+          <button
+            onClick={() => handleSelectQuickView('resolved')}
+            className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap ${quickView === 'resolved'
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'bg-muted/60 text-muted-foreground hover:bg-muted'
+              }`}
+          >
+            Resolved / Closed
+          </button>
+          <button
+            onClick={() => handleSelectQuickView('awaiting_tenant')}
+            className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap ${quickView === 'awaiting_tenant'
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'bg-muted/60 text-muted-foreground hover:bg-muted'
+              }`}
+          >
+            Pending Tenant
           </button>
         </div>
 
@@ -524,13 +558,15 @@ export function TicketRegistryPanel({ currentActorId, initialFilters }: TicketRe
             <Download className="w-3.5 h-3.5" />
             Export CSV
           </button>
-          <button
-            onClick={() => setIsCreateOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            New Ticket
-          </button>
+          {canManageTickets && (
+            <button
+              onClick={() => setIsCreateOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              New Ticket
+            </button>
+          )}
         </div>
       </div>
 
@@ -592,12 +628,14 @@ export function TicketRegistryPanel({ currentActorId, initialFilters }: TicketRe
               <option value="all">All Statuses</option>
               <option value="new">New</option>
               <option value="open">Open</option>
+              <option value="assigned">Assigned</option>
               <option value="in_progress">In Progress</option>
               <option value="awaiting_tenant">Awaiting Tenant</option>
               <option value="awaiting_internal">Awaiting Internal</option>
               <option value="escalated">Escalated</option>
               <option value="resolved">Resolved</option>
               <option value="closed">Closed</option>
+              <option value="reopened">Reopened</option>
             </select>
           </div>
 

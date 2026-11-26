@@ -73,21 +73,34 @@ export function platformPaginatedResponseSchema<T extends z.ZodTypeAny>(
 }
 
 export const organizationStatusSchema = z.enum([
+  "draft",
+  "registration_pending",
+  "onboarding_in_progress",
+  "awaiting_configuration",
+  "awaiting_activation",
+  "trial",
   "active",
   "suspended",
+  "cancellation_pending",
+  "cancelled",
+  "archived",
+  "closed",
+  // Legacy aliases retained for migration compatibility
   "pending",
   "inactive",
-  "draft",
-  "archived",
 ]);
 
 export const organizationClassificationSchema = z.enum([
-  "k12",
+  "nursery",
   "primary",
   "secondary",
-  "higher_education",
+  "combined",
+  "college",
   "vocational",
   "international",
+  // Legacy aliases
+  "k12",
+  "higher_education",
 ]);
 
 export const organizationSchema = z
@@ -121,7 +134,15 @@ export const campusSchema = z
     organizationId: nonEmptyIdSchema,
     name: z.string().trim().min(1),
     code: z.string().trim().min(1),
-    status: z.enum(["active", "inactive", "archived", "under_review"]),
+    status: z.enum([
+      "active",
+      "inactive",
+      "planned",
+      "under_maintenance",
+      "suspended",
+      "archived",
+      "under_review",
+    ]),
     isMainCampus: z.boolean(),
   })
   .passthrough();

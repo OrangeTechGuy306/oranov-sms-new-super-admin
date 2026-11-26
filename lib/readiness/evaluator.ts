@@ -13,6 +13,7 @@ import {
   Campus,
 } from '../types';
 import { TenantModuleDefinition, OrganizationModuleOverride } from '../modules/types';
+import { CANONICAL_MODULE_REGISTRY } from '../modules/canonical-registry-snapshot';
 
 export type ReadinessItemStatus = 'complete' | 'incomplete' | 'attention' | 'unknown';
 
@@ -45,6 +46,7 @@ export function evaluateOrganizationReadiness(params: {
   subscription?: OrganizationSubscription;
   overrides?: OrganizationModuleOverride[];
   modules?: TenantModuleDefinition[];
+  evaluatedAt?: string;
 }): OrganizationReadinessReport {
   const { organization: org, campuses, plan, subscription, overrides = [] } = params;
 
@@ -209,13 +211,14 @@ export function evaluateOrganizationReadiness(params: {
 
   // 5. Module Entitlements Configuration
   const orgOverrides = overrides.filter((o) => o.organizationId === org.id);
+  const catalogCount = params.modules?.length || CANONICAL_MODULE_REGISTRY.length;
   items.push({
     id: 'module_entitlements',
     category: 'modules',
     title: 'Master Module Entitlements',
-    description: 'Catalog access rules evaluated across 321 ERP modules and custom overrides.',
+    description: `Catalog access rules evaluated across ${catalogCount} canonical modules and custom overrides.`,
     status: 'complete',
-    reason: `Inherited tier entitlements verified. ${orgOverrides.length} organization-level override(s) applied.`,
+    reason: `Inherited P0-4 tier entitlements verified across ${catalogCount} canonical modules. ${orgOverrides.length} organization-level override(s) applied.`,
     actionLabel: 'Review Entitlements',
     targetTab: 'entitlements',
     isVerified: true,
@@ -254,20 +257,20 @@ export function evaluateOrganizationReadiness(params: {
     });
   }
 
-  // 7. Domain Routing & SSL Security
+  // 7. Tenant Slug & Portal Identifier Readiness
   const hasSubdomain = Boolean(org.subdomain && /^[a-z0-9-]+$/.test(org.subdomain));
   if (hasSubdomain) {
     const customDomainNotice = org.technicalConfig?.customDomain
-      ? ` Custom domain ${org.technicalConfig.customDomain} configured.`
-      : ' Default SaaS subdomain active.';
+      ? ` Custom domain target "${org.technicalConfig.customDomain}" recorded for future DNS setup.`
+      : ' Standard workspace slug format valid.';
     items.push({
       id: 'domain_readiness',
       category: 'infrastructure',
-      title: 'Domain Routing & SSL Certificate',
-      description: 'DNS routing for tenant portal and simulated TLS certificate status.',
+      title: 'Workspace Slug & Portal Address Configuration',
+      description: 'Validates unique tenant slug format. Live DNS zone routing and TLS certificates require future backend setup.',
       status: 'complete',
-      reason: `Subdomain "${org.subdomain}.schoolsaas.internal" validated.${customDomainNotice}`,
-      actionLabel: 'Inspect Domain',
+      reason: `Slug "${org.subdomain}" format validated locally.${customDomainNotice}`,
+      actionLabel: 'Inspect Settings',
       targetTab: 'technical',
       isVerified: true,
     });
@@ -275,11 +278,11 @@ export function evaluateOrganizationReadiness(params: {
     items.push({
       id: 'domain_readiness',
       category: 'infrastructure',
-      title: 'Domain Routing & SSL Certificate',
-      description: 'DNS routing for tenant portal and simulated TLS certificate status.',
+      title: 'Workspace Slug & Portal Address Configuration',
+      description: 'Validates unique tenant slug format. Live DNS zone routing and TLS certificates require future backend setup.',
       status: 'incomplete',
-      reason: 'Tenant subdomain identifier is invalid or missing.',
-      actionLabel: 'Fix Subdomain',
+      reason: 'Tenant subdomain/slug identifier is invalid or missing.',
+      actionLabel: 'Fix Workspace Slug',
       targetTab: 'profile',
       isVerified: true,
     });
@@ -329,6 +332,7 @@ export function evaluateOrganizationReadiness(params: {
     totalCount,
     hasBlockers,
     items,
-    evaluatedAt: new Date().toISOString(),
+    evaluatedAt:
+      params.evaluatedAt || org.updatedAt || org.createdAt || '2026-11-26T12:00:00Z',
   };
 }

@@ -7,6 +7,7 @@ import {
   PaymentMethodType,
   PlatformUser,
   AuditEvent,
+  AuditActor,
   PlatformServiceHealth,
   PlatformIncidentNotice,
   PlatformSettings,
@@ -23,11 +24,34 @@ import {
   ProvisioningStatus,
   SubscriptionStatus,
 } from '../types';
+import {
+  PlatformApprovalRequest,
+  PlatformApprovalType,
+  PlatformNotice,
+  OperationalExceptionRecord,
+  OperationalExceptionStatus,
+  evaluateApprovalDecision,
+  P0_6_FRONTEND_SIMULATION_DISCLAIMER,
+} from '../operations/canonical-operations';
+import {
+  INITIAL_PLATFORM_APPROVALS,
+  INITIAL_PLATFORM_NOTICES,
+  INITIAL_EXPLICIT_EXCEPTIONS,
+} from '../operations/fixtures';
+import { deriveOperationalExceptions } from '../operations/exceptions';
+import {
+  computePlatformOperationalOverview,
+  OperationalQueueId,
+  OperationalQueueItem,
+  PlatformOperationalOverviewMetrics,
+} from '../operations/queues';
 
 import {
   INITIAL_PLANS,
   INITIAL_ORGANIZATIONS,
+  EXTENDED_P05_ORGANIZATIONS,
   INITIAL_SUBSCRIPTIONS,
+  EXTENDED_P05_SUBSCRIPTIONS,
   INITIAL_INVOICES,
   INITIAL_PAYMENTS,
   INITIAL_PLATFORM_USERS,
@@ -36,6 +60,7 @@ import {
   INITIAL_FEATURES,
   INITIAL_PLATFORM_SETTINGS,
   INITIAL_CAMPUSES,
+  EXTENDED_P05_CAMPUSES,
   INITIAL_DISCOUNT_POLICIES,
   INITIAL_LIFECYCLE_EVENTS,
 } from './initial-data';
@@ -91,9 +116,14 @@ import { MASTER_MODULE_REGISTRY } from '../modules/registry-data';
 import { INITIAL_ORGANIZATION_OVERRIDES } from '../modules/initial-overrides';
 import { evaluateModuleEntitlement } from '../modules/evaluator';
 import { validateModuleRegistry } from '../modules/validator';
-import { evaluateLifecycleTransition } from '../lifecycle/evaluator';
+import { evaluateLifecycleTransition, normalizeTenantLifecycleStatus } from '../lifecycle/evaluator';
 import { evaluateOrganizationReadiness, OrganizationReadinessReport } from '../readiness/evaluator';
-import { executeSimulatedProvisioning, SimulatedProvisioningEvent } from '../provisioning/simulator';
+import {
+  executeSimulatedProvisioning,
+  ProvisioningStageKey,
+  SimulatedProvisioningEvent,
+} from '../provisioning/simulator';
+import { normalizeSchoolCategories } from '../api/tenantContractAdapter';
 import {
   PlatformPermission,
   PlatformRole,
@@ -332,7 +362,7 @@ import {
   isReviewDue,
 } from '../data-governance/evaluator';
 
-const STORAGE_KEY = 'sms_superadmin_dev_store_v2_p04';
+const STORAGE_KEY = 'sms_superadmin_dev_store_v3_p05';
 
 export interface ModuleRegistryMetrics {
   totalModules: number;
@@ -392,6 +422,10 @@ export interface PlatformMetrics {
   overduePrivacyRequestsCount: number;
   policiesDueForReviewCount: number;
   uncoveredCategoriesCount: number;
+  pendingApprovalsCount?: number;
+  openExceptionsCount?: number;
+  awaitingActivationOrganizations?: number;
+  cancellationPendingOrganizations?: number;
 }
 
 export class PlatformStore {
@@ -457,12 +491,15 @@ export class PlatformStore {
   private lifecycleRules: DataLifecycleRuleRecord[];
   private governanceExceptions: GovernanceExceptionRecord[];
   private governanceAuditLogs: GovernanceAuditRecord[];
+  private platformApprovals: PlatformApprovalRequest[];
+  private platformNotices: PlatformNotice[];
+  private explicitOperationalExceptions: OperationalExceptionRecord[];
   private listeners: Set<() => void> = new Set();
 
   constructor() {
-    this.organizations = structuredClone(INITIAL_ORGANIZATIONS);
+    this.organizations = structuredClone([...INITIAL_ORGANIZATIONS, ...EXTENDED_P05_ORGANIZATIONS]);
     this.plans = structuredClone(INITIAL_PLANS);
-    this.subscriptions = structuredClone(INITIAL_SUBSCRIPTIONS);
+    this.subscriptions = structuredClone([...INITIAL_SUBSCRIPTIONS, ...EXTENDED_P05_SUBSCRIPTIONS]);
     this.invoices = structuredClone(INITIAL_INVOICES);
     this.payments = structuredClone(INITIAL_PAYMENTS);
     this.platformUsers = structuredClone(INITIAL_PLATFORM_USERS);
@@ -488,7 +525,7 @@ export class PlatformStore {
     this.settings = structuredClone(INITIAL_PLATFORM_SETTINGS);
     this.modules = structuredClone(MASTER_MODULE_REGISTRY);
     this.organizationOverrides = structuredClone(INITIAL_ORGANIZATION_OVERRIDES);
-    this.campuses = structuredClone(INITIAL_CAMPUSES);
+    this.campuses = structuredClone([...INITIAL_CAMPUSES, ...EXTENDED_P05_CAMPUSES]);
     this.discounts = structuredClone(INITIAL_DISCOUNT_POLICIES);
     this.lifecycleEvents = structuredClone(INITIAL_LIFECYCLE_EVENTS);
     this.simulatedEvents = [];
@@ -522,6 +559,9 @@ export class PlatformStore {
     this.lifecycleRules = structuredClone(INITIAL_LIFECYCLE_RULES);
     this.governanceExceptions = structuredClone(INITIAL_GOVERNANCE_EXCEPTIONS);
     this.governanceAuditLogs = structuredClone(INITIAL_GOVERNANCE_AUDIT_LOGS);
+    this.platformApprovals = structuredClone(INITIAL_PLATFORM_APPROVALS);
+    this.platformNotices = structuredClone(INITIAL_PLATFORM_NOTICES);
+    this.explicitOperationalExceptions = structuredClone(INITIAL_EXPLICIT_EXCEPTIONS);
 
     // Seed integration audit events if not present
     for (const event of INITIAL_INTEGRATION_AUDIT_EVENTS) {
@@ -603,6 +643,11 @@ export class PlatformStore {
         if (Array.isArray(parsed.lifecycleRules)) this.lifecycleRules = parsed.lifecycleRules;
         if (Array.isArray(parsed.governanceExceptions)) this.governanceExceptions = parsed.governanceExceptions;
         if (Array.isArray(parsed.governanceAuditLogs)) this.governanceAuditLogs = parsed.governanceAuditLogs;
+        if (Array.isArray(parsed.platformApprovals)) this.platformApprovals = parsed.platformApprovals;
+        if (Array.isArray(parsed.platformNotices)) this.platformNotices = parsed.platformNotices;
+        if (Array.isArray(parsed.explicitOperationalExceptions)) {
+          this.explicitOperationalExceptions = parsed.explicitOperationalExceptions;
+        }
         if (parsed.notificationPreferenceGovernance && typeof parsed.notificationPreferenceGovernance === 'object') {
           this.notificationPreferenceGovernance = { ...NOTIFICATION_PREFERENCE_GOVERNANCE, ...parsed.notificationPreferenceGovernance };
         }
@@ -745,6 +790,9 @@ export class PlatformStore {
           lifecycleRules: this.lifecycleRules,
           governanceExceptions: this.governanceExceptions,
           governanceAuditLogs: this.governanceAuditLogs,
+          platformApprovals: this.platformApprovals,
+          platformNotices: this.platformNotices,
+          explicitOperationalExceptions: this.explicitOperationalExceptions,
         })
       );
     } catch {
@@ -895,13 +943,30 @@ export class PlatformStore {
 
   public getMetrics(): PlatformMetrics {
     const total = this.organizations.length;
-    const active = this.organizations.filter((o) => o.status === 'active').length;
-    const pending = this.organizations.filter((o) => o.status === 'pending').length;
-    const suspended = this.organizations.filter((o) => o.status === 'suspended').length;
-    const inactive = this.organizations.filter((o) => o.status === 'inactive').length;
-    const trial = this.subscriptions.filter((s) => s.status === 'trialing').length;
+    const normalized = this.organizations.map((o) => normalizeTenantLifecycleStatus(o.status));
+    const active = normalized.filter((s) => s === 'active').length;
+    const pending = normalized.filter(
+      (s) => s === 'registration_pending' || s === 'draft'
+    ).length;
+    const suspended = normalized.filter((s) => s === 'suspended').length;
+    const inactive = normalized.filter(
+      (s) => s === 'awaiting_configuration' || s === 'cancelled' || s === 'archived' || s === 'closed'
+    ).length;
+    const awaitingActivationOrganizations = normalized.filter((s) => s === 'awaiting_activation').length;
+    const cancellationPendingOrganizations = normalized.filter((s) => s === 'cancellation_pending').length;
+    const trial = this.organizations.filter(
+      (o) => normalizeTenantLifecycleStatus(o.status) === 'trial'
+    ).length || this.subscriptions.filter((s) => s.status === 'trialing').length;
 
-    const inProgress = this.organizations.filter((o) => o.onboardingStatus === 'in_progress' || o.onboardingStatus === 'verification_pending').length;
+    const inProgress = this.organizations.filter((o) => {
+      const s = normalizeTenantLifecycleStatus(o.status);
+      return (
+        s === 'onboarding_in_progress' ||
+        s === 'awaiting_configuration' ||
+        o.onboardingStatus === 'in_progress' ||
+        o.onboardingStatus === 'verification_pending'
+      );
+    }).length;
     const completed = this.organizations.filter((o) => o.onboardingStatus === 'completed').length;
 
     const colors: Record<string, string> = {
@@ -942,7 +1007,7 @@ export class PlatformStore {
     const totalCampuses = this.campuses.length;
     const activeCampuses = this.campuses.filter((c) => c.status === 'active').length;
 
-    const openStatuses = new Set(['new', 'open', 'in_progress', 'awaiting_tenant', 'awaiting_internal', 'escalated']);
+    const openStatuses = new Set(['new', 'open', 'assigned', 'in_progress', 'awaiting_tenant', 'awaiting_internal', 'escalated', 'reopened']);
     const openTicketsCount = (this.supportTickets || []).filter((t) => openStatuses.has(t.status)).length;
     const urgentTicketsCount = (this.supportTickets || []).filter((t) => openStatuses.has(t.status) && t.priority === 'urgent').length;
     const slaAtRiskTicketsCount = (this.supportTickets || []).filter((t) => openStatuses.has(t.status) && t.slaState === 'approaching_target').length;
@@ -988,12 +1053,19 @@ export class PlatformStore {
       ).length,
       policiesDueForReviewCount: (this.governanceRetentionPolicies || []).filter((p) => isReviewDue(p.nextReviewDueAt)).length,
       uncoveredCategoriesCount: (this.dataCategories || []).filter((c) => !c.retentionPolicyId).length,
+      pendingApprovalsCount: (this.platformApprovals || []).filter((a) => a.status === 'pending_review').length,
+      openExceptionsCount: this.getOperationalExceptions().filter((e) => e.status !== 'resolved' && e.status !== 'dismissed').length,
+      awaitingActivationOrganizations,
+      cancellationPendingOrganizations,
     };
   }
 
   // --- Mutations (Development State with Validation & Audit Events) ---
 
-  public createOrganization(input: CreateOrganizationInput): { success: boolean; organization?: Organization; error?: string } {
+  public createOrganization(
+    input: CreateOrganizationInput,
+    actor?: { id: string; name: string; email: string; role: string }
+  ): { success: boolean; organization?: Organization; error?: string } {
     // 1. Validation
     if (!input.name || input.name.trim().length < 2) {
       return { success: false, error: 'Organization name must be at least 2 characters.' };
@@ -1023,28 +1095,74 @@ export class PlatformStore {
 
     const newId = `org_${Date.now()}`;
     const nowIso = new Date().toISOString();
+    const initialLifecycle = input.initialLifecycleStatus || 'pending';
+    const categories = normalizeSchoolCategories(
+      input.classification,
+      input.institutionCategories
+    );
+    const resolvedActor = actor || {
+      id: 'usr_super_01',
+      name: 'Alexander Sterling',
+      email: 'alexander.s@saas-platform.internal',
+      role: 'super_admin',
+    };
+
+    const selectedPlan = this.plans.find((p) => p.id === input.planId) || this.plans[0];
+    const isTrial =
+      input.startTrial !== undefined
+        ? input.startTrial
+        : this.settings.onboardingPolicy.autoApproveFreeTrials;
+    const isDraft = initialLifecycle === 'draft';
+    const subStatus = isDraft
+      ? 'draft'
+      : isTrial
+      ? 'trialing'
+      : 'active';
+    const paymentStatus = isDraft
+      ? 'unbilled'
+      : isTrial
+      ? 'trial_no_charge'
+      : 'pending';
 
     const newOrg: Organization = {
       id: newId,
       code: cleanCode,
       name: input.name.trim(),
+      legalName: input.legalName?.trim() || undefined,
+      organizationType: input.organizationType || 'private',
       classification: input.classification,
-      status: 'pending',
-      onboardingStatus: 'completed',
-      planId: input.planId,
+      institutionCategories: categories,
+      status: initialLifecycle,
+      onboardingStatus: isDraft ? 'not_started' : 'in_progress',
+      provisioningStatus: isDraft ? 'not_started' : 'ready_for_review',
+      subscriptionStatus: subStatus,
+      paymentStatus,
+      planId: selectedPlan.id,
       subdomain: cleanSubdomain,
       createdAt: nowIso,
       updatedAt: nowIso,
       contact: input.contact,
       administrator: input.administrator,
       technicalConfig: input.technicalConfig,
+      stats: {
+        campusesCount: 1,
+        studentsCount: 0,
+        staffCount: 0,
+        storageUsedGb: 0,
+      },
+      academicSetup: {
+        sessionsCount: 0,
+        termsCount: 0,
+        classesOrProgrammesCount: 0,
+        subjectsOrModulesCount: 0,
+        staffSetupCount: 0,
+        hasBranding: false,
+        settingsReviewed: false,
+      },
       notes: input.notes,
     };
 
-    // Create matching subscription
-    const selectedPlan = this.plans.find((p) => p.id === input.planId) || this.plans[0];
     const subId = `sub_${Date.now()}`;
-    const isTrial = this.settings.onboardingPolicy.autoApproveFreeTrials;
     const periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
     const newSub: OrganizationSubscription = {
@@ -1052,65 +1170,13 @@ export class PlatformStore {
       organizationId: newId,
       planId: selectedPlan.id,
       billingCycle: input.billingCycle,
-      status: isTrial ? 'trialing' : 'active',
+      status: subStatus,
       currentPeriodStart: nowIso,
       currentPeriodEnd: periodEnd,
       cancelAtPeriodEnd: false,
       trialStartDate: isTrial ? nowIso : undefined,
       trialEndDate: isTrial ? periodEnd : undefined,
       updatedAt: nowIso,
-    };
-
-    // Create initial invoice
-    const invId = `inv_${Date.now()}`;
-    const amount = input.billingCycle === 'annual' ? selectedPlan.priceAnnual : selectedPlan.priceMonthly;
-    const newInvoice: Invoice = {
-      id: invId,
-      invoiceNumber: `INV-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
-      organizationId: newId,
-      subscriptionId: subId,
-      amountDue: amount,
-      amountPaid: 0,
-      currency: selectedPlan.currency,
-      status: 'issued',
-      issueDate: nowIso,
-      dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
-      lineItems: [
-        {
-          id: `li_${Date.now()}`,
-          description: `${selectedPlan.name} Subscription (${input.billingCycle === 'annual' ? 'Annual' : 'Monthly'})`,
-          quantity: 1,
-          unitAmount: amount,
-          totalAmount: amount,
-        },
-      ],
-      notes: 'Initial registration onboarding invoice',
-    };
-
-    // Record audit event
-    const auditEvent: AuditEvent = {
-      id: `audit_${Date.now()}`,
-      timestamp: nowIso,
-      category: 'organization_lifecycle',
-      action: 'ORGANIZATION_REGISTERED',
-      severity: 'info',
-      actor: {
-        id: 'usr_super_01',
-        name: 'Alexander Sterling',
-        email: 'alexander.s@saas-platform.internal',
-        role: 'super_admin',
-      },
-      targetEntity: 'Organization',
-      targetId: newId,
-      targetName: newOrg.name,
-      status: 'succeeded',
-      details: `Registered organization "${newOrg.name}" with code ${newOrg.code} on plan "${selectedPlan.name}".`,
-      metadata: {
-        code: newOrg.code,
-        subdomain: newOrg.subdomain,
-        planId: selectedPlan.id,
-        classification: newOrg.classification,
-      },
     };
 
     const initialCampusName = input.initialCampus?.name || `${newOrg.name} Main Campus`;
@@ -1121,8 +1187,8 @@ export class PlatformStore {
       name: initialCampusName,
       code: initialCampusCode,
       isMainCampus: true,
-      type: 'main',
-      status: 'active',
+      type: input.initialCampus?.type || 'main',
+      status: isDraft ? 'planned' : 'active',
       address: {
         street: input.initialCampus?.street || input.contact.address || '',
         city: input.initialCampus?.city || input.contact.city || '',
@@ -1138,19 +1204,69 @@ export class PlatformStore {
       updatedAt: nowIso,
     };
 
-    newOrg.provisioningStatus = 'ready_for_review';
-
     this.organizations.unshift(newOrg);
     this.campuses.unshift(initialCampus);
     this.subscriptions.unshift(newSub);
-    this.invoices.unshift(newInvoice);
-    this.auditEvents.unshift(auditEvent);
+
+    if (!isDraft) {
+      const invId = `inv_${Date.now()}`;
+      const amount = input.billingCycle === 'annual' ? selectedPlan.priceAnnual : selectedPlan.priceMonthly;
+      const newInvoice: Invoice = {
+        id: invId,
+        invoiceNumber: `INV-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+        organizationId: newId,
+        subscriptionId: subId,
+        amountDue: amount,
+        amountPaid: 0,
+        currency: selectedPlan.currency,
+        status: 'issued',
+        issueDate: nowIso,
+        dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+        lineItems: [
+          {
+            id: `li_${Date.now()}`,
+            description: `${selectedPlan.name} Subscription (${input.billingCycle === 'annual' ? 'Annual' : 'Monthly'})`,
+            quantity: 1,
+            unitAmount: amount,
+            totalAmount: amount,
+          },
+        ],
+        notes: 'Initial registration onboarding invoice (simulated)',
+      };
+      this.invoices.unshift(newInvoice);
+    }
+
+    this.auditEvents.unshift({
+      id: `audit_${Date.now()}`,
+      timestamp: nowIso,
+      category: 'organization_lifecycle',
+      action: isDraft ? 'ORGANIZATION_DRAFT_SAVED' : 'ORGANIZATION_REGISTERED',
+      severity: 'info',
+      actor: resolvedActor,
+      targetEntity: 'Organization',
+      targetId: newId,
+      targetName: newOrg.name,
+      status: 'succeeded',
+      details: `${isDraft ? 'Saved registration draft' : 'Submitted simulated registration'} for "${newOrg.name}" (${newOrg.code}) on plan "${selectedPlan.name}".`,
+      metadata: {
+        code: newOrg.code,
+        subdomain: newOrg.subdomain,
+        planId: selectedPlan.id,
+        classification: newOrg.classification,
+        institutionCategories: categories.join(','),
+        initialLifecycleStatus: initialLifecycle,
+      },
+    });
 
     this.persist();
     return { success: true, organization: newOrg };
   }
 
-  public updateOrganization(id: string, input: UpdateOrganizationInput): { success: boolean; organization?: Organization; error?: string } {
+  public updateOrganization(
+    id: string,
+    input: UpdateOrganizationInput,
+    actor?: { id: string; name: string; email: string; role: string }
+  ): { success: boolean; organization?: Organization; error?: string } {
     const orgIndex = this.organizations.findIndex((o) => o.id === id);
     if (orgIndex === -1) {
       return { success: false, error: 'Organization not found.' };
@@ -1162,9 +1278,15 @@ export class PlatformStore {
     const updated: Organization = {
       ...current,
       name: input.name !== undefined ? input.name.trim() : current.name,
+      legalName: input.legalName !== undefined ? input.legalName.trim() : current.legalName,
+      organizationType: input.organizationType || current.organizationType,
       classification: input.classification || current.classification,
+      institutionCategories: input.institutionCategories || current.institutionCategories,
       status: input.status || current.status,
       onboardingStatus: input.onboardingStatus || current.onboardingStatus,
+      provisioningStatus: input.provisioningStatus || current.provisioningStatus,
+      subscriptionStatus: input.subscriptionStatus || current.subscriptionStatus,
+      paymentStatus: input.paymentStatus || current.paymentStatus,
       planId: input.planId || current.planId,
       notes: input.notes !== undefined ? input.notes : current.notes,
       contact: {
@@ -1179,6 +1301,19 @@ export class PlatformStore {
         ...current.technicalConfig,
         ...(input.technicalConfig || {}),
       },
+      academicSetup: input.academicSetup
+        ? {
+            sessionsCount: current.academicSetup?.sessionsCount ?? 0,
+            termsCount: current.academicSetup?.termsCount ?? 0,
+            classesOrProgrammesCount: current.academicSetup?.classesOrProgrammesCount ?? 0,
+            subjectsOrModulesCount: current.academicSetup?.subjectsOrModulesCount ?? 0,
+            staffSetupCount: current.academicSetup?.staffSetupCount ?? 0,
+            hasBranding: current.academicSetup?.hasBranding,
+            settingsReviewed: current.academicSetup?.settingsReviewed,
+            skippedItemIds: current.academicSetup?.skippedItemIds,
+            ...input.academicSetup,
+          }
+        : current.academicSetup,
       updatedAt: nowIso,
     };
 
@@ -1191,7 +1326,7 @@ export class PlatformStore {
       category: 'organization_lifecycle',
       action: 'ORGANIZATION_UPDATED',
       severity: 'info',
-      actor: {
+      actor: actor || {
         id: 'usr_super_01',
         name: 'Alexander Sterling',
         email: 'alexander.s@saas-platform.internal',
@@ -1208,25 +1343,76 @@ export class PlatformStore {
     return { success: true, organization: updated };
   }
 
-  public setOrganizationStatus(id: string, status: OrganizationLifecycleStatus, reason?: string): { success: boolean; error?: string } {
+  public setOrganizationStatus(
+    id: string,
+    status: OrganizationLifecycleStatus,
+    reason?: string,
+    options?: {
+      confirmationCode?: string;
+      cancellationEffectiveAt?: string;
+      actorPermissions?: string[];
+      actor?: { id: string; name: string; email: string; role: string };
+    }
+  ): { success: boolean; error?: string } {
     const org = this.organizations.find((o) => o.id === id);
     if (!org) return { success: false, error: 'Organization not found.' };
 
     const oldStatus = org.status;
-    const evalResult = evaluateLifecycleTransition(oldStatus, status, reason);
+    const normalizedTarget = normalizeTenantLifecycleStatus(status);
+    const readiness = this.evaluateOrganizationReadiness(org.id);
+    const sub = this.subscriptions.find((s) => s.organizationId === org.id);
+    const readinessBlockers = readiness.items
+      .filter((item) => item.status === 'incomplete')
+      .map((item) => item.title);
+
+    const evalResult = evaluateLifecycleTransition(oldStatus, status, reason, {
+      readinessHasBlockers: readiness.hasBlockers,
+      readinessBlockers,
+      hasSubscription: Boolean(sub || org.planId),
+      confirmationCode: options?.confirmationCode,
+      expectedConfirmationCode: org.code,
+      actorPermissions: options?.actorPermissions,
+    });
     if (!evalResult.permitted) {
       return { success: false, error: evalResult.error };
     }
 
     const nowIso = new Date().toISOString();
+    const resolvedActor = options?.actor || {
+      id: 'usr_super_01',
+      name: 'Alexander Sterling',
+      email: 'alexander.s@saas-platform.internal',
+      role: 'super_admin',
+    };
+
     org.status = status;
     org.updatedAt = nowIso;
-    if (status === 'suspended') {
+
+    if (normalizedTarget === 'active' || normalizedTarget === 'trial') {
+      org.activatedAt = org.activatedAt || nowIso;
+    }
+    if (normalizedTarget === 'suspended') {
+      org.suspendedAt = nowIso;
+      org.suspendedBy = resolvedActor.name;
       org.suspendedReason = reason;
     }
-    if (status === 'archived') {
+    if (normalizedTarget === 'cancellation_pending') {
+      org.cancellationRequestedAt = nowIso;
+      org.cancellationEffectiveAt =
+        options?.cancellationEffectiveAt ||
+        new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    }
+    if (normalizedTarget === 'cancelled') {
+      org.cancelledAt = nowIso;
+      org.cancelledReason = reason;
+    }
+    if (normalizedTarget === 'archived') {
       org.archivedAt = nowIso;
       org.archivedReason = reason;
+    }
+    if (normalizedTarget === 'closed') {
+      org.closedAt = nowIso;
+      org.closedReason = reason;
     }
 
     this.auditEvents.unshift({
@@ -1234,19 +1420,25 @@ export class PlatformStore {
       timestamp: nowIso,
       category: 'organization_lifecycle',
       action: 'ORGANIZATION_STATUS_CHANGED',
-      severity: status === 'suspended' || status === 'archived' ? 'warning' : 'info',
-      actor: {
-        id: 'usr_super_01',
-        name: 'Alexander Sterling',
-        email: 'alexander.s@saas-platform.internal',
-        role: 'super_admin',
-      },
+      severity:
+        normalizedTarget === 'suspended' ||
+        normalizedTarget === 'archived' ||
+        normalizedTarget === 'cancelled' ||
+        normalizedTarget === 'closed'
+          ? 'warning'
+          : 'info',
+      actor: resolvedActor,
       targetEntity: 'Organization',
       targetId: org.id,
       targetName: org.name,
       status: 'succeeded',
       details: `Lifecycle status transitioned from "${oldStatus}" to "${status}". Reason: ${reason || 'Administrative action'}`,
-      metadata: { previousStatus: oldStatus, newStatus: status, reason },
+      metadata: {
+        previousStatus: oldStatus,
+        newStatus: status,
+        canonicalAction: evalResult.rule?.auditEventAction,
+        reason,
+      },
     });
 
     this.persist();
@@ -2539,18 +2731,41 @@ export class PlatformStore {
     });
   }
 
-  public runSimulatedProvisioning(orgId: string, forceFail?: boolean): { success: boolean; status: ProvisioningStatus; error?: string } {
+  public runSimulatedProvisioning(
+    orgId: string,
+    optionsOrForceFail?:
+      | boolean
+      | {
+          forceFail?: boolean;
+          forceFailStageKey?: ProvisioningStageKey;
+          markForManualReview?: boolean;
+          attempt?: number;
+          actor?: { id: string; name: string; email: string; role: string };
+        }
+  ): { success: boolean; status: ProvisioningStatus; error?: string } {
     const org = this.organizations.find((o) => o.id === orgId);
     if (!org) return { success: false, status: 'simulated_failed', error: 'Organization not found.' };
 
+    const opts =
+      typeof optionsOrForceFail === 'boolean'
+        ? { forceFail: optionsOrForceFail }
+        : optionsOrForceFail || {};
+
     const readiness = this.evaluateOrganizationReadiness(orgId);
     const orgCampuses = this.campuses.filter((c) => c.organizationId === orgId);
+    const plan = this.plans.find((p) => p.id === org.planId);
+    const subscription = this.subscriptions.find((s) => s.organizationId === orgId);
 
     const result = executeSimulatedProvisioning({
       organization: org,
       readiness,
       campuses: orgCampuses,
-      forceFail,
+      plan,
+      subscription,
+      forceFail: opts.forceFail,
+      forceFailStageKey: opts.forceFailStageKey,
+      markForManualReview: opts.markForManualReview,
+      attempt: opts.attempt,
     });
 
     org.provisioningStatus = result.status;
@@ -2568,7 +2783,7 @@ export class PlatformStore {
       category: 'organization_lifecycle',
       action: 'SIMULATED_PROVISIONING_RUN',
       severity: result.success ? 'info' : 'warning',
-      actor: {
+      actor: opts.actor || {
         id: 'usr_super_01',
         name: 'Alexander Sterling',
         email: 'alexander.s@saas-platform.internal',
@@ -2578,11 +2793,13 @@ export class PlatformStore {
       targetId: org.id,
       targetName: org.name,
       status: result.success ? 'succeeded' : 'failed',
-      details: `Executed local provisioning simulation. Status: ${result.status}. Summary: ${result.summary}`,
+      details: `Executed simulated preparation workflow. Status: ${result.status}. Summary: ${result.summary}`,
       metadata: {
         simulatedStatus: result.status,
         eventCount: result.events.length,
-        forceFail: Boolean(forceFail),
+        forceFail: Boolean(opts.forceFail),
+        markForManualReview: Boolean(opts.markForManualReview),
+        failedStageKey: result.failedStageKey,
       },
     });
 
@@ -2603,9 +2820,9 @@ export class PlatformStore {
   }
 
   public resetToDefaults() {
-    this.organizations = structuredClone(INITIAL_ORGANIZATIONS);
+    this.organizations = structuredClone([...INITIAL_ORGANIZATIONS, ...EXTENDED_P05_ORGANIZATIONS]);
     this.plans = structuredClone(INITIAL_PLANS);
-    this.subscriptions = structuredClone(INITIAL_SUBSCRIPTIONS);
+    this.subscriptions = structuredClone([...INITIAL_SUBSCRIPTIONS, ...EXTENDED_P05_SUBSCRIPTIONS]);
     this.invoices = structuredClone(INITIAL_INVOICES);
     this.payments = structuredClone(INITIAL_PAYMENTS);
     this.platformUsers = structuredClone(INITIAL_PLATFORM_USERS);
@@ -2631,7 +2848,7 @@ export class PlatformStore {
     this.settings = structuredClone(INITIAL_PLATFORM_SETTINGS);
     this.modules = structuredClone(MASTER_MODULE_REGISTRY);
     this.organizationOverrides = structuredClone(INITIAL_ORGANIZATION_OVERRIDES);
-    this.campuses = structuredClone(INITIAL_CAMPUSES);
+    this.campuses = structuredClone([...INITIAL_CAMPUSES, ...EXTENDED_P05_CAMPUSES]);
     this.discounts = structuredClone(INITIAL_DISCOUNT_POLICIES);
     this.lifecycleEvents = structuredClone(INITIAL_LIFECYCLE_EVENTS);
     this.simulatedEvents = [];
@@ -2664,6 +2881,10 @@ export class PlatformStore {
     this.privacyRequests = structuredClone(INITIAL_PRIVACY_REQUESTS);
     this.lifecycleRules = structuredClone(INITIAL_LIFECYCLE_RULES);
     this.governanceExceptions = structuredClone(INITIAL_GOVERNANCE_EXCEPTIONS);
+    this.governanceAuditLogs = structuredClone(INITIAL_GOVERNANCE_AUDIT_LOGS);
+    this.platformApprovals = structuredClone(INITIAL_PLATFORM_APPROVALS);
+    this.platformNotices = structuredClone(INITIAL_PLATFORM_NOTICES);
+    this.explicitOperationalExceptions = structuredClone(INITIAL_EXPLICIT_EXCEPTIONS);
 
     if (typeof window !== 'undefined') {
       try {
@@ -5977,6 +6198,7 @@ export class PlatformStore {
   public getSupportTickets(filters?: {
     searchQuery?: string;
     organizationId?: string;
+    campusId?: string;
     status?: SupportTicketStatus;
     priority?: SupportTicketPriority;
     category?: SupportCategoryKey;
@@ -5998,12 +6220,17 @@ export class PlatformStore {
           t.subject.toLowerCase().includes(q) ||
           t.description.toLowerCase().includes(q) ||
           t.requester.name.toLowerCase().includes(q) ||
+          (t.campusName && t.campusName.toLowerCase().includes(q)) ||
           (orgMap.get(t.organizationId) || '').includes(q)
       );
     }
 
     if (filters.organizationId && filters.organizationId !== 'all') {
       result = result.filter((t) => t.organizationId === filters.organizationId);
+    }
+
+    if (filters.campusId && filters.campusId !== 'all') {
+      result = result.filter((t) => t.campusId === filters.campusId);
     }
 
     if (filters.status && (filters.status as string) !== 'all') {
@@ -6047,7 +6274,7 @@ export class PlatformStore {
 
   public createSupportTicket(
     input: CreateSupportTicketInput,
-    actorName: string = 'Alexander Sterling'
+    actorOrName: string | Partial<AuditActor> = 'Alexander Sterling'
   ): { success: boolean; ticket?: SupportTicket; error?: string } {
     const orgIds = this.organizations.map((o) => o.id);
     const validation = validateTicketCreation(input, orgIds);
@@ -6059,8 +6286,16 @@ export class PlatformStore {
     const ticketId = `tck_${nextNum}`;
     const ticketNumber = `TCK-${nextNum}`;
     const now = new Date().toISOString();
+    const actor = this.resolveAuditActor(actorOrName);
 
     const policy = this.slaPolicies.find((p) => p.id === input.slaPolicyId) || this.slaPolicies[0];
+    const campusRecord = input.campusId ? this.campuses.find((c) => c.id === input.campusId) : undefined;
+    const resolvedStatus: SupportTicketStatus =
+      input.initialStatus === 'open'
+        ? 'open'
+        : input.assignedOperatorId
+        ? 'assigned'
+        : 'new';
 
     const initialMessage = {
       id: `msg_${ticketId}_1`,
@@ -6069,9 +6304,13 @@ export class PlatformStore {
       authorName: 'Platform Intake',
       authorRole: 'system' as const,
       type: 'system_event' as const,
-      content: `Ticket created via ${input.source || 'portal'}. Policy "${policy.name}" applied with ${input.priority} priority. (Demonstration state updated; zero external emails sent).`,
+      content: `Ticket created via ${input.source || 'portal'}${campusRecord ? ` for campus ${campusRecord.name}` : ''}. Priority: ${input.priority}. (Frontend demonstration state only; zero external notifications sent).`,
       createdAt: now,
     };
+
+    const assignedOp = input.assignedOperatorId
+      ? this.platformUsers.find((u) => u.id === input.assignedOperatorId)
+      : undefined;
 
     const newTicket: SupportTicket = {
       id: ticketId,
@@ -6079,11 +6318,14 @@ export class PlatformStore {
       subject: input.subject.trim(),
       description: input.description.trim(),
       organizationId: input.organizationId,
+      campusId: input.campusId || null,
+      campusName: input.campusName || campusRecord?.name,
       requester: { ...input.requester },
       category: input.category,
       priority: input.priority,
-      status: 'new',
+      status: resolvedStatus,
       assignedOperatorId: input.assignedOperatorId || null,
+      assignedOperatorName: assignedOp?.name,
       assignedTeamId: input.assignedTeamId || null,
       createdAt: now,
       updatedAt: now,
@@ -6096,22 +6338,22 @@ export class PlatformStore {
       tags: input.tags || [],
       source: input.source || 'portal',
       relatedIncidentId: input.relatedIncidentId || null,
+      attachments: input.attachments || [],
       messages: [initialMessage],
     };
 
     this.supportTickets.unshift(newTicket);
 
     this.logAuditEvent({
-      category: 'organization_lifecycle',
+      category: 'support_operations',
       action: 'SUPPORT_TICKET_CREATED',
       severity: input.priority === 'urgent' ? 'warning' : 'info',
-      actor: {
-        id: 'usr_super_01',
-        name: actorName,
-        email: 'alexander.s@saas-platform.internal',
-        role: 'super_admin',
-        actorType: 'super_admin',
-      },
+      actor,
+      organizationId: newTicket.organizationId,
+      campusId: newTicket.campusId || undefined,
+      campusName: newTicket.campusName,
+      sourceApp: 'super_admin',
+      visibility: 'tenant_visible',
       targetEntity: 'SupportTicket',
       targetId: newTicket.ticketNumber,
       status: 'succeeded',
@@ -6126,12 +6368,13 @@ export class PlatformStore {
   public updateSupportTicket(
     id: string,
     updates: UpdateSupportTicketInput,
-    actorName: string = 'Alexander Sterling'
+    actorOrName: string | Partial<AuditActor> = 'Alexander Sterling'
   ): { success: boolean; ticket?: SupportTicket; error?: string } {
     const idx = this.supportTickets.findIndex((t) => t.id === id || t.ticketNumber === id);
     if (idx === -1) return { success: false, error: `Support ticket "${id}" not found.` };
 
     const prev = this.supportTickets[idx];
+    const actor = this.resolveAuditActor(actorOrName);
     const updated: SupportTicket = {
       ...prev,
       ...updates,
@@ -6141,16 +6384,15 @@ export class PlatformStore {
     this.supportTickets[idx] = updated;
 
     this.logAuditEvent({
-      category: 'organization_lifecycle',
+      category: 'support_operations',
       action: 'SUPPORT_TICKET_UPDATED',
       severity: 'info',
-      actor: {
-        id: 'usr_super_01',
-        name: actorName,
-        email: 'alexander.s@saas-platform.internal',
-        role: 'super_admin',
-        actorType: 'super_admin',
-      },
+      actor,
+      organizationId: prev.organizationId,
+      campusId: prev.campusId || undefined,
+      campusName: prev.campusName,
+      sourceApp: 'super_admin',
+      visibility: 'tenant_visible',
       targetEntity: 'SupportTicket',
       targetId: prev.ticketNumber,
       status: 'succeeded',
@@ -6166,7 +6408,7 @@ export class PlatformStore {
     id: string,
     targetStatus: SupportTicketStatus,
     reason?: string,
-    actorName: string = 'Alexander Sterling'
+    actorOrName: string | Partial<AuditActor> = 'Alexander Sterling'
   ): { success: boolean; ticket?: SupportTicket; error?: string } {
     const idx = this.supportTickets.findIndex((t) => t.id === id || t.ticketNumber === id);
     if (idx === -1) return { success: false, error: `Ticket "${id}" not found.` };
@@ -6178,30 +6420,37 @@ export class PlatformStore {
     }
 
     const now = new Date().toISOString();
+    const actor = this.resolveAuditActor(actorOrName);
     const updated: SupportTicket = {
       ...prev,
       status: targetStatus,
       updatedAt: now,
     };
 
-    if (targetStatus === 'resolved' && !prev.resolvedAt) {
-      updated.resolvedAt = now;
+    if (targetStatus === 'resolved') {
+      updated.resolvedAt = updated.resolvedAt || now;
+      if (reason) updated.resolutionSummary = reason.trim();
     }
 
     if (targetStatus === 'closed' && !prev.closedAt) {
       updated.closedAt = now;
     }
 
-    if (targetStatus === 'open' && (prev.status === 'resolved' || prev.status === 'closed')) {
+    if (
+      (targetStatus === 'open' || targetStatus === 'reopened') &&
+      (prev.status === 'resolved' || prev.status === 'closed')
+    ) {
       updated.resolvedAt = null;
       updated.closedAt = null;
+      updated.reopenedAt = now;
+      updated.reopenCount = (prev.reopenCount || 0) + 1;
     }
 
     const systemMsg = {
       id: `msg_${prev.id}_${Date.now()}`,
       ticketId: prev.id,
-      authorId: 'usr_super_01',
-      authorName: actorName,
+      authorId: actor.id,
+      authorName: actor.name,
       authorRole: 'platform_operator' as const,
       type: 'system_event' as const,
       content: `Status changed from ${prev.status} to ${targetStatus}.${reason ? ` Reason: ${reason}` : ''}`,
@@ -6218,16 +6467,18 @@ export class PlatformStore {
     this.supportTickets[idx] = updated;
 
     this.logAuditEvent({
-      category: 'organization_lifecycle',
+      category: 'support_operations',
       action: 'SUPPORT_TICKET_STATUS_CHANGED',
       severity: targetStatus === 'closed' || targetStatus === 'resolved' ? 'info' : 'warning',
-      actor: {
-        id: 'usr_super_01',
-        name: actorName,
-        email: 'alexander.s@saas-platform.internal',
-        role: 'super_admin',
-        actorType: 'super_admin',
-      },
+      actor,
+      organizationId: prev.organizationId,
+      campusId: prev.campusId || undefined,
+      campusName: prev.campusName,
+      sourceApp: 'super_admin',
+      visibility: 'tenant_visible',
+      reason: reason?.trim(),
+      beforeState: prev.status,
+      afterState: targetStatus,
       targetEntity: 'SupportTicket',
       targetId: prev.ticketNumber,
       status: 'succeeded',
@@ -6244,12 +6495,13 @@ export class PlatformStore {
     operatorId?: string | null,
     teamId?: string | null,
     reason?: string,
-    actorName: string = 'Alexander Sterling'
+    actorOrName: string | Partial<AuditActor> = 'Alexander Sterling'
   ): { success: boolean; ticket?: SupportTicket; error?: string } {
     const idx = this.supportTickets.findIndex((t) => t.id === id || t.ticketNumber === id);
     if (idx === -1) return { success: false, error: `Ticket "${id}" not found.` };
 
     const prev = this.supportTickets[idx];
+    const actor = this.resolveAuditActor(actorOrName);
     let operatorName = 'Unassigned';
     if (operatorId) {
       const op = this.platformUsers.find((u) => u.id === operatorId);
@@ -6265,9 +6517,13 @@ export class PlatformStore {
     }
 
     const now = new Date().toISOString();
+    const shouldMoveToAssigned =
+      Boolean(operatorId) && (prev.status === 'new' || prev.status === 'open' || prev.status === 'reopened');
     const updated: SupportTicket = {
       ...prev,
+      status: shouldMoveToAssigned ? 'assigned' : prev.status,
       assignedOperatorId: operatorId ?? null,
+      assignedOperatorName: operatorId ? operatorName : undefined,
       assignedTeamId: teamId ?? null,
       updatedAt: now,
     };
@@ -6275,8 +6531,8 @@ export class PlatformStore {
     const assignmentMsg = {
       id: `msg_${prev.id}_${Date.now()}`,
       ticketId: prev.id,
-      authorId: 'usr_super_01',
-      authorName: actorName,
+      authorId: actor.id,
+      authorName: actor.name,
       authorRole: 'platform_operator' as const,
       type: 'system_event' as const,
       content: `Ticket assignment updated: Operator: ${operatorName}, Queue: ${teamName}.${reason ? ` Reason: ${reason}` : ''}`,
@@ -6287,16 +6543,16 @@ export class PlatformStore {
     this.supportTickets[idx] = updated;
 
     this.logAuditEvent({
-      category: 'organization_lifecycle',
+      category: 'support_operations',
       action: 'SUPPORT_TICKET_ASSIGNED',
       severity: 'info',
-      actor: {
-        id: 'usr_super_01',
-        name: actorName,
-        email: 'alexander.s@saas-platform.internal',
-        role: 'super_admin',
-        actorType: 'super_admin',
-      },
+      actor,
+      organizationId: prev.organizationId,
+      campusId: prev.campusId || undefined,
+      campusName: prev.campusName,
+      sourceApp: 'super_admin',
+      visibility: 'platform_only',
+      reason: reason?.trim(),
       targetEntity: 'SupportTicket',
       targetId: prev.ticketNumber,
       status: 'succeeded',
@@ -6314,7 +6570,7 @@ export class PlatformStore {
     targetTeamId: string,
     urgencyLevel: 'standard' | 'high' | 'critical' = 'high',
     targetTier: 'tier_2_specialist' | 'tier_3_engineering' | 'executive_management' = 'tier_2_specialist',
-    actorName: string = 'Alexander Sterling'
+    actorOrName: string | Partial<AuditActor> = 'Alexander Sterling'
   ): { success: boolean; ticket?: SupportTicket; error?: string } {
     const idx = this.supportTickets.findIndex((t) => t.id === id || t.ticketNumber === id);
     if (idx === -1) return { success: false, error: `Ticket "${id}" not found.` };
@@ -6327,6 +6583,7 @@ export class PlatformStore {
 
     const prev = this.supportTickets[idx];
     const now = new Date().toISOString();
+    const actor = this.resolveAuditActor(actorOrName);
 
     const targetTeam = this.supportTeams.find((tm) => tm.id === targetTeamId);
     const teamName = targetTeam ? targetTeam.name : targetTeamId;
@@ -6340,7 +6597,7 @@ export class PlatformStore {
       escalation: {
         isEscalated: true,
         escalatedAt: now,
-        escalatedBy: actorName,
+        escalatedBy: actor.name,
         reason: reason.trim(),
         targetTeamId,
         targetTier,
@@ -6352,8 +6609,8 @@ export class PlatformStore {
     const escalationMsg = {
       id: `msg_${prev.id}_${Date.now()}`,
       ticketId: prev.id,
-      authorId: 'usr_super_01',
-      authorName: actorName,
+      authorId: actor.id,
+      authorName: actor.name,
       authorRole: 'platform_operator' as const,
       type: 'system_event' as const,
       content: `Ticket escalated to ${teamName} (${targetTier}, urgency: ${urgencyLevel}). Reason: ${reason.trim()}`,
@@ -6364,16 +6621,16 @@ export class PlatformStore {
     this.supportTickets[idx] = updated;
 
     this.logAuditEvent({
-      category: 'organization_lifecycle',
+      category: 'support_operations',
       action: 'SUPPORT_TICKET_ESCALATED',
       severity: 'warning',
-      actor: {
-        id: 'usr_super_01',
-        name: actorName,
-        email: 'alexander.s@saas-platform.internal',
-        role: 'super_admin',
-        actorType: 'super_admin',
-      },
+      actor,
+      organizationId: prev.organizationId,
+      campusId: prev.campusId || undefined,
+      campusName: prev.campusName,
+      sourceApp: 'super_admin',
+      visibility: 'platform_only',
+      reason: reason.trim(),
       targetEntity: 'SupportTicket',
       targetId: prev.ticketNumber,
       status: 'succeeded',
@@ -6388,7 +6645,7 @@ export class PlatformStore {
   public deescalateSupportTicket(
     id: string,
     notes?: string,
-    actorName: string = 'Alexander Sterling'
+    actorOrName: string | Partial<AuditActor> = 'Alexander Sterling'
   ): { success: boolean; ticket?: SupportTicket; error?: string } {
     const idx = this.supportTickets.findIndex((t) => t.id === id || t.ticketNumber === id);
     if (idx === -1) return { success: false, error: `Ticket "${id}" not found.` };
@@ -6399,6 +6656,7 @@ export class PlatformStore {
     }
 
     const now = new Date().toISOString();
+    const actor = this.resolveAuditActor(actorOrName);
     const updated: SupportTicket = {
       ...prev,
       status: 'in_progress',
@@ -6407,7 +6665,7 @@ export class PlatformStore {
         ...prev.escalation,
         isEscalated: false,
         status: 'deescalated',
-        reviewedBy: actorName,
+        reviewedBy: actor.name,
         reviewedAt: now,
         resolutionNote: notes || 'De-escalated to standard in-progress queue.',
       },
@@ -6416,8 +6674,8 @@ export class PlatformStore {
     const deescalationMsg = {
       id: `msg_${prev.id}_${Date.now()}`,
       ticketId: prev.id,
-      authorId: 'usr_super_01',
-      authorName: actorName,
+      authorId: actor.id,
+      authorName: actor.name,
       authorRole: 'platform_operator' as const,
       type: 'system_event' as const,
       content: `Escalation resolved and de-escalated to in-progress queue.${notes ? ` Note: ${notes}` : ''}`,
@@ -6428,16 +6686,16 @@ export class PlatformStore {
     this.supportTickets[idx] = updated;
 
     this.logAuditEvent({
-      category: 'organization_lifecycle',
+      category: 'support_operations',
       action: 'SUPPORT_TICKET_DEESCALATED',
       severity: 'info',
-      actor: {
-        id: 'usr_super_01',
-        name: actorName,
-        email: 'alexander.s@saas-platform.internal',
-        role: 'super_admin',
-        actorType: 'super_admin',
-      },
+      actor,
+      organizationId: prev.organizationId,
+      campusId: prev.campusId || undefined,
+      campusName: prev.campusName,
+      sourceApp: 'super_admin',
+      visibility: 'platform_only',
+      reason: notes,
       targetEntity: 'SupportTicket',
       targetId: prev.ticketNumber,
       status: 'succeeded',
@@ -6454,7 +6712,7 @@ export class PlatformStore {
     type: 'internal_note' | 'tenant_reply',
     content: string,
     isDraft: boolean = false,
-    actorName: string = 'Alexander Sterling'
+    actorOrName: string | Partial<AuditActor> = 'Alexander Sterling'
   ): { success: boolean; ticket?: SupportTicket; error?: string } {
     const idx = this.supportTickets.findIndex((t) => t.id === ticketId || t.ticketNumber === ticketId);
     if (idx === -1) return { success: false, error: `Ticket "${ticketId}" not found.` };
@@ -6465,14 +6723,16 @@ export class PlatformStore {
 
     const prev = this.supportTickets[idx];
     const now = new Date().toISOString();
+    const actor = this.resolveAuditActor(actorOrName);
 
     const newMsg = {
       id: `msg_${prev.id}_${Date.now()}`,
       ticketId: prev.id,
-      authorId: 'usr_super_01',
-      authorName: actorName,
+      authorId: actor.id,
+      authorName: actor.name,
       authorRole: 'platform_operator' as const,
       type,
+      isInternal: type === 'internal_note',
       content: content.trim(),
       isDraft,
       createdAt: now,
@@ -6496,20 +6756,19 @@ export class PlatformStore {
     this.supportTickets[idx] = updated;
 
     this.logAuditEvent({
-      category: 'organization_lifecycle',
-      action: type === 'internal_note' ? 'SUPPORT_INTERNAL_NOTE_ADDED' : 'SUPPORT_TENANT_REPLY_DRAFTED',
+      category: 'support_operations',
+      action: type === 'internal_note' ? 'SUPPORT_INTERNAL_NOTE_ADDED' : 'SUPPORT_TENANT_REPLY_RECORDED',
       severity: 'info',
-      actor: {
-        id: 'usr_super_01',
-        name: actorName,
-        email: 'alexander.s@saas-platform.internal',
-        role: 'super_admin',
-        actorType: 'super_admin',
-      },
+      actor,
+      organizationId: prev.organizationId,
+      campusId: prev.campusId || undefined,
+      campusName: prev.campusName,
+      sourceApp: 'super_admin',
+      visibility: type === 'internal_note' ? 'platform_only' : 'tenant_visible',
       targetEntity: 'SupportTicket',
       targetId: prev.ticketNumber,
       status: 'succeeded',
-      details: `Added ${type === 'internal_note' ? 'internal note' : 'tenant reply'} to ticket ${prev.ticketNumber} (local demonstration record only).`,
+      details: `Added ${type === 'internal_note' ? 'internal operator note' : 'tenant reply'} to ticket ${prev.ticketNumber} (local demonstration record only).`,
     });
 
     this.persist();
@@ -6985,7 +7244,7 @@ export class PlatformStore {
 
   public createCsTask(
     input: CreateCsTaskInput,
-    actorName: string = 'Alexander Sterling'
+    actorOrName: string | Partial<AuditActor> = 'Alexander Sterling'
   ): { success: boolean; task?: CustomerSuccessTask; error?: string } {
     const orgIds = this.organizations.map((o) => o.id);
     const validation = validateCsTask(input, orgIds);
@@ -6994,6 +7253,7 @@ export class PlatformStore {
     }
 
     const id = `cst_${Date.now()}`;
+    const actor = this.resolveAuditActor(actorOrName);
     const newTask: CustomerSuccessTask = {
       id,
       title: input.title.trim(),
@@ -7010,20 +7270,17 @@ export class PlatformStore {
     this.csTasks.unshift(newTask);
 
     this.logAuditEvent({
-      category: 'organization_lifecycle',
+      category: 'support_operations',
       action: 'CUSTOMER_SUCCESS_TASK_CREATED',
       severity: 'info',
-      actor: {
-        id: 'usr_super_01',
-        name: actorName,
-        email: 'alexander.s@saas-platform.internal',
-        role: 'super_admin',
-        actorType: 'super_admin',
-      },
+      actor,
+      organizationId: newTask.organizationId,
+      sourceApp: 'super_admin',
+      visibility: 'platform_only',
       targetEntity: 'CustomerSuccessTask',
       targetId: newTask.id,
       status: 'succeeded',
-      details: `Created customer success task "${newTask.title}" for organization ${newTask.organizationId}.`,
+      details: `Created platform follow-up task "${newTask.title}" for organization ${newTask.organizationId}.`,
     });
 
     this.persist();
@@ -7034,30 +7291,28 @@ export class PlatformStore {
   public updateCsTask(
     id: string,
     updates: Partial<CustomerSuccessTask>,
-    actorName: string = 'Alexander Sterling'
+    actorOrName: string | Partial<AuditActor> = 'Alexander Sterling'
   ): { success: boolean; task?: CustomerSuccessTask; error?: string } {
     const idx = this.csTasks.findIndex((t) => t.id === id);
     if (idx === -1) return { success: false, error: `Task "${id}" not found.` };
 
     const prev = this.csTasks[idx];
+    const actor = this.resolveAuditActor(actorOrName);
     const updated: CustomerSuccessTask = { ...prev, ...updates };
     this.csTasks[idx] = updated;
 
     this.logAuditEvent({
-      category: 'organization_lifecycle',
+      category: 'support_operations',
       action: 'CUSTOMER_SUCCESS_TASK_UPDATED',
       severity: 'info',
-      actor: {
-        id: 'usr_super_01',
-        name: actorName,
-        email: 'alexander.s@saas-platform.internal',
-        role: 'super_admin',
-        actorType: 'super_admin',
-      },
+      actor,
+      organizationId: prev.organizationId,
+      sourceApp: 'super_admin',
+      visibility: 'platform_only',
       targetEntity: 'CustomerSuccessTask',
       targetId: prev.id,
       status: 'succeeded',
-      details: `Updated customer success task "${prev.title}".`,
+      details: `Updated platform task "${prev.title}".`,
     });
 
     this.persist();
@@ -7067,15 +7322,16 @@ export class PlatformStore {
 
   public setCsTaskStatus(
     id: string,
-    status: 'pending' | 'in_progress' | 'completed' | 'cancelled',
+    status: CustomerSuccessTask['status'],
     notes?: string,
-    actorName: string = 'Alexander Sterling'
+    actorOrName: string | Partial<AuditActor> = 'Alexander Sterling'
   ): { success: boolean; task?: CustomerSuccessTask; error?: string } {
     const idx = this.csTasks.findIndex((t) => t.id === id);
     if (idx === -1) return { success: false, error: `Task "${id}" not found.` };
 
     const prev = this.csTasks[idx];
     const now = new Date().toISOString();
+    const actor = this.resolveAuditActor(actorOrName);
     prev.status = status;
     if (status === 'completed') {
       prev.completedAt = now;
@@ -7085,20 +7341,18 @@ export class PlatformStore {
     }
 
     this.logAuditEvent({
-      category: 'organization_lifecycle',
+      category: 'support_operations',
       action: 'CUSTOMER_SUCCESS_TASK_STATUS_CHANGED',
       severity: 'info',
-      actor: {
-        id: 'usr_super_01',
-        name: actorName,
-        email: 'alexander.s@saas-platform.internal',
-        role: 'super_admin',
-        actorType: 'super_admin',
-      },
+      actor,
+      organizationId: prev.organizationId,
+      sourceApp: 'super_admin',
+      visibility: 'platform_only',
+      reason: notes,
       targetEntity: 'CustomerSuccessTask',
       targetId: prev.id,
       status: 'succeeded',
-      details: `Customer success task "${prev.title}" marked as ${status}.${notes ? ` Notes: ${notes}` : ''}`,
+      details: `Platform task "${prev.title}" marked as ${status}.${notes ? ` Notes: ${notes}` : ''}`,
     });
 
     this.persist();
@@ -8517,6 +8771,482 @@ export class PlatformStore {
     }
 
     return filtered;
+  }
+
+  // =========================================================================
+  // P0-6: OPERATIONS OVERVIEW, APPROVALS, EXCEPTIONS & PLATFORM NOTICES
+  // =========================================================================
+
+  private resolveAuditActor(actorOrName?: string | Partial<AuditActor>): AuditActor {
+    if (actorOrName && typeof actorOrName === 'object') {
+      return {
+        id: actorOrName.id || 'usr_super_01',
+        name: actorOrName.name || 'Platform Operator',
+        email: actorOrName.email || 'ops@saas-platform.internal',
+        role: actorOrName.role || 'platform_operator',
+        actorType:
+          (actorOrName.actorType as AuditActor['actorType']) ||
+          (actorOrName.role === 'super_admin'
+            ? 'super_admin'
+            : actorOrName.role === 'support_lead'
+            ? 'support_lead'
+            : actorOrName.role === 'compliance_auditor'
+            ? 'compliance_auditor'
+            : 'platform_operator'),
+      };
+    }
+
+    const nameStr = typeof actorOrName === 'string' && actorOrName.trim() ? actorOrName.trim() : 'Alexander Sterling';
+    const matched = this.platformUsers.find(
+      (u) => u.name.toLowerCase() === nameStr.toLowerCase() || u.id === nameStr
+    );
+    if (matched) {
+      return {
+        id: matched.id,
+        name: matched.name,
+        email: matched.email,
+        role: matched.role,
+        actorType:
+          matched.role === 'super_admin'
+            ? 'super_admin'
+            : matched.role === 'support_lead'
+            ? 'support_lead'
+            : matched.role === 'compliance_auditor'
+            ? 'compliance_auditor'
+            : 'platform_operator',
+      };
+    }
+    return {
+      id: 'usr_super_01',
+      name: nameStr,
+      email: 'alexander.s@saas-platform.internal',
+      role: 'super_admin',
+      actorType: 'super_admin',
+    };
+  }
+
+  public getOperationalOverview(): {
+    overview: PlatformOperationalOverviewMetrics;
+    queues: Record<OperationalQueueId, OperationalQueueItem[]>;
+  } {
+    const exceptions = this.getOperationalExceptions();
+    return computePlatformOperationalOverview({
+      organizations: this.organizations,
+      campuses: this.campuses,
+      subscriptions: this.subscriptions,
+      invoices: this.invoices,
+      plans: this.plans,
+      supportTickets: this.supportTickets,
+      approvals: this.platformApprovals,
+      exceptions,
+    });
+  }
+
+  public getPlatformApprovals(): PlatformApprovalRequest[] {
+    return [...this.platformApprovals];
+  }
+
+  public createApprovalRequest(
+    input: {
+      type: PlatformApprovalType;
+      title: string;
+      description: string;
+      organizationId?: string;
+      campusId?: string;
+      linkedTicketId?: string;
+      linkedTaskId?: string;
+      linkedExceptionId?: string;
+      targetEntityType: string;
+      targetEntityId: string;
+      requestedActionLabel: string;
+      priority: 'low' | 'normal' | 'high' | 'urgent';
+      dueAt?: string;
+    },
+    actorOrName: string | Partial<AuditActor>
+  ): { success: boolean; approval?: PlatformApprovalRequest; error?: string } {
+    if (!input.title || input.title.trim().length < 5) {
+      return { success: false, error: 'Approval request title must be at least 5 characters.' };
+    }
+    const actor = this.resolveAuditActor(actorOrName);
+    const org = input.organizationId
+      ? this.organizations.find((o) => o.id === input.organizationId)
+      : undefined;
+    const campus = input.campusId ? this.campuses.find((c) => c.id === input.campusId) : undefined;
+    const now = new Date().toISOString();
+    const seq = 100 + this.platformApprovals.length + 1;
+
+    const record: PlatformApprovalRequest = {
+      id: `apr_${Date.now().toString(36)}`,
+      referenceCode: `APR-2026-${seq}`,
+      type: input.type,
+      title: input.title.trim(),
+      description: input.description.trim(),
+      organizationId: org?.id || input.organizationId,
+      organizationName: org?.name,
+      campusId: campus?.id || input.campusId,
+      campusName: campus?.name,
+      linkedTicketId: input.linkedTicketId,
+      linkedTaskId: input.linkedTaskId,
+      linkedExceptionId: input.linkedExceptionId,
+      targetEntityType: input.targetEntityType,
+      targetEntityId: input.targetEntityId,
+      requestedActionLabel: input.requestedActionLabel,
+      priority: input.priority,
+      status: 'pending_review',
+      requestedBy: {
+        id: actor.id,
+        name: actor.name,
+        role: actor.role,
+      },
+      requestedAt: now,
+      dueAt: input.dueAt,
+      isSimulation: true,
+    };
+
+    this.platformApprovals.unshift(record);
+
+    this.logAuditEvent({
+      category: 'administrative_approvals',
+      action: 'APPROVAL_REQUEST_SUBMITTED',
+      severity: input.priority === 'urgent' ? 'warning' : 'info',
+      actor,
+      organizationId: record.organizationId,
+      campusId: record.campusId,
+      campusName: record.campusName,
+      sourceApp: 'super_admin',
+      visibility: 'platform_only',
+      targetEntity: 'PlatformApprovalRequest',
+      targetId: record.referenceCode,
+      targetName: record.title,
+      status: 'succeeded',
+      details: `Submitted approval request ${record.referenceCode} (${record.requestedActionLabel}).`,
+    });
+
+    this.persist();
+    return { success: true, approval: record };
+  }
+
+  public reviewApprovalRequest(
+    approvalId: string,
+    decision: 'approved' | 'rejected' | 'cancelled',
+    reviewerInput: string | Partial<AuditActor>,
+    notes?: string
+  ): { success: boolean; approval?: PlatformApprovalRequest; error?: string } {
+    const idx = this.platformApprovals.findIndex(
+      (a) => a.id === approvalId || a.referenceCode === approvalId
+    );
+    if (idx === -1) {
+      return { success: false, error: `Approval request "${approvalId}" not found.` };
+    }
+
+    const req = this.platformApprovals[idx];
+    const reviewer = this.resolveAuditActor(reviewerInput);
+    const check = evaluateApprovalDecision(req, decision, reviewer, notes);
+    if (!check.permitted) {
+      this.logAuditEvent({
+        category: 'administrative_approvals',
+        action: 'APPROVAL_DECISION_BLOCKED',
+        severity: 'warning',
+        actor: reviewer,
+        organizationId: req.organizationId,
+        sourceApp: 'super_admin',
+        visibility: 'platform_only',
+        reason: check.error,
+        targetEntity: 'PlatformApprovalRequest',
+        targetId: req.referenceCode,
+        status: 'rejected',
+        details: `Blocked ${decision} decision on ${req.referenceCode}: ${check.error}`,
+      });
+      this.persist();
+      return { success: false, error: check.error };
+    }
+
+    const now = new Date().toISOString();
+    const updated: PlatformApprovalRequest = {
+      ...req,
+      status: decision,
+      reviewedBy: {
+        id: reviewer.id,
+        name: reviewer.name,
+        role: reviewer.role,
+      },
+      reviewedAt: now,
+      decisionNotes: notes?.trim(),
+    };
+    this.platformApprovals[idx] = updated;
+
+    // If this approval corresponds to a PlatformNotice, synchronize its notice approval metadata
+    if (req.targetEntityType === 'PlatformNotice') {
+      const noticeIdx = this.platformNotices.findIndex((n) => n.id === req.targetEntityId);
+      if (noticeIdx !== -1) {
+        const notice = this.platformNotices[noticeIdx];
+        if (decision === 'approved') {
+          notice.approvalStatus = 'approved';
+          notice.approvedByName = reviewer.name;
+          notice.status = 'scheduled_simulated';
+        } else if (decision === 'rejected') {
+          notice.approvalStatus = 'rejected';
+          notice.status = 'draft';
+        }
+      }
+    }
+
+    this.logAuditEvent({
+      category: 'administrative_approvals',
+      action:
+        decision === 'approved'
+          ? 'APPROVAL_REQUEST_APPROVED'
+          : decision === 'rejected'
+          ? 'APPROVAL_REQUEST_REJECTED'
+          : 'APPROVAL_REQUEST_CANCELLED',
+      severity: decision === 'approved' ? 'warning' : 'info',
+      actor: reviewer,
+      organizationId: req.organizationId,
+      campusId: req.campusId,
+      campusName: req.campusName,
+      sourceApp: 'super_admin',
+      visibility: 'platform_only',
+      reason: notes?.trim(),
+      beforeState: req.status,
+      afterState: decision,
+      targetEntity: 'PlatformApprovalRequest',
+      targetId: req.referenceCode,
+      targetName: req.title,
+      status: 'succeeded',
+      details: `${decision.toUpperCase()} governance request ${req.referenceCode}.${notes ? ` Rationale: ${notes.trim()}` : ''}`,
+    });
+
+    this.persist();
+    return { success: true, approval: updated };
+  }
+
+  public getPlatformNotices(): PlatformNotice[] {
+    return [...this.platformNotices];
+  }
+
+  public createPlatformNotice(
+    input: {
+      title: string;
+      summary: string;
+      body: string;
+      category: PlatformNotice['category'];
+      severity: PlatformNotice['severity'];
+      audience: PlatformNotice['audience'];
+      targetOrganizationIds?: string[];
+      targetPlanIds?: string[];
+      targetCampusIds?: string[];
+      channelSimulations?: PlatformNotice['channelSimulations'];
+      requiresApproval?: boolean;
+      scheduledFor?: string;
+      expiresAt?: string;
+    },
+    actorOrName: string | Partial<AuditActor>
+  ): { success: boolean; notice?: PlatformNotice; error?: string } {
+    if (!input.title || input.title.trim().length < 4) {
+      return { success: false, error: 'Notice title must be at least 4 characters.' };
+    }
+    if (!input.body || input.body.trim().length < 10) {
+      return { success: false, error: 'Notice body must be at least 10 characters.' };
+    }
+    if (input.audience === 'selected_tenants' && (!input.targetOrganizationIds || input.targetOrganizationIds.length === 0)) {
+      return { success: false, error: 'At least one target organization must be selected for selected_tenants audience.' };
+    }
+    if (input.audience === 'plan_tiers' && (!input.targetPlanIds || input.targetPlanIds.length === 0)) {
+      return { success: false, error: 'At least one target subscription plan must be selected for plan_tiers audience.' };
+    }
+
+    const actor = this.resolveAuditActor(actorOrName);
+    const now = new Date().toISOString();
+    const id = `ntc_${Date.now().toString(36)}`;
+    const seq = 100 + this.platformNotices.length + 1;
+    const notice: PlatformNotice = {
+      id,
+      referenceCode: `NTC-2026-${seq}`,
+      title: input.title.trim(),
+      summary: input.summary.trim() || input.title.trim(),
+      body: input.body.trim(),
+      category: input.category,
+      severity: input.severity,
+      status: input.requiresApproval ? 'pending_approval' : 'draft',
+      audience: input.audience,
+      targetOrganizationIds: [...(input.targetOrganizationIds || [])],
+      targetPlanIds: [...(input.targetPlanIds || [])],
+      targetCampusIds: [...(input.targetCampusIds || [])],
+      channelSimulations: input.channelSimulations?.length ? input.channelSimulations : ['in_app'],
+      createdBy: { id: actor.id, name: actor.name, role: actor.role },
+      createdAt: now,
+      scheduledFor: input.scheduledFor,
+      expiresAt: input.expiresAt,
+      approvalStatus: input.requiresApproval ? 'pending' : 'not_required',
+      disclaimer: P0_6_FRONTEND_SIMULATION_DISCLAIMER,
+    };
+
+    this.platformNotices.unshift(notice);
+
+    if (input.requiresApproval) {
+      this.createApprovalRequest(
+        {
+          type: 'platform_notice_publish',
+          title: `Approve Platform Notice: ${notice.title}`,
+          description: notice.summary,
+          organizationId: notice.targetOrganizationIds[0],
+          targetEntityType: 'PlatformNotice',
+          targetEntityId: notice.id,
+          requestedActionLabel: 'Approve Simulated Notice Publication',
+          priority: notice.severity === 'urgent' ? 'urgent' : 'normal',
+        },
+        actor
+      );
+    }
+
+    this.logAuditEvent({
+      category: 'platform_communications',
+      action: 'PLATFORM_NOTICE_CREATED',
+      severity: 'info',
+      actor,
+      organizationId: notice.targetOrganizationIds.length === 1 ? notice.targetOrganizationIds[0] : undefined,
+      sourceApp: 'super_admin',
+      visibility: 'platform_only',
+      targetEntity: 'PlatformNotice',
+      targetId: notice.referenceCode,
+      targetName: notice.title,
+      status: 'succeeded',
+      details: `Created simulated platform notice "${notice.title}" (${notice.status}, audience: ${notice.audience}).`,
+    });
+
+    this.persist();
+    return { success: true, notice };
+  }
+
+  public transitionPlatformNoticeStatus(
+    noticeId: string,
+    nextStatus: PlatformNotice['status'],
+    actorOrName: string | Partial<AuditActor>
+  ): { success: boolean; notice?: PlatformNotice; error?: string } {
+    const idx = this.platformNotices.findIndex((n) => n.id === noticeId || n.referenceCode === noticeId);
+    if (idx === -1) {
+      return { success: false, error: `Platform notice "${noticeId}" not found.` };
+    }
+
+    const prev = this.platformNotices[idx];
+    const actor = this.resolveAuditActor(actorOrName);
+
+    if (
+      (nextStatus === 'published_simulated' || nextStatus === 'scheduled_simulated') &&
+      prev.approvalStatus === 'pending'
+    ) {
+      return {
+        success: false,
+        error: 'This notice is still awaiting governance approval before simulated publication.',
+      };
+    }
+
+    const now = new Date().toISOString();
+    const updated: PlatformNotice = {
+      ...prev,
+      status: nextStatus,
+      publishedAt: nextStatus === 'published_simulated' ? now : prev.publishedAt,
+    };
+    this.platformNotices[idx] = updated;
+
+    this.logAuditEvent({
+      category: 'platform_communications',
+      action:
+        nextStatus === 'published_simulated'
+          ? 'PLATFORM_NOTICE_PUBLISHED_SIMULATED'
+          : `PLATFORM_NOTICE_${nextStatus.toUpperCase()}`,
+      severity: nextStatus === 'published_simulated' ? 'warning' : 'info',
+      actor,
+      organizationId: prev.targetOrganizationIds.length === 1 ? prev.targetOrganizationIds[0] : undefined,
+      sourceApp: 'super_admin',
+      visibility: nextStatus === 'published_simulated' ? 'tenant_visible' : 'platform_only',
+      beforeState: prev.status,
+      afterState: nextStatus,
+      targetEntity: 'PlatformNotice',
+      targetId: prev.referenceCode,
+      targetName: prev.title,
+      status: 'succeeded',
+      details: `Updated platform notice ${prev.referenceCode} from ${prev.status} to ${nextStatus} (Frontend-only simulation; zero external dispatch).`,
+    });
+
+    this.persist();
+    return { success: true, notice: updated };
+  }
+
+  public getOperationalExceptions(): OperationalExceptionRecord[] {
+    return deriveOperationalExceptions({
+      organizations: this.organizations,
+      campuses: this.campuses,
+      subscriptions: this.subscriptions,
+      invoices: this.invoices,
+      supportTickets: this.supportTickets,
+      approvals: this.platformApprovals,
+      explicitExceptions: this.explicitOperationalExceptions,
+    });
+  }
+
+  public triageOperationalException(
+    exceptionId: string,
+    nextStatus: OperationalExceptionStatus,
+    actorOrName: string | Partial<AuditActor>,
+    options?: { notes?: string; assignedOperatorId?: string; escalatedTo?: string }
+  ): { success: boolean; exception?: OperationalExceptionRecord; error?: string } {
+    const all = this.getOperationalExceptions();
+    const existing = all.find((e) => e.id === exceptionId || e.referenceCode === exceptionId);
+    if (!existing) {
+      return { success: false, error: `Operational exception "${exceptionId}" not found.` };
+    }
+    if ((nextStatus === 'resolved' || nextStatus === 'dismissed' || nextStatus === 'escalated') && (!options?.notes || options.notes.trim().length < 5)) {
+      return { success: false, error: 'A minimum 5-character remediation or escalation rationale is required.' };
+    }
+
+    const actor = this.resolveAuditActor(actorOrName);
+    const now = new Date().toISOString();
+    const assignee = options?.assignedOperatorId
+      ? this.platformUsers.find((u) => u.id === options.assignedOperatorId)
+      : undefined;
+
+    const updated: OperationalExceptionRecord = {
+      ...existing,
+      status: nextStatus,
+      assignedOperatorId: options?.assignedOperatorId || existing.assignedOperatorId,
+      assignedOperatorName: assignee?.name || existing.assignedOperatorName,
+      escalatedTo: options?.escalatedTo || existing.escalatedTo,
+      updatedAt: now,
+      resolvedAt: nextStatus === 'resolved' ? now : existing.resolvedAt,
+      resolutionNotes: options?.notes?.trim() || existing.resolutionNotes,
+      isDerived: false,
+    };
+
+    const explicitIdx = this.explicitOperationalExceptions.findIndex((e) => e.id === existing.id);
+    if (explicitIdx !== -1) {
+      this.explicitOperationalExceptions[explicitIdx] = updated;
+    } else {
+      this.explicitOperationalExceptions.unshift(updated);
+    }
+
+    this.logAuditEvent({
+      category: 'operational_exceptions',
+      action: 'OPERATIONAL_EXCEPTION_TRIAGED',
+      severity: nextStatus === 'escalated' ? 'critical' : 'warning',
+      actor,
+      organizationId: existing.organizationId !== 'platform' ? existing.organizationId : undefined,
+      campusId: existing.campusId,
+      campusName: existing.campusName,
+      sourceApp: 'super_admin',
+      visibility: existing.visibility === 'tenant_summary_safe' ? 'tenant_visible' : 'platform_only',
+      reason: options?.notes?.trim(),
+      beforeState: existing.status,
+      afterState: nextStatus,
+      targetEntity: 'OperationalException',
+      targetId: existing.referenceCode,
+      targetName: existing.title,
+      status: 'succeeded',
+      details: `Operational exception ${existing.referenceCode} updated to ${nextStatus}.${options?.notes ? ` Notes: ${options.notes.trim()}` : ''}`,
+    });
+
+    this.persist();
+    return { success: true, exception: updated };
   }
 }
 

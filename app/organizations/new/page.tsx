@@ -6,269 +6,280 @@ import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { AlertBanner } from '@/components/ui/AlertBanner';
 import { Badge } from '@/components/ui/Badge';
-import {
-  SchoolClassification,
+import type {
   CreateOrganizationInput,
-  InitialCampusInput,
+  OrganizationOwnershipType,
+  SchoolClassification,
 } from '@/lib/types';
-import type { CanonicalSchoolType } from '@/lib/modules/canonical-contract';
+import {
+  CANONICAL_SCHOOL_TYPES,
+  type CanonicalSchoolType,
+  isSchoolTypeCompatible,
+} from '@/lib/modules/canonical-contract';
+import {
+  extractZodFieldErrors,
+  ORGANIZATION_OWNERSHIP_TYPES,
+  registrationAdminSchema,
+  registrationCampusSchema,
+  registrationClassificationSchema,
+  registrationContactSchema,
+  registrationIdentitySchema,
+  registrationSubscriptionSchema,
+} from '@/lib/validations/organizationRegistration';
 import { formatCurrency } from '@/lib/utils/formatters';
 import {
   Building2,
   User,
   CreditCard,
-  Settings,
   CheckCircle2,
   ArrowRight,
   ArrowLeft,
   ShieldCheck,
   Eye,
-  Layers,
   MapPin,
-  Sparkles,
-  Check,
+  Save,
+  RotateCcw,
+  Layers,
+  Phone,
 } from 'lucide-react';
 
-function mapClassificationToCanonicalSchoolType(
-  classification: SchoolClassification
-): CanonicalSchoolType {
-  if (classification === 'k12') return 'combined';
-  if (classification === 'higher_education') return 'college';
-  return classification;
-}
+const DRAFT_STORAGE_KEY = 'sms_superadmin_org_registration_draft_v1';
 
 const STEPS = [
-  { id: 1, title: 'Profile', subtitle: 'Identity & Code' },
-  { id: 2, title: 'Contact & Admin', subtitle: 'Leadership Team' },
-  { id: 3, title: 'Initial Campus', subtitle: 'Primary Facility' },
-  { id: 4, title: 'Subscription', subtitle: 'Plan & Billing' },
-  { id: 5, title: 'Entitlements', subtitle: 'Feature Access' },
-  { id: 6, title: 'Technical', subtitle: 'Regional & Limits' },
-  { id: 7, title: 'Review', subtitle: 'Confirm & Provision' },
+  { id: 1, title: 'Organization', subtitle: 'Identity & Legal' },
+  { id: 2, title: 'Classification', subtitle: 'School Categories' },
+  { id: 3, title: 'Contact', subtitle: 'Official Address' },
+  { id: 4, title: 'Administrator', subtitle: 'Initial Executive' },
+  { id: 5, title: 'Initial Campus', subtitle: 'Main Facility' },
+  { id: 6, title: 'Subscription', subtitle: 'Plan & Quotas' },
+  { id: 7, title: 'Review & Submit', subtitle: 'Simulated Launch' },
 ];
 
-export default function OrganizationOnboardingWizardPage() {
+const SCHOOL_CATEGORY_LABELS: Record<CanonicalSchoolType, string> = {
+  nursery: 'Nursery / Early Years',
+  primary: 'Primary / Elementary',
+  secondary: 'Secondary / High School',
+  combined: 'Combined (All-Through)',
+  college: 'College / Tertiary',
+  vocational: 'Vocational & Trade',
+  international: 'International Curriculum',
+};
+
+const INITIAL_FORM_STATE: CreateOrganizationInput = {
+  name: '',
+  legalName: '',
+  code: '',
+  organizationType: 'private',
+  classification: 'combined',
+  institutionCategories: ['primary', 'secondary'],
+  subdomain: '',
+  initialLifecycleStatus: 'registration_pending',
+  contact: {
+    email: '',
+    phone: '',
+    address: '',
+    city: '',
+    stateOrProvince: '',
+    country: 'United States',
+    postalCode: '',
+    website: '',
+  },
+  administrator: {
+    name: '',
+    email: '',
+    phone: '',
+    roleTitle: 'Principal / Head of School',
+  },
+  initialCampus: {
+    name: '',
+    code: '',
+    type: 'main',
+    street: '',
+    city: '',
+    stateOrProvince: '',
+    country: 'United States',
+    postalCode: '',
+    studentCapacity: 500,
+  },
+  planId: 'plan_growth',
+  billingCycle: 'annual',
+  startTrial: true,
+  technicalConfig: {
+    subdomain: '',
+    timezone: 'America/New_York',
+    academicYearStartMonth: 9,
+    currency: 'USD',
+    locale: 'en-US',
+    maxCampuses: 2,
+  },
+  notes: '',
+};
+
+function derivePrimaryClassification(categories: CanonicalSchoolType[]): SchoolClassification {
+  if (categories.length === 1) return categories[0];
+  if (categories.includes('international')) return 'international';
+  if (categories.includes('combined')) return 'combined';
+  if (categories.includes('primary') && categories.includes('secondary')) return 'combined';
+  return categories[0] || 'combined';
+}
+
+export default function OrganizationRegistrationWizardPage() {
   const { plans, organizations, modules, createOrganization } = usePlatformStore();
 
   const [currentStep, setCurrentStep] = useState(1);
-  const [createdOrgId, setCreatedOrgId] = useState<string | null>(null);
+  const [createdResult, setCreatedResult] = useState<{
+    id: string;
+    isDraft: boolean;
+    name: string;
+    code: string;
+    subdomain: string;
+  } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Form State
-  const [formData, setFormData] = useState<CreateOrganizationInput>({
-    name: '',
-    code: '',
-    classification: 'k12',
-    subdomain: '',
-    contact: {
-      email: '',
-      phone: '',
-      address: '',
-      city: '',
-      stateOrProvince: '',
-      country: 'United States',
-      postalCode: '',
-      website: '',
-    },
-    administrator: {
-      name: '',
-      email: '',
-      phone: '',
-      roleTitle: 'Principal / Head of School',
-    },
-    initialCampus: {
-      name: '',
-      code: '',
-      street: '',
-      city: '',
-      stateOrProvince: '',
-      country: 'United States',
-      postalCode: '',
-      studentCapacity: 500,
-    },
-    planId: 'plan_growth',
-    billingCycle: 'annual',
-    technicalConfig: {
-      subdomain: '',
-      timezone: 'UTC',
-      academicYearStartMonth: 9,
-      currency: 'USD',
-      locale: 'en-US',
-      maxCampuses: 2,
-    },
-    notes: '',
+  const [hasSavedLocalDraft, setHasSavedLocalDraft] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return Boolean(localStorage.getItem(DRAFT_STORAGE_KEY));
+    } catch {
+      return false;
+    }
   });
+  const [draftNotice, setDraftNotice] = useState<string | null>(null);
+  const [formData, setFormData] = useState<CreateOrganizationInput>(INITIAL_FORM_STATE);
 
-  // Handle Input Changes
-  const updateGeneral = <K extends keyof CreateOrganizationInput>(
-    field: K,
-    value: CreateOrganizationInput[K]
-  ) => {
-    setFormData((prev) => {
-      const next = { ...prev, [field]: value };
-      if (field === 'subdomain') {
-        next.technicalConfig = { ...next.technicalConfig, subdomain: String(value) };
+  const clearErrorKeys = (keys: string[]) => {
+    setErrors((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const k of keys) {
+        if (next[k]) {
+          delete next[k];
+          changed = true;
+        }
       }
-      // Auto-suggest campus name and code if untouched
-      if (field === 'name' && (!prev.initialCampus?.name || prev.initialCampus.name === `${prev.name} Main Campus`)) {
-        next.initialCampus = {
-          ...next.initialCampus!,
-          name: value ? `${value} Main Campus` : '',
-          code: next.initialCampus?.code || (prev.code ? `${prev.code}-MAIN` : 'MAIN'),
-        };
-      }
-      if (field === 'code' && (!prev.initialCampus?.code || prev.initialCampus.code === `${prev.code}-MAIN`)) {
-        next.initialCampus = {
-          ...next.initialCampus!,
-          name: next.initialCampus?.name || (prev.name ? `${prev.name} Main Campus` : 'Main Campus'),
-          code: value ? `${String(value).toUpperCase()}-MAIN` : 'MAIN',
-        };
-      }
-      return next;
+      return changed ? next : prev;
     });
-    if (errors[field]) {
-      setErrors((prev) => {
-        const next = { ...prev };
-        delete next[field];
-        return next;
-      });
+  };
+
+  const handleSaveBrowserDraft = () => {
+    try {
+      localStorage.setItem(
+        DRAFT_STORAGE_KEY,
+        JSON.stringify({
+          step: currentStep,
+          formData,
+          savedAt: new Date().toISOString(),
+        })
+      );
+      setHasSavedLocalDraft(true);
+      setDraftNotice('Draft progress saved locally in this browser.');
+    } catch {
+      setDraftNotice('Unable to write local draft storage.');
     }
   };
 
-  const updateContact = (field: string, value: string) => {
+  const handleLoadBrowserDraft = () => {
+    try {
+      const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { step?: number; formData?: CreateOrganizationInput };
+      if (parsed.formData) {
+        setFormData({ ...INITIAL_FORM_STATE, ...parsed.formData });
+        setCurrentStep(Math.min(Math.max(parsed.step || 1, 1), STEPS.length));
+        setDraftNotice('Resumed saved local registration draft.');
+      }
+    } catch {
+      setDraftNotice('Could not parse saved registration draft.');
+    }
+  };
+
+  const handleDiscardBrowserDraft = () => {
+    try {
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+    setHasSavedLocalDraft(false);
+    setDraftNotice('Discarded saved local draft.');
+  };
+
+  const toggleCategory = (cat: CanonicalSchoolType) => {
     setFormData((prev) => {
-      const next = {
+      const current = prev.institutionCategories ?? [];
+      const exists = current.includes(cat);
+      const nextCategories = exists
+        ? current.filter((c) => c !== cat)
+        : [...current, cat];
+      return {
         ...prev,
-        contact: { ...prev.contact, [field]: value },
+        institutionCategories: nextCategories,
+        classification: derivePrimaryClassification(nextCategories),
       };
-      if (field === 'city' && (!prev.initialCampus?.city || prev.initialCampus.city === prev.contact.city)) {
-        next.initialCampus = {
-          ...next.initialCampus!,
-          city: value,
-        };
-      }
-      if (field === 'country' && (!prev.initialCampus?.country || prev.initialCampus.country === prev.contact.country)) {
-        next.initialCampus = {
-          ...next.initialCampus!,
-          country: value,
-        };
-      }
-      if (field === 'address' && (!prev.initialCampus?.street || prev.initialCampus.street === prev.contact.address)) {
-        next.initialCampus = {
-          ...next.initialCampus!,
-          street: value,
-        };
-      }
-      return next;
     });
-    if (errors[`contact.${field}`]) {
-      setErrors((prev) => {
-        const next = { ...prev };
-        delete next[`contact.${field}`];
-        return next;
-      });
-    }
+    clearErrorKeys(['institutionCategories', 'classification']);
   };
 
-  const updateAdmin = (field: string, value: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      administrator: { ...prev.administrator, [field]: value },
-    }));
-    if (errors[`admin.${field}`]) {
-      setErrors((prev) => {
-        const next = { ...prev };
-        delete next[`admin.${field}`];
-        return next;
-      });
-    }
-  };
-
-  const updateInitialCampus = (
-    field: keyof InitialCampusInput,
-    value: InitialCampusInput[keyof InitialCampusInput]
-  ) => {
-    setFormData((prev) => ({
-      ...prev,
-      initialCampus: {
-        ...prev.initialCampus!,
-        [field]: value,
-      },
-    }));
-    if (errors[`campus.${field}`]) {
-      setErrors((prev) => {
-        const next = { ...prev };
-        delete next[`campus.${field}`];
-        return next;
-      });
-    }
-  };
-
-  const updateTechnical = (field: string, value: string | number) => {
-    setFormData((prev) => ({
-      ...prev,
-      technicalConfig: { ...prev.technicalConfig, [field]: value },
-    }));
-  };
-
-  // Step Validation
   const validateStep = (step: number): boolean => {
-    const errs: Record<string, string> = {};
+    let errs: Record<string, string> = {};
 
     if (step === 1) {
-      if (!formData.name.trim() || formData.name.trim().length < 2) {
-        errs.name = 'School organization name must be at least 2 characters.';
-      }
-      const code = formData.code.trim().toUpperCase();
-      if (!code || code.length < 2 || code.length > 12) {
-        errs.code = 'Organization code must be 2-12 characters (e.g. OAKHILL).';
-      } else if (organizations.some((o) => o.code.toUpperCase() === code)) {
-        errs.code = `Code "${code}" is already taken by another organization.`;
-      }
-
-      const sub = formData.subdomain.trim().toLowerCase();
-      if (!sub || !/^[a-z0-9-]+$/.test(sub)) {
-        errs.subdomain = 'Subdomain must contain only lowercase letters, numbers, and hyphens.';
-      } else if (organizations.some((o) => o.subdomain.toLowerCase() === sub)) {
-        errs.subdomain = `Subdomain "${sub}" is already registered.`;
+      const parsed = registrationIdentitySchema.safeParse({
+        name: formData.name,
+        legalName: formData.legalName,
+        code: formData.code,
+        organizationType: formData.organizationType || 'private',
+        subdomain: formData.subdomain,
+      });
+      if (!parsed.success) {
+        errs = extractZodFieldErrors(parsed.error);
+      } else {
+        const upperCode = parsed.data.code.toUpperCase();
+        if (organizations.some((o) => o.code.toUpperCase() === upperCode)) {
+          errs.code = `Organization code "${upperCode}" is already registered.`;
+        }
+        const cleanSub = parsed.data.subdomain.toLowerCase();
+        if (organizations.some((o) => o.subdomain.toLowerCase() === cleanSub)) {
+          errs.subdomain = `Slug/subdomain "${cleanSub}" is already taken.`;
+        }
       }
     } else if (step === 2) {
-      if (!formData.contact.email || !formData.contact.email.includes('@')) {
-        errs['contact.email'] = 'A valid institutional contact email is required.';
-      }
-      if (!formData.contact.city.trim()) {
-        errs['contact.city'] = 'City is required.';
-      }
-      if (!formData.contact.country.trim()) {
-        errs['contact.country'] = 'Country is required.';
-      }
-      if (!formData.administrator.name.trim() || formData.administrator.name.trim().length < 2) {
-        errs['admin.name'] = 'Administrator name is required.';
-      }
-      if (!formData.administrator.email || !formData.administrator.email.includes('@')) {
-        errs['admin.email'] = 'A valid administrator email is required.';
-      }
-      if (!formData.administrator.phone.trim()) {
-        errs['admin.phone'] = 'Administrator direct phone number is required.';
+      const parsed = registrationClassificationSchema.safeParse({
+        classification: formData.classification,
+        institutionCategories: formData.institutionCategories ?? [],
+      });
+      if (!parsed.success) {
+        errs = extractZodFieldErrors(parsed.error);
       }
     } else if (step === 3) {
-      if (!formData.initialCampus?.name?.trim() || formData.initialCampus.name.trim().length < 2) {
-        errs['campus.name'] = 'Main campus name must be at least 2 characters.';
-      }
-      if (!formData.initialCampus?.code?.trim() || formData.initialCampus.code.trim().length < 2) {
-        errs['campus.code'] = 'Campus code is required (e.g. MAIN or OAK-MAIN).';
-      }
-      if (!formData.initialCampus?.city?.trim()) {
-        errs['campus.city'] = 'Campus city location is required.';
+      const parsed = registrationContactSchema.safeParse(formData.contact);
+      if (!parsed.success) {
+        errs = extractZodFieldErrors(parsed.error, 'contact');
       }
     } else if (step === 4) {
-      if (!formData.planId || !plans.some((p) => p.id === formData.planId)) {
-        errs.planId = 'Please select a valid subscription plan.';
+      const parsed = registrationAdminSchema.safeParse(formData.administrator);
+      if (!parsed.success) {
+        errs = extractZodFieldErrors(parsed.error, 'admin');
+      }
+    } else if (step === 5) {
+      const parsed = registrationCampusSchema.safeParse(formData.initialCampus);
+      if (!parsed.success) {
+        errs = extractZodFieldErrors(parsed.error, 'campus');
       }
     } else if (step === 6) {
-      if (!formData.technicalConfig?.maxCampuses || formData.technicalConfig.maxCampuses < 1) {
-        errs['technical.maxCampuses'] = 'Maximum campuses must be at least 1.';
+      const parsed = registrationSubscriptionSchema.safeParse({
+        planId: formData.planId,
+        billingCycle: formData.billingCycle,
+        startTrial: Boolean(formData.startTrial),
+        maxCampuses: formData.technicalConfig.maxCampuses,
+        timezone: formData.technicalConfig.timezone,
+        currency: formData.technicalConfig.currency,
+        locale: formData.technicalConfig.locale,
+        academicYearStartMonth: formData.technicalConfig.academicYearStartMonth,
+      });
+      if (!parsed.success) {
+        errs = extractZodFieldErrors(parsed.error);
+      } else if (!plans.some((p) => p.id === parsed.data.planId)) {
+        errs.planId = 'Selected plan does not exist in canonical catalogue.';
       }
     }
 
@@ -282,54 +293,109 @@ export default function OrganizationOnboardingWizardPage() {
     }
   };
 
-  const handlePrev = () => {
-    setCurrentStep((prev) => Math.max(1, prev - 1));
-  };
-
-  const handleSubmit = () => {
+  const handleSubmit = (asDraftInStore = false) => {
     if (isSubmitting) return;
-
-    for (let s = 1; s <= 6; s++) {
-      if (!validateStep(s)) {
-        setCurrentStep(s);
-        return;
+    if (!asDraftInStore) {
+      for (let s = 1; s <= 6; s++) {
+        if (!validateStep(s)) {
+          setCurrentStep(s);
+          return;
+        }
       }
+    } else if (!validateStep(1)) {
+      setCurrentStep(1);
+      return;
     }
 
     setIsSubmitting(true);
     setTimeout(() => {
-      const res = createOrganization(formData);
+      const payload: CreateOrganizationInput = {
+        ...formData,
+        initialLifecycleStatus: asDraftInStore ? 'draft' : 'registration_pending',
+        code: formData.code.trim().toUpperCase(),
+        subdomain: formData.subdomain.trim().toLowerCase(),
+        technicalConfig: {
+          ...formData.technicalConfig,
+          subdomain: formData.subdomain.trim().toLowerCase(),
+        },
+      };
+      const res = createOrganization(payload);
       setIsSubmitting(false);
       if (res.success && res.organization) {
-        setCreatedOrgId(res.organization.id);
+        try {
+          localStorage.removeItem(DRAFT_STORAGE_KEY);
+          setHasSavedLocalDraft(false);
+        } catch {
+          // ignore
+        }
+        setCreatedResult({
+          id: res.organization.id,
+          isDraft: asDraftInStore,
+          name: res.organization.name,
+          code: res.organization.code,
+          subdomain: res.organization.subdomain,
+        });
       } else if (res.error) {
         setErrors({ submit: res.error });
       }
-    }, 400);
+    }, 250);
   };
 
   const selectedPlan = plans.find((p) => p.id === formData.planId) || plans[0];
-  const selectedIncludedModules = modules.filter((m) =>
-    selectedPlan && Array.isArray(selectedPlan.includedModuleIds)
-      ? selectedPlan.includedModuleIds.includes(m.id)
-      : selectedPlan && m.includedInPlans.includes(selectedPlan.tier)
-  );
-  const includedModulesCount = selectedIncludedModules.length;
-  const selectedOptionalAddOns = modules.filter(
-    (m) => selectedPlan?.optionalAddOnModuleIds?.includes(m.id)
-  );
-  const normalizedClassification = mapClassificationToCanonicalSchoolType(formData.classification);
+  const categories = formData.institutionCategories ?? ['combined'];
+  const compatibleModulesCount = modules.filter((m) =>
+    (selectedPlan?.includedModuleIds?.includes(m.id) ?? m.includedInPlans.includes(selectedPlan.tier)) &&
+    categories.some((cat) => isSchoolTypeCompatible(cat, m.supportedSchoolTypes))
+  ).length;
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       <PageHeader
-        title="Guided Organization Onboarding Wizard"
-        description="Register a new school organization, establish its primary main campus, configure subscription tier and module entitlements, and initialize development tenant state."
+        title="Register New School Organization"
+        description="Zod-validated multi-step institutional intake supporting combined school categories, draft staging, and simulated registration submission."
         backUrl="/organizations"
+        actions={
+          !createdResult ? (
+            <div className="flex items-center gap-2 flex-wrap">
+              {hasSavedLocalDraft && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleLoadBrowserDraft}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-primary/40 text-primary hover:bg-primary/10 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Resume Draft
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDiscardBrowserDraft}
+                    className="px-2.5 py-1.5 text-xs rounded-lg border border-border text-muted-foreground hover:bg-muted cursor-pointer"
+                  >
+                    Discard Draft
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={handleSaveBrowserDraft}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-border text-foreground hover:bg-muted flex items-center gap-1.5 cursor-pointer"
+              >
+                <Save className="w-3.5 h-3.5" />
+                Save Browser Draft
+              </button>
+            </div>
+          ) : null
+        }
       />
 
-      {/* Success State */}
-      {createdOrgId ? (
+      {draftNotice && (
+        <AlertBanner variant="info" className="text-xs">
+          {draftNotice}
+        </AlertBanner>
+      )}
+
+      {createdResult ? (
         <div className="bg-card text-card-foreground p-8 rounded-2xl border border-border shadow-md text-center space-y-6 animate-in zoom-in-95">
           <div className="w-16 h-16 bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto">
             <CheckCircle2 className="w-10 h-10" />
@@ -337,108 +403,76 @@ export default function OrganizationOnboardingWizardPage() {
 
           <div className="space-y-2">
             <h2 className="text-xl font-bold text-foreground">
-              Organization Successfully Provisioned
+              {createdResult.isDraft
+                ? 'Organization Registration Draft Saved (Simulated)'
+                : 'Simulated Registration Submitted for Review'}
             </h2>
-            <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              Development record for <strong className="text-foreground">{formData.name}</strong> ({formData.code}) has been created in local mock storage with initial plan <strong className="text-foreground">{selectedPlan.name}</strong> and primary campus <strong className="text-foreground">{formData.initialCampus?.name || 'Main Campus'}</strong>.
+            <p className="text-sm text-muted-foreground max-w-lg mx-auto">
+              Client-side simulation recorded <strong className="text-foreground">{createdResult.name}</strong> ({createdResult.code}) in{' '}
+              <strong className="text-foreground">
+                {createdResult.isDraft ? 'Draft' : 'Registration Pending'}
+              </strong>{' '}
+              lifecycle status with initial campus <strong className="text-foreground">{formData.initialCampus?.name}</strong> and staged plan{' '}
+              <strong className="text-foreground">{selectedPlan.name}</strong>.
             </p>
           </div>
 
           <div className="p-4 bg-muted/50 rounded-xl border border-border text-xs text-left max-w-lg mx-auto space-y-2 font-mono">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Tenant Subdomain:</span>
-              <span className="font-semibold text-foreground">{formData.subdomain}.schoolsaas.internal</span>
+              <span className="text-muted-foreground">Lifecycle State:</span>
+              <span className="font-semibold text-foreground">
+                {createdResult.isDraft ? 'draft' : 'registration_pending'}
+              </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Primary Admin:</span>
-              <span className="font-semibold text-foreground">{formData.administrator.name}</span>
+              <span className="text-muted-foreground">Institution Categories:</span>
+              <span className="font-semibold text-foreground">{categories.join(', ')}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Main Campus:</span>
-              <span className="font-semibold text-foreground">{formData.initialCampus?.name} ({formData.initialCampus?.code})</span>
+              <span className="text-muted-foreground">Compatible Plan Modules:</span>
+              <span className="font-semibold text-foreground">{compatibleModulesCount} modules (P0-4)</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Assigned Plan:</span>
-              <span className="font-semibold text-foreground">{selectedPlan.name} ({includedModulesCount} modules)</span>
+              <span className="text-muted-foreground">Provisioning Prep Status:</span>
+              <span className="font-semibold text-foreground">
+                {createdResult.isDraft ? 'not_started' : 'ready_for_review'}
+              </span>
             </div>
           </div>
 
-          <AlertBanner variant="info" className="text-left text-xs max-w-lg mx-auto">
-            Future backend integration notice: Production database schemas, isolated tenant containers, DNS routing, and automated onboarding emails will be dispatched via the upcoming backend orchestration service.
+          <AlertBanner variant="warning" className="text-left text-xs max-w-lg mx-auto">
+            <strong>Frontend Simulation Notice:</strong> No live server cluster, relational database tenant partition, DNS record, or administrator onboarding email was provisioned or dispatched. Future backend workers must execute real tenant provisioning.
           </AlertBanner>
 
-          <div className="flex justify-center gap-3 pt-4">
+          <div className="flex justify-center gap-3 pt-2 flex-wrap">
             <button
               type="button"
               onClick={() => {
-                setCreatedOrgId(null);
+                setCreatedResult(null);
                 setCurrentStep(1);
-                setFormData({
-                  name: '',
-                  code: '',
-                  classification: 'k12',
-                  subdomain: '',
-                  contact: {
-                    email: '',
-                    phone: '',
-                    address: '',
-                    city: '',
-                    stateOrProvince: '',
-                    country: 'United States',
-                    postalCode: '',
-                    website: '',
-                  },
-                  administrator: {
-                    name: '',
-                    email: '',
-                    phone: '',
-                    roleTitle: 'Principal / Head of School',
-                  },
-                  initialCampus: {
-                    name: '',
-                    code: '',
-                    street: '',
-                    city: '',
-                    stateOrProvince: '',
-                    country: 'United States',
-                    postalCode: '',
-                    studentCapacity: 500,
-                  },
-                  planId: 'plan_growth',
-                  billingCycle: 'annual',
-                  technicalConfig: {
-                    subdomain: '',
-                    timezone: 'UTC',
-                    academicYearStartMonth: 9,
-                    currency: 'USD',
-                    locale: 'en-US',
-                    maxCampuses: 2,
-                  },
-                  notes: '',
-                });
+                setFormData(INITIAL_FORM_STATE);
               }}
               className="px-4 py-2 text-xs font-semibold rounded-lg border border-border hover:bg-muted cursor-pointer"
             >
-              Onboard Another School
+              Register Another Organization
             </button>
             <Link
-              href={`/organizations/${createdOrgId}`}
+              href={`/organizations/${createdResult.id}`}
               className="px-4 py-2 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 flex items-center gap-1.5"
             >
               <Eye className="w-3.5 h-3.5" />
-              View Organization Workspace
+              Inspect Readiness, Onboarding & Provisioning
             </Link>
           </div>
         </div>
       ) : (
         <div className="space-y-6">
-          {/* Stepper Progress Bar */}
+          {/* Stepper Bar */}
           <div className="bg-card text-card-foreground p-4 rounded-xl border border-border shadow-xs">
             <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
               {STEPS.map((step) => {
                 const isActive = step.id === currentStep;
                 const isPassed = step.id < currentStep;
-
                 return (
                   <button
                     key={step.id}
@@ -455,10 +489,10 @@ export default function OrganizationOnboardingWizardPage() {
                         : 'opacity-40 cursor-not-allowed'
                     }`}
                   >
-                    <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
-                      Step {step.id} {isPassed && '✓'}
+                    <span className="text-[10px] font-bold uppercase tracking-wider">
+                      Step {step.id} {isPassed ? '✓' : ''}
                     </span>
-                    <span className="text-xs font-bold truncate">{step.title}</span>
+                    <span className="text-xs font-semibold truncate">{step.title}</span>
                     <span className="text-[10px] text-muted-foreground truncate">{step.subtitle}</span>
                   </button>
                 );
@@ -466,602 +500,719 @@ export default function OrganizationOnboardingWizardPage() {
             </div>
           </div>
 
-          {/* Form Step Body */}
-          <div className="bg-card text-card-foreground p-6 sm:p-8 rounded-2xl border border-border shadow-xs space-y-6">
-            {/* Step 1: Profile */}
+          <div className="bg-card text-card-foreground p-6 rounded-xl border border-border shadow-xs space-y-6">
+            {/* Step 1: Organization Identity */}
             {currentStep === 1 && (
               <div className="space-y-5 animate-in fade-in">
                 <div className="border-b border-border pb-3">
                   <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
                     <Building2 className="w-5 h-5 text-primary" />
-                    Step 1: School Organization Profile
+                    Step 1: Organization & Legal Identity
                   </h3>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Enter the legal or operating identity of the educational institution.
+                    Provide institutional naming, ownership model, unique code, and portal identifier.
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1.5 md:col-span-2">
-                    <label className="text-xs font-semibold text-foreground">
-                      School Organization Name <span className="text-rose-500">*</span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-foreground">
+                      School Display Name <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
                       value={formData.name}
-                      onChange={(e) => updateGeneral('name', e.target.value)}
-                      placeholder="e.g. St. Augustine College of Science"
-                      className="w-full px-3 py-2 text-sm bg-muted/30 rounded-lg border border-border focus:ring-2 focus:ring-primary/40 focus:outline-none"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setFormData((prev) => ({
+                          ...prev,
+                          name: val,
+                          initialCampus: {
+                            ...prev.initialCampus!,
+                            name:
+                              !prev.initialCampus?.name ||
+                              prev.initialCampus.name === `${prev.name} Main Campus`
+                                ? val
+                                  ? `${val} Main Campus`
+                                  : ''
+                                : prev.initialCampus.name,
+                          },
+                        }));
+                        clearErrorKeys(['name']);
+                      }}
+                      placeholder="e.g. Oakridge Combined College"
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground"
                     />
-                    {errors.name && <p className="text-[11px] text-rose-500">{errors.name}</p>}
+                    {errors.name && <p className="text-rose-500 text-[11px]">{errors.name}</p>}
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-foreground">
-                      Organization Code (Ticker/Slug) <span className="text-rose-500">*</span>
+                    <label className="font-semibold text-foreground">
+                      Registered / Legal Name (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.legalName || ''}
+                      onChange={(e) => setFormData((p) => ({ ...p, legalName: e.target.value }))}
+                      placeholder="e.g. Oakridge Educational Foundation Ltd."
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground"
+                    />
+                    {errors.legalName && <p className="text-rose-500 text-[11px]">{errors.legalName}</p>}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-foreground">
+                      Unique Institution Code <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
                       value={formData.code}
-                      onChange={(e) => updateGeneral('code', e.target.value.toUpperCase())}
-                      placeholder="e.g. STAUGC"
-                      maxLength={12}
-                      className="w-full px-3 py-2 text-sm bg-muted/30 rounded-lg border border-border focus:ring-2 focus:ring-primary/40 focus:outline-none font-mono uppercase"
+                      onChange={(e) => {
+                        const val = e.target.value.toUpperCase();
+                        setFormData((prev) => ({
+                          ...prev,
+                          code: val,
+                          initialCampus: {
+                            ...prev.initialCampus!,
+                            code:
+                              !prev.initialCampus?.code ||
+                              prev.initialCampus.code === `${prev.code}-MAIN`
+                                ? val
+                                  ? `${val}-MAIN`
+                                  : ''
+                                : prev.initialCampus.code,
+                          },
+                        }));
+                        clearErrorKeys(['code']);
+                      }}
+                      placeholder="e.g. OAKRIDGE"
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background font-mono uppercase text-foreground"
                     />
-                    <p className="text-[10px] text-muted-foreground">Unique identifier used in student IDs & receipts.</p>
-                    {errors.code && <p className="text-[11px] text-rose-500">{errors.code}</p>}
+                    {errors.code && <p className="text-rose-500 text-[11px]">{errors.code}</p>}
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-foreground">
-                      Tenant Subdomain <span className="text-rose-500">*</span>
+                    <label className="font-semibold text-foreground">
+                      Workspace Slug / Subdomain <span className="text-rose-500">*</span>
                     </label>
-                    <div className="flex rounded-lg border border-border overflow-hidden bg-muted/30">
+                    <div className="flex items-center">
                       <input
                         type="text"
                         value={formData.subdomain}
-                        onChange={(e) => updateGeneral('subdomain', e.target.value.toLowerCase())}
-                        placeholder="staugustine"
-                        className="w-full px-3 py-2 text-sm bg-transparent focus:outline-none"
+                        onChange={(e) => {
+                          const val = e.target.value.toLowerCase();
+                          setFormData((prev) => ({
+                            ...prev,
+                            subdomain: val,
+                            technicalConfig: { ...prev.technicalConfig, subdomain: val },
+                          }));
+                          clearErrorKeys(['subdomain']);
+                        }}
+                        placeholder="e.g. oakridge"
+                        className="w-full px-3 py-2 rounded-l-lg border border-border bg-background font-mono text-foreground"
                       />
-                      <span className="px-3 py-2 text-xs text-muted-foreground bg-muted border-l border-border select-none">
+                      <span className="px-2.5 py-2 bg-muted border border-l-0 border-border rounded-r-lg text-muted-foreground font-mono">
                         .schoolsaas.internal
                       </span>
                     </div>
-                    {errors.subdomain && <p className="text-[11px] text-rose-500">{errors.subdomain}</p>}
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-foreground">School Classification</label>
-                    <select
-                      value={formData.classification}
-                      onChange={(e) => updateGeneral('classification', e.target.value as SchoolClassification)}
-                      className="w-full px-3 py-2 text-sm bg-muted/30 rounded-lg border border-border focus:ring-2 focus:ring-primary/40 focus:outline-none"
-                    >
-                      <option value="k12">K-12 Comprehensive</option>
-                      <option value="primary">Primary / Elementary</option>
-                      <option value="secondary">Secondary / High School</option>
-                      <option value="international">International School (IB/Cambridge)</option>
-                      <option value="higher_education">Higher Education / College</option>
-                      <option value="vocational">Vocational & Technical Training</option>
-                    </select>
+                    {errors.subdomain && <p className="text-rose-500 text-[11px]">{errors.subdomain}</p>}
                   </div>
 
                   <div className="space-y-1.5 md:col-span-2">
-                    <label className="text-xs font-semibold text-foreground">
-                      Administrative Notes (Optional)
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={formData.notes || ''}
-                      onChange={(e) => updateGeneral('notes', e.target.value)}
-                      placeholder="Internal remarks regarding onboarding terms, campus affiliations, or special requests..."
-                      className="w-full px-3 py-2 text-sm bg-muted/30 rounded-lg border border-border focus:ring-2 focus:ring-primary/40 focus:outline-none"
-                    />
+                    <label className="font-semibold text-foreground">Ownership / Organization Type</label>
+                    <select
+                      value={formData.organizationType || 'private'}
+                      onChange={(e) =>
+                        setFormData((p) => ({
+                          ...p,
+                          organizationType: e.target.value as OrganizationOwnershipType,
+                        }))
+                      }
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground capitalize"
+                    >
+                      {ORGANIZATION_OWNERSHIP_TYPES.map((type) => (
+                        <option key={type} value={type}>
+                          {type.replace(/_/g, ' ')}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Step 2: Contact & Admin */}
+            {/* Step 2: Institution Classification (Multi-Category Support) */}
             {currentStep === 2 && (
               <div className="space-y-5 animate-in fade-in">
                 <div className="border-b border-border pb-3">
                   <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
-                    <User className="w-5 h-5 text-primary" />
-                    Step 2: Leadership & Official Contact Details
+                    <Layers className="w-5 h-5 text-primary" />
+                    Step 2: Institution Classification & Academic Scope
                   </h3>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Designated executive leadership and official school coordinates.
+                    Select one or multiple institutional categories (e.g., Nursery + Primary + Secondary). This configures P0-4 module compatibility and adaptable onboarding steps.
                   </p>
                 </div>
 
-                <div className="space-y-4">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    Primary Executive Administrator
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-foreground">
-                        Administrator Full Name <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.administrator.name}
-                        onChange={(e) => updateAdmin('name', e.target.value)}
-                        placeholder="Dr. Gregory House"
-                        className="w-full px-3 py-2 text-sm bg-muted/30 rounded-lg border border-border focus:ring-2 focus:ring-primary/40 focus:outline-none"
-                      />
-                      {errors['admin.name'] && <p className="text-[11px] text-rose-500">{errors['admin.name']}</p>}
-                    </div>
+                {errors.institutionCategories && (
+                  <AlertBanner variant="error" className="text-xs">
+                    {errors.institutionCategories}
+                  </AlertBanner>
+                )}
 
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-foreground">Role Title</label>
-                      <input
-                        type="text"
-                        value={formData.administrator.roleTitle}
-                        onChange={(e) => updateAdmin('roleTitle', e.target.value)}
-                        placeholder="Head of School / Executive Principal"
-                        className="w-full px-3 py-2 text-sm bg-muted/30 rounded-lg border border-border focus:ring-2 focus:ring-primary/40 focus:outline-none"
-                      />
-                    </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+                  {CANONICAL_SCHOOL_TYPES.map((cat) => {
+                    const selected = (formData.institutionCategories ?? []).includes(cat);
+                    return (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => toggleCategory(cat)}
+                        className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                          selected
+                            ? 'border-primary bg-primary/10 ring-1 ring-primary'
+                            : 'border-border bg-background hover:bg-muted/40'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-foreground">
+                            {SCHOOL_CATEGORY_LABELS[cat]}
+                          </span>
+                          <Badge variant={selected ? 'info' : 'neutral'} size="sm">
+                            {selected ? 'Selected' : 'Optional'}
+                          </Badge>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-1 font-mono">
+                          type id: {cat}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-foreground">
-                        Direct Email Address <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="email"
-                        value={formData.administrator.email}
-                        onChange={(e) => updateAdmin('email', e.target.value)}
-                        placeholder="g.house@staugustine.edu"
-                        className="w-full px-3 py-2 text-sm bg-muted/30 rounded-lg border border-border focus:ring-2 focus:ring-primary/40 focus:outline-none"
-                      />
-                      {errors['admin.email'] && <p className="text-[11px] text-rose-500">{errors['admin.email']}</p>}
-                    </div>
+                <div className="p-3.5 rounded-lg bg-muted/40 border border-border text-xs flex flex-wrap items-center justify-between gap-2">
+                  <span>
+                    Derived Primary Classification:{' '}
+                    <strong className="uppercase">{formData.classification}</strong>
+                  </span>
+                  <span className="text-muted-foreground font-mono">
+                    Active categories: [{categories.join(', ')}]
+                  </span>
+                </div>
+              </div>
+            )}
 
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-foreground">
-                        Direct Phone <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="tel"
-                        value={formData.administrator.phone}
-                        onChange={(e) => updateAdmin('phone', e.target.value)}
-                        placeholder="+1 (555) 998-1234"
-                        className="w-full px-3 py-2 text-sm bg-muted/30 rounded-lg border border-border focus:ring-2 focus:ring-primary/40 focus:outline-none"
-                      />
-                      {errors['admin.phone'] && <p className="text-[11px] text-rose-500">{errors['admin.phone']}</p>}
-                    </div>
+            {/* Step 3: Official Contact */}
+            {currentStep === 3 && (
+              <div className="space-y-5 animate-in fade-in">
+                <div className="border-b border-border pb-3">
+                  <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+                    <Phone className="w-5 h-5 text-primary" />
+                    Step 3: Institutional Contact & Location
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Primary headquarters address, telephone, email, and public website.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-foreground">
+                      School Official Email <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      value={formData.contact.email}
+                      onChange={(e) => {
+                        setFormData((p) => ({
+                          ...p,
+                          contact: { ...p.contact, email: e.target.value },
+                        }));
+                        clearErrorKeys(['contact.email']);
+                      }}
+                      placeholder="admin@oakridge.edu"
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground"
+                    />
+                    {errors['contact.email'] && (
+                      <p className="text-rose-500 text-[11px]">{errors['contact.email']}</p>
+                    )}
                   </div>
 
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground pt-4 border-t border-border">
-                    Institutional Location Coordinates
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-foreground">
-                        Official Contact Email <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="email"
-                        value={formData.contact.email}
-                        onChange={(e) => updateContact('email', e.target.value)}
-                        placeholder="admin@staugustine.edu"
-                        className="w-full px-3 py-2 text-sm bg-muted/30 rounded-lg border border-border focus:ring-2 focus:ring-primary/40 focus:outline-none"
-                      />
-                      {errors['contact.email'] && <p className="text-[11px] text-rose-500">{errors['contact.email']}</p>}
-                    </div>
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-foreground">
+                      Telephone <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="tel"
+                      value={formData.contact.phone}
+                      onChange={(e) => {
+                        setFormData((p) => ({
+                          ...p,
+                          contact: { ...p.contact, phone: e.target.value },
+                        }));
+                        clearErrorKeys(['contact.phone']);
+                      }}
+                      placeholder="+1 (555) 200-3400"
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground"
+                    />
+                    {errors['contact.phone'] && (
+                      <p className="text-rose-500 text-[11px]">{errors['contact.phone']}</p>
+                    )}
+                  </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-foreground">Official Phone Number</label>
-                      <input
-                        type="tel"
-                        value={formData.contact.phone}
-                        onChange={(e) => updateContact('phone', e.target.value)}
-                        placeholder="+1 (555) 019-2834"
-                        className="w-full px-3 py-2 text-sm bg-muted/30 rounded-lg border border-border focus:ring-2 focus:ring-primary/40 focus:outline-none"
-                      />
-                    </div>
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-foreground">
+                      Country <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.contact.country}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setFormData((p) => ({
+                          ...p,
+                          contact: { ...p.contact, country: val },
+                          initialCampus: { ...p.initialCampus!, country: val },
+                        }));
+                        clearErrorKeys(['contact.country']);
+                      }}
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground"
+                    />
+                    {errors['contact.country'] && (
+                      <p className="text-rose-500 text-[11px]">{errors['contact.country']}</p>
+                    )}
+                  </div>
 
-                    <div className="space-y-1.5 md:col-span-2">
-                      <label className="text-xs font-semibold text-foreground">Street Address</label>
-                      <input
-                        type="text"
-                        value={formData.contact.address}
-                        onChange={(e) => updateContact('address', e.target.value)}
-                        placeholder="123 Academic Way"
-                        className="w-full px-3 py-2 text-sm bg-muted/30 rounded-lg border border-border focus:ring-2 focus:ring-primary/40 focus:outline-none"
-                      />
-                    </div>
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-foreground">
+                      State / Region <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.contact.stateOrProvince}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setFormData((p) => ({
+                          ...p,
+                          contact: { ...p.contact, stateOrProvince: val },
+                          initialCampus: { ...p.initialCampus!, stateOrProvince: val },
+                        }));
+                        clearErrorKeys(['contact.stateOrProvince']);
+                      }}
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground"
+                    />
+                    {errors['contact.stateOrProvince'] && (
+                      <p className="text-rose-500 text-[11px]">{errors['contact.stateOrProvince']}</p>
+                    )}
+                  </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-foreground">
-                        City <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.contact.city}
-                        onChange={(e) => updateContact('city', e.target.value)}
-                        placeholder="Chicago"
-                        className="w-full px-3 py-2 text-sm bg-muted/30 rounded-lg border border-border focus:ring-2 focus:ring-primary/40 focus:outline-none"
-                      />
-                      {errors['contact.city'] && <p className="text-[11px] text-rose-500">{errors['contact.city']}</p>}
-                    </div>
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-foreground">
+                      City <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.contact.city}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setFormData((p) => ({
+                          ...p,
+                          contact: { ...p.contact, city: val },
+                          initialCampus: {
+                            ...p.initialCampus!,
+                            city: p.initialCampus?.city || val,
+                          },
+                        }));
+                        clearErrorKeys(['contact.city']);
+                      }}
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground"
+                    />
+                    {errors['contact.city'] && (
+                      <p className="text-rose-500 text-[11px]">{errors['contact.city']}</p>
+                    )}
+                  </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-foreground">
-                        Country <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.contact.country}
-                        onChange={(e) => updateContact('country', e.target.value)}
-                        placeholder="United States"
-                        className="w-full px-3 py-2 text-sm bg-muted/30 rounded-lg border border-border focus:ring-2 focus:ring-primary/40 focus:outline-none"
-                      />
-                      {errors['contact.country'] && <p className="text-[11px] text-rose-500">{errors['contact.country']}</p>}
-                    </div>
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-foreground">Website (Optional)</label>
+                    <input
+                      type="url"
+                      value={formData.contact.website || ''}
+                      onChange={(e) => {
+                        setFormData((p) => ({
+                          ...p,
+                          contact: { ...p.contact, website: e.target.value },
+                        }));
+                        clearErrorKeys(['contact.website']);
+                      }}
+                      placeholder="https://school.edu"
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground"
+                    />
+                    {errors['contact.website'] && (
+                      <p className="text-rose-500 text-[11px]">{errors['contact.website']}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="font-semibold text-foreground">
+                      Street Address <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.contact.address}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setFormData((p) => ({
+                          ...p,
+                          contact: { ...p.contact, address: val },
+                          initialCampus: {
+                            ...p.initialCampus!,
+                            street: p.initialCampus?.street || val,
+                          },
+                        }));
+                        clearErrorKeys(['contact.address']);
+                      }}
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground"
+                    />
+                    {errors['contact.address'] && (
+                      <p className="text-rose-500 text-[11px]">{errors['contact.address']}</p>
+                    )}
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Step 3: Initial Campus */}
-            {currentStep === 3 && (
+            {/* Step 4: Initial Administrator */}
+            {currentStep === 4 && (
+              <div className="space-y-5 animate-in fade-in">
+                <div className="border-b border-border pb-3">
+                  <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+                    <User className="w-5 h-5 text-primary" />
+                    Step 4: Initial Executive / Primary Administrator
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Designate the primary account holder responsible for completing guided school onboarding.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-foreground">
+                      Full Name <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.administrator.name}
+                      onChange={(e) => {
+                        setFormData((p) => ({
+                          ...p,
+                          administrator: { ...p.administrator, name: e.target.value },
+                        }));
+                        clearErrorKeys(['admin.name']);
+                      }}
+                      placeholder="e.g. Dr. Evelyn Vance"
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground"
+                    />
+                    {errors['admin.name'] && <p className="text-rose-500 text-[11px]">{errors['admin.name']}</p>}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-foreground">
+                      Role Title <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.administrator.roleTitle}
+                      onChange={(e) => {
+                        setFormData((p) => ({
+                          ...p,
+                          administrator: { ...p.administrator, roleTitle: e.target.value },
+                        }));
+                        clearErrorKeys(['admin.roleTitle']);
+                      }}
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground"
+                    />
+                    {errors['admin.roleTitle'] && (
+                      <p className="text-rose-500 text-[11px]">{errors['admin.roleTitle']}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-foreground">
+                      Administrator Email <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      value={formData.administrator.email}
+                      onChange={(e) => {
+                        setFormData((p) => ({
+                          ...p,
+                          administrator: { ...p.administrator, email: e.target.value },
+                        }));
+                        clearErrorKeys(['admin.email']);
+                      }}
+                      placeholder="principal@oakridge.edu"
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground"
+                    />
+                    {errors['admin.email'] && (
+                      <p className="text-rose-500 text-[11px]">{errors['admin.email']}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-foreground">
+                      Direct Telephone <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="tel"
+                      value={formData.administrator.phone}
+                      onChange={(e) => {
+                        setFormData((p) => ({
+                          ...p,
+                          administrator: { ...p.administrator, phone: e.target.value },
+                        }));
+                        clearErrorKeys(['admin.phone']);
+                      }}
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground"
+                    />
+                    {errors['admin.phone'] && (
+                      <p className="text-rose-500 text-[11px]">{errors['admin.phone']}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Step 5: Initial Campus Configuration */}
+            {currentStep === 5 && (
               <div className="space-y-5 animate-in fade-in">
                 <div className="border-b border-border pb-3">
                   <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
                     <MapPin className="w-5 h-5 text-primary" />
-                    Step 3: Initial Main Campus Facility
+                    Step 5: Initial Main Campus Configuration
                   </h3>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Establish the primary operational branch or campus where faculty and student records will anchor.
+                    Every tenant requires one designated Main Campus anchor record.
                   </p>
                 </div>
 
-                <div className="p-3 bg-muted/40 rounded-lg border border-border text-xs text-muted-foreground flex gap-2">
-                  <Sparkles className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                  <p>
-                    Every school organization requires at least one designated <strong>Main Campus</strong>. Additional branches can be registered anytime in the organization workspace.
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1.5 md:col-span-2">
-                    <label className="text-xs font-semibold text-foreground">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-foreground">
                       Main Campus Name <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
                       value={formData.initialCampus?.name || ''}
-                      onChange={(e) => updateInitialCampus('name', e.target.value)}
-                      placeholder="e.g. St. Augustine Main Campus"
-                      className="w-full px-3 py-2 text-sm bg-muted/30 rounded-lg border border-border focus:ring-2 focus:ring-primary/40 focus:outline-none"
+                      onChange={(e) => {
+                        setFormData((p) => ({
+                          ...p,
+                          initialCampus: { ...p.initialCampus!, name: e.target.value },
+                        }));
+                        clearErrorKeys(['campus.name']);
+                      }}
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground"
                     />
-                    {errors['campus.name'] && <p className="text-[11px] text-rose-500">{errors['campus.name']}</p>}
+                    {errors['campus.name'] && (
+                      <p className="text-rose-500 text-[11px]">{errors['campus.name']}</p>
+                    )}
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-foreground">
-                      Campus Code <span className="text-rose-500">*</span>
+                    <label className="font-semibold text-foreground">
+                      Main Campus Code <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
                       value={formData.initialCampus?.code || ''}
-                      onChange={(e) => updateInitialCampus('code', e.target.value.toUpperCase())}
-                      placeholder="e.g. STAUGC-MAIN"
-                      maxLength={16}
-                      className="w-full px-3 py-2 text-sm bg-muted/30 rounded-lg border border-border focus:ring-2 focus:ring-primary/40 focus:outline-none font-mono uppercase"
+                      onChange={(e) => {
+                        setFormData((p) => ({
+                          ...p,
+                          initialCampus: { ...p.initialCampus!, code: e.target.value.toUpperCase() },
+                        }));
+                        clearErrorKeys(['campus.code']);
+                      }}
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background font-mono uppercase text-foreground"
                     />
-                    <p className="text-[10px] text-muted-foreground">Unique campus code within this organization.</p>
-                    {errors['campus.code'] && <p className="text-[11px] text-rose-500">{errors['campus.code']}</p>}
+                    {errors['campus.code'] && (
+                      <p className="text-rose-500 text-[11px]">{errors['campus.code']}</p>
+                    )}
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-foreground">Initial Capacity</label>
-                    <input
-                      type="number"
-                      min={50}
-                      max={10000}
-                      step={50}
-                      value={formData.initialCampus?.studentCapacity || 500}
-                      onChange={(e) => updateInitialCampus('studentCapacity', parseInt(e.target.value, 10) || 500)}
-                      className="w-full px-3 py-2 text-sm bg-muted/30 rounded-lg border border-border focus:ring-2 focus:ring-primary/40 focus:outline-none"
-                    />
-                    <p className="text-[10px] text-muted-foreground">Initial student seating allocation.</p>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-foreground">
-                      City / Locality <span className="text-rose-500">*</span>
+                    <label className="font-semibold text-foreground">
+                      City <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
                       value={formData.initialCampus?.city || ''}
-                      onChange={(e) => updateInitialCampus('city', e.target.value)}
-                      placeholder="e.g. Chicago"
-                      className="w-full px-3 py-2 text-sm bg-muted/30 rounded-lg border border-border focus:ring-2 focus:ring-primary/40 focus:outline-none"
+                      onChange={(e) => {
+                        setFormData((p) => ({
+                          ...p,
+                          initialCampus: { ...p.initialCampus!, city: e.target.value },
+                        }));
+                        clearErrorKeys(['campus.city']);
+                      }}
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground"
                     />
-                    {errors['campus.city'] && <p className="text-[11px] text-rose-500">{errors['campus.city']}</p>}
+                    {errors['campus.city'] && (
+                      <p className="text-rose-500 text-[11px]">{errors['campus.city']}</p>
+                    )}
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-foreground">State / Province</label>
+                    <label className="font-semibold text-foreground">
+                      Estimated Student Capacity <span className="text-rose-500">*</span>
+                    </label>
                     <input
-                      type="text"
-                      value={formData.initialCampus?.stateOrProvince || ''}
-                      onChange={(e) => updateInitialCampus('stateOrProvince', e.target.value)}
-                      placeholder="e.g. Illinois"
-                      className="w-full px-3 py-2 text-sm bg-muted/30 rounded-lg border border-border focus:ring-2 focus:ring-primary/40 focus:outline-none"
+                      type="number"
+                      min={10}
+                      max={50000}
+                      value={formData.initialCampus?.studentCapacity ?? 500}
+                      onChange={(e) => {
+                        setFormData((p) => ({
+                          ...p,
+                          initialCampus: {
+                            ...p.initialCampus!,
+                            studentCapacity: Number(e.target.value) || 0,
+                          },
+                        }));
+                        clearErrorKeys(['campus.studentCapacity']);
+                      }}
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground"
                     />
+                    {errors['campus.studentCapacity'] && (
+                      <p className="text-rose-500 text-[11px]">{errors['campus.studentCapacity']}</p>
+                    )}
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Step 4: Subscription */}
-            {currentStep === 4 && (
-              <div className="space-y-5 animate-in fade-in">
-                <div className="border-b border-border pb-3 flex items-center justify-between">
-                  <div>
-                    <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
-                      <CreditCard className="w-5 h-5 text-primary" />
-                      Step 4: Subscription Tier & Billing Cycle
-                    </h3>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Choose the SaaS plan and billing cadence for this school organization.
-                    </p>
-                  </div>
-
-                  {/* Billing cycle toggle */}
-                  <div className="flex items-center gap-2 p-1 bg-muted rounded-lg text-xs font-medium border border-border">
-                    <button
-                      type="button"
-                      onClick={() => updateGeneral('billingCycle', 'monthly')}
-                      className={`px-3 py-1 rounded-md transition-all ${
-                        formData.billingCycle === 'monthly'
-                          ? 'bg-card text-foreground shadow-2xs font-bold'
-                          : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      Monthly
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => updateGeneral('billingCycle', 'annual')}
-                      className={`px-3 py-1 rounded-md transition-all flex items-center gap-1.5 ${
-                        formData.billingCycle === 'annual'
-                          ? 'bg-card text-foreground shadow-2xs font-bold'
-                          : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      Annual
-                      <span className="text-[9px] bg-emerald-500 text-white font-extrabold px-1 rounded">Save 15%</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {plans.map((plan) => {
-                    const isSelected = formData.planId === plan.id;
-                    const price = formData.billingCycle === 'annual' ? plan.priceAnnual : plan.priceMonthly;
-                    const planModulesCount = Array.isArray(plan.includedModuleIds)
-                      ? plan.includedModuleIds.length
-                      : modules.filter((m) => m.includedInPlans.includes(plan.tier)).length;
-                    const supportsClassification =
-                      !plan.targetSchoolTypes ||
-                      plan.targetSchoolTypes.includes(normalizedClassification);
-
-                    return (
-                      <div
-                        key={plan.id}
-                        onClick={() => updateGeneral('planId', plan.id)}
-                        className={`p-5 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
-                          isSelected
-                            ? 'border-primary bg-primary/5 shadow-xs'
-                            : 'border-border bg-card hover:border-muted-foreground/40'
-                        }`}
-                      >
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-bold text-sm text-foreground">{plan.name}</span>
-                            <div className="flex items-center gap-1">
-                              {plan.status && plan.status !== 'published' && (
-                                <span className="text-[10px] bg-muted text-muted-foreground font-bold px-1.5 py-0.5 rounded uppercase">
-                                  {plan.status}
-                                </span>
-                              )}
-                              {plan.isPopular && (
-                                <span className="text-[10px] bg-primary text-primary-foreground font-extrabold px-1.5 py-0.2 rounded-full">
-                                  Popular
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <p className="text-xs text-muted-foreground leading-relaxed">{plan.description}</p>
-                          <div className="pt-2">
-                            <span className="text-2xl font-black text-foreground">{formatCurrency(price, plan.currency)}</span>
-                            <span className="text-xs text-muted-foreground">
-                              /{formData.billingCycle === 'annual' ? 'year' : 'month'}
-                            </span>
-                          </div>
-                          {!supportsClassification && (
-                            <p className="text-[11px] text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1">
-                              Warning: Plan targets {(plan.targetSchoolTypes || []).join(', ')}; incompatible with selected &quot;{formData.classification}&quot; classification.
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="pt-4 border-t border-border/60 mt-4 space-y-1.5 text-xs text-muted-foreground">
-                          <p>• Max Students: <strong>{plan.maxStudents > 50000 ? 'Unlimited' : plan.maxStudents.toLocaleString()}</strong></p>
-                          <p>• Max Staff: <strong>{plan.maxStaff > 50000 ? 'Unlimited' : plan.maxStaff.toLocaleString()}</strong></p>
-                          <p>• Max Campuses: <strong>{plan.maxCampuses > 50 ? 'Unlimited' : plan.maxCampuses}</strong></p>
-                          <p>• Cloud Storage: <strong>{plan.storageGb} GB</strong> • Trial: <strong>{plan.trialDays ?? 14}d</strong></p>
-                          <p>• Included Modules: <strong>{planModulesCount}</strong> ({plan.optionalAddOnModuleIds?.length || 0} optional add-ons)</p>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Step 5: Module Entitlements Preview */}
-            {currentStep === 5 && (
-              <div className="space-y-5 animate-in fade-in">
-                <div className="border-b border-border pb-3">
-                  <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
-                    <Layers className="w-5 h-5 text-primary" />
-                    Step 5: Included Module Capabilities Preview
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Modules unlocked by the <strong className="text-foreground">{selectedPlan.name}</strong> subscription plan from the canonical registry.
-                  </p>
-                </div>
-
-                <div className="p-4 bg-muted/30 rounded-xl border border-border flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-semibold text-foreground block">
-                      Entitlement Coverage: {includedModulesCount} of {modules.length} Canonical Modules Included
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">
-                      Computed directly from {selectedPlan.name} (`{selectedPlan.id}` • {selectedOptionalAddOns.length} optional add-ons available).
-                    </span>
-                  </div>
-                  <Badge variant="success" size="sm">
-                    {modules.length > 0 ? Math.round((includedModulesCount / modules.length) * 100) : 100}% Included
-                  </Badge>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                  {selectedIncludedModules
-                    .filter((m) => !m.parentId)
-                    .slice(0, 10)
-                    .map((mod) => {
-                      const maturity = mod.implementationMaturity || mod.status;
-                      return (
-                        <div key={mod.id} className="p-3.5 rounded-lg border border-border bg-card space-y-1.5">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 font-semibold text-foreground">
-                              <Check className="w-4 h-4 text-emerald-500 shrink-0" />
-                              <span>{mod.name}</span>
-                            </div>
-                            <Badge variant={maturity === 'implemented' ? 'success' : 'warning'} size="sm">
-                              {maturity}
-                            </Badge>
-                          </div>
-                          <p className="text-muted-foreground text-[11px] line-clamp-2">{mod.description}</p>
-                        </div>
-                      );
-                    })}
-                </div>
-
-                {selectedOptionalAddOns.length > 0 && (
-                  <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/5 text-xs space-y-1">
-                    <span className="font-semibold text-foreground block">
-                      Optional Plan Add-Ons ({selectedOptionalAddOns.length}):
-                    </span>
-                    <p className="text-[11px] text-muted-foreground">
-                      {selectedOptionalAddOns.slice(0, 8).map((m) => m.name).join(' • ')}
-                      {selectedOptionalAddOns.length > 8 ? ` + ${selectedOptionalAddOns.length - 8} more` : ''}
-                    </p>
-                  </div>
-                )}
-
-                <div className="p-3 bg-muted/40 rounded-lg border border-border text-xs text-muted-foreground">
-                  💡 <strong>Administrative Note:</strong> Specific module overrides and add-on grants can be fine-tuned after onboarding in the Organization Entitlements or Subscription governance panel.
-                </div>
-              </div>
-            )}
-
-            {/* Step 6: Technical */}
+            {/* Step 6: Subscription Plan & Regional Quotas */}
             {currentStep === 6 && (
               <div className="space-y-5 animate-in fade-in">
                 <div className="border-b border-border pb-3">
                   <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
-                    <Settings className="w-5 h-5 text-primary" />
-                    Step 6: Initial School Configuration
+                    <CreditCard className="w-5 h-5 text-primary" />
+                    Step 6: Subscription Plan, Quotas & Regional Defaults
                   </h3>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Regional localization, academic calendar cycle, and branch limits.
+                    Assign a canonical P0-4 commercial tier independently of tenant onboarding status.
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+                  {plans
+                    .filter((p) => p.status === 'published')
+                    .map((plan) => {
+                      const isSelected = formData.planId === plan.id;
+                      const compatCount = modules.filter((m) =>
+                        plan.includedModuleIds?.includes(m.id) &&
+                        categories.some((cat) => isSchoolTypeCompatible(cat, m.supportedSchoolTypes))
+                      ).length;
+
+                      return (
+                        <button
+                          key={plan.id}
+                          type="button"
+                          onClick={() => {
+                            setFormData((p) => ({
+                              ...p,
+                              planId: plan.id,
+                              technicalConfig: {
+                                ...p.technicalConfig,
+                                maxCampuses: Math.max(1, plan.maxCampuses),
+                              },
+                            }));
+                            clearErrorKeys(['planId']);
+                          }}
+                          className={`p-4 rounded-xl border text-left space-y-2 transition-all cursor-pointer ${
+                            isSelected
+                              ? 'border-primary bg-primary/10 ring-1 ring-primary'
+                              : 'border-border bg-background hover:bg-muted/40'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-sm text-foreground">{plan.name}</span>
+                            <Badge variant={isSelected ? 'info' : 'neutral'} size="sm">
+                              {plan.tier}
+                            </Badge>
+                          </div>
+                          <p className="text-muted-foreground">
+                            {formatCurrency(
+                              formData.billingCycle === 'annual' ? plan.priceAnnual : plan.priceMonthly,
+                              plan.currency
+                            )}{' '}
+                            / {formData.billingCycle}
+                          </p>
+                          <p className="text-[11px] font-mono text-foreground">
+                            {compatCount} compatible modules • Up to {plan.maxCampuses} campus(es)
+                          </p>
+                        </button>
+                      );
+                    })}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs pt-2 border-t border-border/50">
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-foreground">Timezone</label>
+                    <label className="font-semibold text-foreground">Billing Cycle</label>
                     <select
-                      value={formData.technicalConfig?.timezone}
-                      onChange={(e) => updateTechnical('timezone', e.target.value)}
-                      className="w-full px-3 py-2 text-sm bg-muted/30 rounded-lg border border-border focus:ring-2 focus:ring-primary/40 focus:outline-none"
+                      value={formData.billingCycle}
+                      onChange={(e) =>
+                        setFormData((p) => ({
+                          ...p,
+                          billingCycle: e.target.value as 'monthly' | 'annual',
+                        }))
+                      }
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground"
                     >
-                      <option value="UTC">UTC (Universal Coordinated Time)</option>
-                      <option value="America/New_York">America/New York (Eastern)</option>
-                      <option value="America/Chicago">America/Chicago (Central)</option>
-                      <option value="America/Denver">America/Denver (Mountain)</option>
-                      <option value="America/Los_Angeles">America/Los Angeles (Pacific)</option>
-                      <option value="Europe/London">Europe/London (GMT/BST)</option>
-                      <option value="Europe/Paris">Europe/Paris (CET)</option>
-                      <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
-                      <option value="Australia/Sydney">Australia/Sydney (AEST)</option>
+                      <option value="annual">Annual Billing</option>
+                      <option value="monthly">Monthly Billing</option>
                     </select>
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-foreground">Academic Year Start Month</label>
-                    <select
-                      value={formData.technicalConfig?.academicYearStartMonth}
-                      onChange={(e) => updateTechnical('academicYearStartMonth', parseInt(e.target.value, 10))}
-                      className="w-full px-3 py-2 text-sm bg-muted/30 rounded-lg border border-border focus:ring-2 focus:ring-primary/40 focus:outline-none"
-                    >
-                      <option value={1}>January (Term 1 Cycle)</option>
-                      <option value={8}>August (Fall US Cycle)</option>
-                      <option value={9}>September (Autumn European Cycle)</option>
-                      <option value={2}>February (Southern Hemisphere)</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-foreground">Base Operational Currency</label>
-                    <select
-                      value={formData.technicalConfig?.currency}
-                      onChange={(e) => updateTechnical('currency', e.target.value)}
-                      className="w-full px-3 py-2 text-sm bg-muted/30 rounded-lg border border-border focus:ring-2 focus:ring-primary/40 focus:outline-none"
-                    >
-                      <option value="USD">USD ($) — US Dollar</option>
-                      <option value="GBP">GBP (£) — British Pound</option>
-                      <option value="EUR">EUR (€) — Euro</option>
-                      <option value="CAD">CAD ($) — Canadian Dollar</option>
-                      <option value="AUD">AUD ($) — Australian Dollar</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-foreground">Max Campuses / Branches</label>
+                    <label className="font-semibold text-foreground">Timezone</label>
                     <input
-                      type="number"
-                      min={1}
-                      max={10}
-                      value={formData.technicalConfig?.maxCampuses}
-                      onChange={(e) => updateTechnical('maxCampuses', parseInt(e.target.value, 10) || 1)}
-                      className="w-full px-3 py-2 text-sm bg-muted/30 rounded-lg border border-border focus:ring-2 focus:ring-primary/40 focus:outline-none"
+                      type="text"
+                      value={formData.technicalConfig.timezone}
+                      onChange={(e) =>
+                        setFormData((p) => ({
+                          ...p,
+                          technicalConfig: { ...p.technicalConfig, timezone: e.target.value },
+                        }))
+                      }
+                      className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground"
                     />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-semibold text-foreground">Trial Activation Mode</label>
+                    <label className="flex items-center gap-2 p-2 rounded-lg border border-border bg-background cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(formData.startTrial)}
+                        onChange={(e) =>
+                          setFormData((p) => ({ ...p, startTrial: e.target.checked }))
+                        }
+                      />
+                      <span>Stage 30-day evaluation trial (`trialing`)</span>
+                    </label>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Step 7: Review & Confirmation */}
+            {/* Step 7: Review & Simulated Submission */}
             {currentStep === 7 && (
               <div className="space-y-5 animate-in fade-in">
                 <div className="border-b border-border pb-3">
                   <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
                     <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                    Step 7: Review & Provision Development Record
+                    Step 7: Review & Submit Simulated Registration
                   </h3>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Please inspect all parameters before creating the development tenant record.
+                    Inspect identity, combined school categories, initial campus, administrator, and separated subscription parameters before saving.
                   </p>
                 </div>
 
@@ -1072,89 +1223,88 @@ export default function OrganizationOnboardingWizardPage() {
                 )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                  {/* Org Profile Summary */}
-                  <div className="p-4 rounded-xl bg-muted/30 border border-border space-y-2">
-                    <h4 className="font-bold text-foreground text-xs uppercase tracking-wider">
-                      Organization Identity
-                    </h4>
-                    <p><span className="text-muted-foreground">Name:</span> <strong>{formData.name}</strong></p>
-                    <p><span className="text-muted-foreground">Code:</span> <strong className="font-mono">{formData.code}</strong></p>
-                    <p><span className="text-muted-foreground">Subdomain:</span> <strong className="font-mono">{formData.subdomain}.schoolsaas.internal</strong></p>
-                    <p><span className="text-muted-foreground">Classification:</span> <strong className="capitalize">{formData.classification.replace('_', ' ')}</strong></p>
+                  <div className="p-4 rounded-xl bg-muted/30 border border-border space-y-1.5">
+                    <h4 className="font-bold uppercase tracking-wider text-foreground">Organization & Categories</h4>
+                    <p><span className="text-muted-foreground">Display Name:</span> <strong>{formData.name}</strong></p>
+                    {formData.legalName && (
+                      <p><span className="text-muted-foreground">Legal Name:</span> <strong>{formData.legalName}</strong></p>
+                    )}
+                    <p><span className="text-muted-foreground">Code / Slug:</span> <strong className="font-mono">{formData.code} / {formData.subdomain}</strong></p>
+                    <p><span className="text-muted-foreground">Categories:</span> <strong>{categories.join(', ')}</strong></p>
                   </div>
 
-                  {/* Main Campus Summary */}
-                  <div className="p-4 rounded-xl bg-muted/30 border border-border space-y-2">
-                    <h4 className="font-bold text-foreground text-xs uppercase tracking-wider">
-                      Initial Main Campus
-                    </h4>
-                    <p><span className="text-muted-foreground">Campus Name:</span> <strong>{formData.initialCampus?.name}</strong></p>
-                    <p><span className="text-muted-foreground">Campus Code:</span> <strong className="font-mono">{formData.initialCampus?.code}</strong></p>
-                    <p><span className="text-muted-foreground">Location:</span> {formData.initialCampus?.city}, {formData.initialCampus?.country || formData.contact.country}</p>
-                    <p><span className="text-muted-foreground">Capacity:</span> {formData.initialCampus?.studentCapacity || 500} students</p>
+                  <div className="p-4 rounded-xl bg-muted/30 border border-border space-y-1.5">
+                    <h4 className="font-bold uppercase tracking-wider text-foreground">Initial Campus</h4>
+                    <p><span className="text-muted-foreground">Name:</span> <strong>{formData.initialCampus?.name}</strong></p>
+                    <p><span className="text-muted-foreground">Code:</span> <strong className="font-mono">{formData.initialCampus?.code}</strong></p>
+                    <p><span className="text-muted-foreground">Location:</span> {formData.initialCampus?.city}, {formData.initialCampus?.country}</p>
+                    <p><span className="text-muted-foreground">Capacity:</span> {formData.initialCampus?.studentCapacity} students</p>
                   </div>
 
-                  {/* Admin Summary */}
-                  <div className="p-4 rounded-xl bg-muted/30 border border-border space-y-2">
-                    <h4 className="font-bold text-foreground text-xs uppercase tracking-wider">
-                      Primary Administrator
-                    </h4>
-                    <p><span className="text-muted-foreground">Name:</span> <strong>{formData.administrator.name}</strong></p>
-                    <p><span className="text-muted-foreground">Role:</span> <strong>{formData.administrator.roleTitle}</strong></p>
+                  <div className="p-4 rounded-xl bg-muted/30 border border-border space-y-1.5">
+                    <h4 className="font-bold uppercase tracking-wider text-foreground">Primary Administrator</h4>
+                    <p><span className="text-muted-foreground">Name:</span> <strong>{formData.administrator.name}</strong> ({formData.administrator.roleTitle})</p>
                     <p><span className="text-muted-foreground">Email:</span> <strong className="font-mono">{formData.administrator.email}</strong></p>
-                    <p><span className="text-muted-foreground">Phone:</span> <strong>{formData.administrator.phone}</strong></p>
+                    <p><span className="text-muted-foreground">Phone:</span> {formData.administrator.phone}</p>
                   </div>
 
-                  {/* Subscription Summary */}
-                  <div className="p-4 rounded-xl bg-muted/30 border border-border space-y-2">
-                    <h4 className="font-bold text-foreground text-xs uppercase tracking-wider">
-                      Assigned Subscription
-                    </h4>
-                    <p><span className="text-muted-foreground">Plan:</span> <strong>{selectedPlan.name}</strong></p>
-                    <p><span className="text-muted-foreground">Billing Cycle:</span> <strong className="capitalize">{formData.billingCycle}</strong></p>
-                    <p><span className="text-muted-foreground">Initial Rate:</span> <strong>{formatCurrency(formData.billingCycle === 'annual' ? selectedPlan.priceAnnual : selectedPlan.priceMonthly)}</strong></p>
-                    <p><span className="text-muted-foreground">Included Modules:</span> <strong>{includedModulesCount} Modules</strong></p>
+                  <div className="p-4 rounded-xl bg-muted/30 border border-border space-y-1.5">
+                    <h4 className="font-bold uppercase tracking-wider text-foreground">Subscription & Entitlements</h4>
+                    <p><span className="text-muted-foreground">Plan:</span> <strong>{selectedPlan.name}</strong> ({formData.billingCycle})</p>
+                    <p><span className="text-muted-foreground">Initial Billing Status:</span> <strong>{formData.startTrial ? 'trialing' : 'active'}</strong></p>
+                    <p><span className="text-muted-foreground">Compatible Modules:</span> <strong>{compatibleModulesCount} (from P0-4 registry)</strong></p>
                   </div>
                 </div>
 
                 <AlertBanner variant="warning" className="text-xs">
-                  <strong>Verification Note:</strong> This form will append a simulated school tenant record and main campus to your browser-persisted mock store. No payment cards will be charged and no live tenant cluster will be modified until backend provisioning endpoints are integrated.
+                  <strong>Simulation Disclosure:</strong> Submitting records this organization into client-side mock state only (`registration_pending` or `draft`). No live cluster provisioning or real welcome emails occur.
                 </AlertBanner>
               </div>
             )}
 
-            {/* Stepper Navigation Buttons */}
-            <div className="flex items-center justify-between pt-4 border-t border-border">
+            {/* Navigation Footer */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-border">
               <button
                 type="button"
-                onClick={handlePrev}
+                onClick={() => setCurrentStep((prev) => Math.max(1, prev - 1))}
                 disabled={currentStep === 1 || isSubmitting}
-                className="px-4 py-2 text-xs font-semibold rounded-lg border border-border text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 transition-colors cursor-pointer"
+                className="px-4 py-2 text-xs font-semibold rounded-lg border border-border text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
                 Previous Step
               </button>
 
-              {currentStep < STEPS.length ? (
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={handleNext}
-                  className="px-5 py-2 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-                >
-                  Next Step
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleSubmit}
+                  onClick={() => handleSubmit(true)}
                   disabled={isSubmitting}
-                  className="px-6 py-2.5 text-xs font-bold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
+                  className="px-4 py-2 text-xs font-semibold rounded-lg border border-border text-foreground hover:bg-muted cursor-pointer"
                 >
-                  <ShieldCheck className="w-4 h-4" />
-                  {isSubmitting ? 'Provisioning...' : 'Provision Organization (Demo)'}
+                  Save as Draft Organization
                 </button>
-              )}
+
+                {currentStep < STEPS.length ? (
+                  <button
+                    type="button"
+                    onClick={handleNext}
+                    className="px-5 py-2 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  >
+                    Next Step
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleSubmit(false)}
+                    disabled={isSubmitting}
+                    className="px-6 py-2.5 text-xs font-bold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2 shadow-xs cursor-pointer"
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    {isSubmitting ? 'Submitting...' : 'Submit Simulated Registration'}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

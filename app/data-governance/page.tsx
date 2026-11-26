@@ -5,6 +5,8 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Tabs } from '@/components/ui/Tabs';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
+import { isPlatformDevControlsEnabled } from '@/lib/auth/platformAuthConfig';
 import { GovernanceNotice } from '@/components/data-governance/GovernanceNotice';
 import { GovernanceOverviewTab } from '@/components/data-governance/GovernanceOverviewTab';
 import { DataInventoryTab } from '@/components/data-governance/DataInventoryTab';
@@ -176,6 +178,10 @@ function DataGovernanceContent() {
     }
   };
 
+  const { can } = usePlatformAuth();
+  const canResetFixtures =
+    isPlatformDevControlsEnabled() && can('system.maintenance.manage');
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -191,23 +197,23 @@ function DataGovernanceContent() {
               <Download className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
               Export Package
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (window.confirm('Reset data governance records to deterministic baseline?')) {
+            {canResetFixtures && (
+              <button
+                type="button"
+                onClick={() => {
                   resetToDefaults();
                   addToast({
                     title: 'Store Reset',
                     message: 'All governance fixtures and configurations restored to initial seed state.',
                     type: 'info',
                   });
-                }
-              }}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              Reset
-            </button>
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Reset
+              </button>
+            )}
           </div>
         }
       />
@@ -302,6 +308,10 @@ function DataGovernanceContent() {
 }
 
 export default function DataGovernancePage() {
+  const { can } = usePlatformAuth();
+  const canResetFixtures =
+    isPlatformDevControlsEnabled() && can('system.maintenance.manage');
+
   return (
     <Suspense
       fallback={

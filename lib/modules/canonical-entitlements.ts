@@ -289,13 +289,34 @@ export function resolveCanonicalEntitlement(
     };
   }
 
-  // 3. Tenant lifecycle status check
+  // 3. Tenant lifecycle status check (canonical P0-5 states + safe fail-closed unknown check)
   const tenantStatusLower = context.tenantStatus.trim().toLowerCase();
-  if (
-    tenantStatusLower === "suspended" ||
-    tenantStatusLower === "inactive" ||
-    tenantStatusLower === "archived"
-  ) {
+  const operationalLifecycleStates = new Set([
+    "active",
+    "trial",
+    "cancellation_pending",
+  ]);
+  const restrictedLifecycleReasons: Record<string, string> = {
+    draft: `Tenant "${context.tenantId}" is still in Draft status before registration submission.`,
+    registration_pending: `Tenant registration is pending Super Admin verification before workspace activation.`,
+    pending: `Tenant registration is pending review before workspace activation.`,
+    onboarding_in_progress: `Tenant onboarding is still in progress. Complete guided setup to unlock operational modules.`,
+    onboarding: `Tenant onboarding is still in progress. Complete guided setup to unlock operational modules.`,
+    awaiting_configuration: `Tenant is awaiting mandatory configuration updates prior to activation.`,
+    inactive: `Tenant account status is inactive/awaiting configuration. Operational modules are restricted.`,
+    awaiting_activation: `Tenant configuration is complete and awaiting final Super Admin activation.`,
+    pending_activation: `Tenant is awaiting final Super Admin activation.`,
+    suspended: `Tenant account is administratively suspended. Operational module access is restricted.`,
+    cancelled: `Tenant service has been cancelled. Operational modules are locked.`,
+    canceled: `Tenant service has been cancelled. Operational modules are locked.`,
+    archived: `Tenant record is archived read-only. Active operational modules are disabled.`,
+    closed: `Tenant institution is permanently closed.`,
+  };
+
+  if (!operationalLifecycleStates.has(tenantStatusLower)) {
+    const explanation =
+      restrictedLifecycleReasons[tenantStatusLower] ||
+      `Unrecognized or non-operational tenant lifecycle state ("${context.tenantStatus}"). Failing closed safely.`;
     return {
       allowed: false,
       targetType,
@@ -305,7 +326,7 @@ export function resolveCanonicalEntitlement(
       effectiveStatus: "unavailable",
       implementationMaturity: maturity,
       reasonCode: "TENANT_SUSPENDED",
-      explanation: `Tenant account status is "${context.tenantStatus}". Institutional module access is suspended.`,
+      explanation,
       source: "restricted",
       requiresUpgrade: false,
       requiresAddon: false,

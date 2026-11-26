@@ -491,6 +491,9 @@ function collectDiskPages(dir: string, prefix = ""): string[] {
 
 const EXPLICIT_ROUTE_TO_MODULE: Record<string, string> = {
   "/profile": "mod_dashboard",
+  "/onboarding": "mod_settings",
+  "/support": "mod_settings",
+  "/settings/activity": "mod_settings",
   "/settings/account": "mod_settings",
   "/settings/profile": "mod_settings",
   "/settings/security": "mod_settings",
@@ -560,6 +563,11 @@ function buildModules(): CanonicalModuleDefinition[] {
 
   for (const section of navigationConfig) {
     for (const item of section.items) {
+      // P0-6 utility workspaces are mapped onto mod_settings via EXPLICIT_ROUTE_TO_MODULE
+      // to keep canonical module cardinality stable (398 modules: 57 top-level, 341 submodules).
+      if (item.id === "nav-support" || item.id === "nav-activity-history") {
+        continue;
+      }
       const topId = navIdToModuleId(item.id, true);
       const topCat = TOP_CATEGORY_MAP[topId] || {
         category: "tenant_settings",
@@ -1730,6 +1738,28 @@ function main() {
     const src = path.join(dashOutDir, sharedFile);
     const dest = path.join(frontOutDir, sharedFile);
     fs.copyFileSync(src, dest);
+  }
+
+  // Sync canonical P0-5 lifecycle & onboarding models from dashboard -> frontend
+  const dashLifecycleDir = path.join(DASHBOARD_ROOT, "lib/lifecycle");
+  const frontLifecycleDir = path.join(FRONTEND_ROOT, "lib/lifecycle");
+  fs.mkdirSync(frontLifecycleDir, { recursive: true });
+  for (const sharedFile of ["canonical-lifecycle.ts", "canonical-onboarding.ts"]) {
+    const src = path.join(dashLifecycleDir, sharedFile);
+    const dest = path.join(frontLifecycleDir, sharedFile);
+    if (fs.existsSync(src)) {
+      fs.copyFileSync(src, dest);
+    }
+  }
+
+  // Sync canonical P0-6 operations contracts from dashboard -> frontend
+  const dashOpsDir = path.join(DASHBOARD_ROOT, "lib/operations");
+  const frontOpsDir = path.join(FRONTEND_ROOT, "lib/operations");
+  fs.mkdirSync(frontOpsDir, { recursive: true });
+  const opsSrc = path.join(dashOpsDir, "canonical-operations.ts");
+  const opsDest = path.join(frontOpsDir, "canonical-operations.ts");
+  if (fs.existsSync(opsSrc)) {
+    fs.copyFileSync(opsSrc, opsDest);
   }
 
   console.log(

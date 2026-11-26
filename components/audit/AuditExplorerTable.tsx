@@ -28,6 +28,12 @@ interface AuditExplorerTableProps {
   onStatusChange: (val: string) => void;
   orgFilter: string;
   onOrgChange: (val: string) => void;
+  campusFilter?: string;
+  onCampusChange?: (val: string) => void;
+  campuses?: Array<{ id: string; organizationId: string; name: string }>;
+  actorFilter?: string;
+  onActorChange?: (val: string) => void;
+  actors?: Array<{ id: string; name: string; role: string }>;
   startDate: string;
   onStartDateChange: (val: string) => void;
   endDate: string;
@@ -52,6 +58,12 @@ export function AuditExplorerTable({
   onStatusChange,
   orgFilter,
   onOrgChange,
+  campusFilter = 'all',
+  onCampusChange,
+  campuses = [],
+  actorFilter = 'all',
+  onActorChange,
+  actors = [],
   startDate,
   onStartDateChange,
   endDate,
@@ -67,6 +79,8 @@ export function AuditExplorerTable({
     severityFilter !== 'all' ||
     statusFilter !== 'all' ||
     orgFilter !== 'all' ||
+    campusFilter !== 'all' ||
+    actorFilter !== 'all' ||
     startDate !== '' ||
     endDate !== '' ||
     sortBy !== 'timestamp_desc';
@@ -263,6 +277,10 @@ export function AuditExplorerTable({
             <option value="data_retention">Data Retention</option>
             <option value="compliance_governance">Compliance Governance</option>
             <option value="data_export">Data Export Activity</option>
+            <option value="support_operations">Support Operations</option>
+            <option value="administrative_approvals">Administrative Approvals</option>
+            <option value="operational_exceptions">Operational Exceptions</option>
+            <option value="platform_communications">Platform Communications</option>
           </select>
 
           {/* Severity Filter */}
@@ -302,6 +320,40 @@ export function AuditExplorerTable({
               </option>
             ))}
           </select>
+
+          {onActorChange && (
+            <select
+              value={actorFilter}
+              onChange={(e) => onActorChange(e.target.value)}
+              aria-label="Filter audit logs by actor"
+              className="rounded-lg border border-border bg-muted px-2.5 py-1.5 text-foreground focus:outline-none truncate"
+            >
+              <option value="all">All Platform Actors</option>
+              {actors.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} ({a.role})
+                </option>
+              ))}
+            </select>
+          )}
+
+          {onCampusChange && campuses.length > 0 && (
+            <select
+              value={campusFilter}
+              onChange={(e) => onCampusChange(e.target.value)}
+              aria-label="Filter audit logs by campus"
+              className="rounded-lg border border-border bg-muted px-2.5 py-1.5 text-foreground focus:outline-none truncate"
+            >
+              <option value="all">All Campuses</option>
+              {campuses
+                .filter((c) => orgFilter === 'all' || c.organizationId === orgFilter)
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+            </select>
+          )}
 
           {/* Date Range Start */}
           <div className="flex items-center gap-1 bg-muted px-2 py-1.5 rounded-lg border border-border">

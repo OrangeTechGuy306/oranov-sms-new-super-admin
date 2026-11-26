@@ -4,6 +4,18 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { platformStore, PlatformMetrics } from '@/lib/data/platform-store';
 import { useOptionalPlatformAuth } from './PlatformAuthContext';
 import { hasAnyPlatformPermission, hasPlatformPermission } from '@/lib/iam/rbac';
+import type {
+  PlatformApprovalRequest,
+  PlatformApprovalType,
+  PlatformNotice,
+  OperationalExceptionRecord,
+  OperationalExceptionStatus,
+} from '@/lib/operations/canonical-operations';
+import type {
+  OperationalQueueId,
+  OperationalQueueItem,
+  PlatformOperationalOverviewMetrics,
+} from '@/lib/operations/queues';
 import {
   Organization,
   SubscriptionPlan,
@@ -204,7 +216,12 @@ interface PlatformStoreContextType {
   getSimulatedEvents: (orgId?: string) => SimulatedProvisioningEvent[];
   createOrganization: (input: CreateOrganizationInput) => { success: boolean; organization?: Organization; error?: string };
   updateOrganization: (id: string, input: UpdateOrganizationInput) => { success: boolean; organization?: Organization; error?: string };
-  setOrganizationStatus: (id: string, status: OrganizationLifecycleStatus, reason?: string) => { success: boolean; error?: string };
+  setOrganizationStatus: (
+    id: string,
+    status: OrganizationLifecycleStatus,
+    reason?: string,
+    options?: { confirmationCode?: string; cancellationEffectiveAt?: string }
+  ) => { success: boolean; error?: string };
   updateOrganizationPlan: (id: string, planId: string, billingCycle?: 'monthly' | 'annual') => { success: boolean; error?: string };
   createPlan: (input: CreatePlanInput) => { success: boolean; plan?: SubscriptionPlan; error?: string };
   updatePlan: (id: string, input: UpdatePlanInput) => { success: boolean; plan?: SubscriptionPlan; error?: string };
@@ -219,7 +236,25 @@ interface PlatformStoreContextType {
   setCampusStatus: (campusId: string, status: CampusStatus, reason?: string) => { success: boolean; error?: string };
   deleteCampus: (campusId: string) => { success: boolean; error?: string };
   evaluateOrganizationReadiness: (orgId: string) => OrganizationReadinessReport;
-  runSimulatedProvisioning: (orgId: string, forceFail?: boolean) => { success: boolean; status: ProvisioningStatus; error?: string };
+  runSimulatedProvisioning: (
+    orgId: string,
+    optionsOrForceFail?:
+      | boolean
+      | {
+          forceFail?: boolean;
+          forceFailStageKey?:
+            | 'registration_accepted'
+            | 'profile_prepared'
+            | 'initial_campus_prepared'
+            | 'institution_structure_configured'
+            | 'subscription_assigned'
+            | 'entitlements_prepared'
+            | 'initial_administrator_configured'
+            | 'ready_for_activation';
+          markForManualReview?: boolean;
+          attempt?: number;
+        }
+  ) => { success: boolean; status: ProvisioningStatus; error?: string };
   resetSimulatedProvisioning: (orgId: string) => { success: boolean };
   recordPayment: (input: { invoiceId: string; amount: number; method: PaymentMethodType; referenceNumber: string; notes?: string }) => { success: boolean; payment?: PaymentRecord; error?: string };
   createPlatformUser: (input: { name: string; email: string; role: PlatformRoleKey; assignedRoles?: string[]; department?: string; notes?: string }) => { success: boolean; user?: PlatformUser; error?: string };
@@ -432,6 +467,57 @@ interface PlatformStoreContextType {
   getTenantGovernanceSummaries: () => TenantGovernanceSummary[];
   getGovernanceMetrics: () => GovernanceMetricsSummary;
   getGovernanceAuditLogs: (filters?: { query?: string; action?: string; severity?: string }) => GovernanceAuditRecord[];
+
+  // P0-6: Operations Center, Approvals, Notices & Exceptions
+  operationalOverview: PlatformOperationalOverviewMetrics;
+  operationalQueues: Record<OperationalQueueId, OperationalQueueItem[]>;
+  platformApprovals: PlatformApprovalRequest[];
+  platformNotices: PlatformNotice[];
+  operationalExceptions: OperationalExceptionRecord[];
+  createApprovalRequest: (input: {
+    type: PlatformApprovalType;
+    title: string;
+    description: string;
+    organizationId?: string;
+    campusId?: string;
+    linkedTicketId?: string;
+    linkedTaskId?: string;
+    linkedExceptionId?: string;
+    targetEntityType: string;
+    targetEntityId: string;
+    requestedActionLabel: string;
+    priority: 'low' | 'normal' | 'high' | 'urgent';
+    dueAt?: string;
+  }) => { success: boolean; approval?: PlatformApprovalRequest; error?: string };
+  reviewApprovalRequest: (
+    approvalId: string,
+    decision: 'approved' | 'rejected' | 'cancelled',
+    notes?: string
+  ) => { success: boolean; approval?: PlatformApprovalRequest; error?: string };
+  createPlatformNotice: (input: {
+    title: string;
+    summary: string;
+    body: string;
+    category: PlatformNotice['category'];
+    severity: PlatformNotice['severity'];
+    audience: PlatformNotice['audience'];
+    targetOrganizationIds?: string[];
+    targetPlanIds?: string[];
+    targetCampusIds?: string[];
+    channelSimulations?: PlatformNotice['channelSimulations'];
+    requiresApproval?: boolean;
+    scheduledFor?: string;
+    expiresAt?: string;
+  }) => { success: boolean; notice?: PlatformNotice; error?: string };
+  transitionPlatformNoticeStatus: (
+    noticeId: string,
+    nextStatus: PlatformNotice['status']
+  ) => { success: boolean; notice?: PlatformNotice; error?: string };
+  triageOperationalException: (
+    exceptionId: string,
+    nextStatus: OperationalExceptionStatus,
+    options?: { notes?: string; assignedOperatorId?: string; escalatedTo?: string }
+  ) => { success: boolean; exception?: OperationalExceptionRecord; error?: string };
 }
 
 const PlatformStoreContext = createContext<PlatformStoreContextType | undefined>(undefined);
@@ -494,15 +580,34 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     [authCtx, actorUser, actorPerms, addToast]
   );
 
+  const actorProfile = actorUser
+    ? {
+        id: actorUser.id,
+        name: actorUser.name,
+        email: actorUser.email,
+        role: actorUser.role,
+      }
+    : undefined;
+
+  const getActorMetadata = () =>
+    actorUser
+      ? {
+          id: actorUser.id,
+          name: actorUser.name,
+          email: actorUser.email,
+          role: actorUser.role,
+        }
+      : undefined;
+
   const createOrganization = (input: CreateOrganizationInput) => {
     const err = guardPerm('organizations.create', 'create an organization');
     if (err) return { success: false, error: err };
-    const res = platformStore.createOrganization(input);
+    const res = platformStore.createOrganization(input, getActorMetadata());
     if (res.success && res.organization) {
       addToast({
         type: 'success',
-        title: 'Organization Created',
-        message: `Registered ${res.organization.name} (${res.organization.code}) in development store.`,
+        title: 'Registration Staged',
+        message: `Saved ${res.organization.name} (${res.organization.code}) in client-side simulation store.`,
       });
     } else if (res.error) {
       addToast({
@@ -517,7 +622,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   const updateOrganization = (id: string, input: UpdateOrganizationInput) => {
     const err = guardPerm('organizations.update', 'update organization details');
     if (err) return { success: false, error: err };
-    const res = platformStore.updateOrganization(id, input);
+    const res = platformStore.updateOrganization(id, input, getActorMetadata());
     if (res.success && res.organization) {
       addToast({
         type: 'success',
@@ -534,15 +639,24 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     return res;
   };
 
-  const setOrganizationStatus = (id: string, status: OrganizationLifecycleStatus, reason?: string) => {
+  const setOrganizationStatus = (
+    id: string,
+    status: OrganizationLifecycleStatus,
+    reason?: string,
+    options?: { confirmationCode?: string; cancellationEffectiveAt?: string }
+  ) => {
     const err = guardPerm('organizations.lifecycle.manage', 'change organization lifecycle status');
     if (err) return { success: false, error: err };
-    const res = platformStore.setOrganizationStatus(id, status, reason);
+    const res = platformStore.setOrganizationStatus(id, status, reason, {
+      ...options,
+      actorPermissions: actorPerms,
+      actor: getActorMetadata(),
+    });
     if (res.success) {
       addToast({
-        type: status === 'suspended' ? 'warning' : 'success',
+        type: status === 'suspended' || status === 'cancelled' ? 'warning' : 'success',
         title: 'Lifecycle Status Changed',
-        message: `Organization status set to ${status}. Local mock state updated.`,
+        message: `Organization lifecycle status set to ${status}. Local mock state updated.`,
       });
     } else if (res.error) {
       addToast({
@@ -1034,6 +1148,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const setMainCampus = (orgId: string, campusId: string) => {
+    const err = guardPerm('tenants.campuses.manage', 'designate main campus');
+    if (err) return { success: false, error: err };
     const res = platformStore.setMainCampus(orgId, campusId);
     if (res.success) {
       addToast({
@@ -1052,6 +1168,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const setCampusStatus = (campusId: string, status: CampusStatus, reason?: string) => {
+    const err = guardPerm('tenants.campuses.manage', 'update campus operational status');
+    if (err) return { success: false, error: err };
     const res = platformStore.setCampusStatus(campusId, status, reason);
     if (res.success) {
       addToast({
@@ -1089,25 +1207,57 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     return res;
   };
 
-  const runSimulatedProvisioning = (orgId: string, forceFail?: boolean) => {
-    const res = platformStore.runSimulatedProvisioning(orgId, forceFail);
+  const runSimulatedProvisioning = (
+    orgId: string,
+    optionsOrForceFail?:
+      | boolean
+      | {
+          forceFail?: boolean;
+          forceFailStageKey?:
+            | 'registration_accepted'
+            | 'profile_prepared'
+            | 'initial_campus_prepared'
+            | 'institution_structure_configured'
+            | 'subscription_assigned'
+            | 'entitlements_prepared'
+            | 'initial_administrator_configured'
+            | 'ready_for_activation';
+          markForManualReview?: boolean;
+          attempt?: number;
+        }
+  ) => {
+    const err = guardPerm('organizations.lifecycle.manage', 'execute simulated provisioning');
+    if (err) return { success: false, status: 'needs_attention' as ProvisioningStatus, error: err };
+    const normalized =
+      typeof optionsOrForceFail === 'boolean'
+        ? { forceFail: optionsOrForceFail, actor: getActorMetadata() }
+        : { ...(optionsOrForceFail || {}), actor: getActorMetadata() };
+    const res = platformStore.runSimulatedProvisioning(orgId, normalized);
     if (res.success) {
       addToast({
-        type: 'success',
-        title: 'Simulated Provisioning Succeeded',
-        message: 'All 5 local demonstration steps completed successfully.',
+        type: res.status === 'ready_for_review' ? 'warning' : 'success',
+        title:
+          res.status === 'ready_for_review'
+            ? 'Provisioning Queued for Review'
+            : 'Simulated Preparation Complete',
+        message:
+          res.status === 'ready_for_review'
+            ? 'All 8 preparation checks staged and flagged for manual operator review.'
+            : 'All 8 business-level tenant preparation stages succeeded cleanly.',
       });
     } else {
       addToast({
         type: 'error',
-        title: 'Simulation Notice',
-        message: res.error || 'Provisioning simulation reported blockers or failure.',
+        title: 'Provisioning Simulation Halted',
+        message: res.error || 'Provisioning simulation reported blockers or stage failure.',
       });
     }
     return res;
   };
 
   const resetSimulatedProvisioning = (orgId: string) => {
+    const err = guardPerm('tenants.provisioning.simulate', 'reset simulated provisioning');
+    if (err) return { success: false };
     const res = platformStore.resetSimulatedProvisioning(orgId);
     if (res.success) {
       addToast({
@@ -1160,6 +1310,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const transitionSubscriptionStatus = (subId: string, status: SubscriptionStatus, reason: string) => {
+    const err = guardPerm('billing.subscriptions.manage', 'transition subscription status');
+    if (err) return { success: false, error: err };
     const res = platformStore.transitionSubscriptionStatus(subId, status, reason);
     if (res.success) {
       addToast({
@@ -1178,6 +1330,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const voidInvoice = (invoiceId: string, reason: string) => {
+    const err = guardPerm('billing.invoices.manage', 'void invoice');
+    if (err) return { success: false, error: err };
     const res = platformStore.voidInvoice(invoiceId, reason);
     if (res.success && res.invoice) {
       addToast({
@@ -1196,6 +1350,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const retryPayment = (paymentId: string) => {
+    const err = guardPerm('billing.payments.manage', 'retry failed payment');
+    if (err) return { success: false, error: err };
     const res = platformStore.retryPayment(paymentId);
     if (res.success && res.payment) {
       addToast({
@@ -1254,7 +1410,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const acknowledgeIncident = (incidentId: string, actorName?: string) => {
-    const res = platformStore.acknowledgeIncident(incidentId, actorName);
+    const err = guardPerm('system.maintenance.manage', 'acknowledge platform incident');
+    if (err) return { success: false, error: err };
+    const res = platformStore.acknowledgeIncident(incidentId, actorName || actorProfile?.name);
     if (res.success) {
       addToast({
         type: 'info',
@@ -1277,7 +1435,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     context?: { resolutionNotes?: string; rootCause?: string; reopenReason?: string },
     actorName?: string
   ) => {
-    const res = platformStore.transitionIncidentStatus(incidentId, newStatus, context, actorName);
+    const err = guardPerm('system.maintenance.manage', 'transition platform incident');
+    if (err) return { success: false, error: err };
+    const res = platformStore.transitionIncidentStatus(incidentId, newStatus, context, actorName || actorProfile?.name);
     if (res.success) {
       addToast({
         type: newStatus === 'resolved' ? 'success' : 'info',
@@ -1295,7 +1455,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const addIncidentNote = (incidentId: string, message: string, author?: string) => {
-    const res = platformStore.addIncidentNote(incidentId, message, author);
+    const err = guardPerm('system.maintenance.manage', 'append incident note');
+    if (err) return { success: false, error: err };
+    const res = platformStore.addIncidentNote(incidentId, message, author || actorProfile?.name);
     if (res.success) {
       addToast({
         type: 'success',
@@ -1313,7 +1475,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const createMaintenanceWindow = (input: CreateMaintenanceInput, actorName?: string) => {
-    const res = platformStore.createMaintenanceWindow(input, actorName);
+    const err = guardPerm('system.maintenance.manage', 'schedule maintenance window');
+    if (err) return { success: false, error: err };
+    const res = platformStore.createMaintenanceWindow(input, actorName || actorProfile?.name);
     if (res.success && res.maintenanceWindow) {
       addToast({
         type: 'success',
@@ -1825,17 +1989,29 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     validateRegistry: () => platformStore.validateRegistry(),
     logAuditEvent: (event) => platformStore.logAuditEvent(event),
     getSecurityEvents: (filters) => platformStore.getSecurityEvents(filters),
-    updateSecurityEventTriage: (id, status, notes, reviewer) =>
-      platformStore.updateSecurityEventTriage(id, status, notes, reviewer),
+    updateSecurityEventTriage: (id, status, notes, reviewer) => {
+      const err = guardPerm('audit.governance.manage', 'triage security event');
+      if (err) return { success: false, error: err };
+      return platformStore.updateSecurityEventTriage(id, status, notes, reviewer || actorProfile?.name);
+    },
     getComplianceControls: (filters) => platformStore.getComplianceControls(filters),
-    updateComplianceControlRemediation: (id, notes, targetDate, reviewer) =>
-      platformStore.updateComplianceControlRemediation(id, notes, targetDate, reviewer),
+    updateComplianceControlRemediation: (id, notes, targetDate, reviewer) => {
+      const err = guardPerm('audit.governance.manage', 'update compliance remediation');
+      if (err) return { success: false, error: err };
+      return platformStore.updateComplianceControlRemediation(id, notes, targetDate, reviewer || actorProfile?.name);
+    },
     getGovernanceEvidence: (filters) => platformStore.getGovernanceEvidence(filters),
-    updateGovernanceEvidenceStatus: (id, status, notes, reviewer) =>
-      platformStore.updateGovernanceEvidenceStatus(id, status, notes, reviewer),
+    updateGovernanceEvidenceStatus: (id, status, notes, reviewer) => {
+      const err = guardPerm('audit.governance.manage', 'update governance evidence status');
+      if (err) return { success: false, error: err };
+      return platformStore.updateGovernanceEvidenceStatus(id, status, notes, reviewer || actorProfile?.name);
+    },
     getRetentionPolicies: (filters) => platformStore.getRetentionPolicies(filters),
-    updateRetentionPolicy: (id, newDays, reason, isEnabled, actorName) =>
-      platformStore.updateRetentionPolicy(id, newDays, reason, isEnabled, actorName),
+    updateRetentionPolicy: (id, newDays, reason, isEnabled, actorName) => {
+      const err = guardPerm('audit.governance.manage', 'update data retention policy');
+      if (err) return { success: false, error: err };
+      return platformStore.updateRetentionPolicy(id, newDays, reason, isEnabled, actorName || actorProfile?.name);
+    },
     acknowledgeIncident,
     transitionIncidentStatus,
     addIncidentNote,
@@ -2002,8 +2178,10 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     },
     getCampaignDrafts: () => platformStore.getCampaignDrafts(),
     createCampaignDraft: (input, actorName) => {
+      const err = guardPerm('communications.notices.manage', 'create campaign draft');
+      if (err) return { success: false, error: err };
       try {
-        const res = platformStore.createCampaignDraft(input, actorName);
+        const res = platformStore.createCampaignDraft(input, actorName || actorProfile?.name);
         addToast({ type: 'success', title: 'Campaign Drafted', message: `Created plan '${res.name}'.` });
         return { success: true, campaign: res };
       } catch (err: any) {
@@ -2012,8 +2190,10 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       }
     },
     updateCampaignDraft: (id, updates, actorName) => {
+      const err = guardPerm('communications.notices.manage', 'update campaign draft');
+      if (err) return { success: false, error: err };
       try {
-        const res = platformStore.updateCampaignDraft(id, updates, actorName);
+        const res = platformStore.updateCampaignDraft(id, updates, actorName || actorProfile?.name);
         addToast({ type: 'success', title: 'Campaign Updated', message: `Saved changes to '${res.name}'.` });
         return { success: true, campaign: res };
       } catch (err: any) {
@@ -2022,8 +2202,10 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       }
     },
     transitionCampaignStatus: (id, status, actorName) => {
+      const err = guardPerm('communications.notices.manage', 'transition campaign status');
+      if (err) return { success: false, error: err };
       try {
-        const res = platformStore.transitionCampaignStatus(id, status, actorName);
+        const res = platformStore.transitionCampaignStatus(id, status as 'draft' | 'pending_approval' | 'approved' | 'cancelled', actorName || actorProfile?.name);
         addToast({ type: 'info', title: 'Campaign Status Changed', message: `'${res.name}' is now ${status}.` });
         return { success: true, campaign: res };
       } catch (err: any) {
@@ -2058,7 +2240,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     getSupportTickets: (filters) => platformStore.getSupportTickets(filters),
     getSupportTicketById: (id) => platformStore.getSupportTicketById(id),
     createSupportTicket: (input, actorName) => {
-      const res = platformStore.createSupportTicket(input, actorName);
+      const err = guardPerm('support.tickets.manage', 'create support ticket');
+      if (err) return { success: false, error: err };
+      const res = platformStore.createSupportTicket(input, actorProfile || actorName);
       if (res.success && res.ticket) {
         addToast({
           type: 'success',
@@ -2071,7 +2255,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     updateSupportTicket: (id, updates, actorName) => {
-      const res = platformStore.updateSupportTicket(id, updates, actorName);
+      const err = guardPerm('support.tickets.manage', 'update support ticket');
+      if (err) return { success: false, error: err };
+      const res = platformStore.updateSupportTicket(id, updates, actorProfile || actorName);
       if (res.success && res.ticket) {
         addToast({
           type: 'success',
@@ -2084,7 +2270,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     transitionSupportTicketStatus: (id, status, reason, actorName) => {
-      const res = platformStore.transitionSupportTicketStatus(id, status, reason, actorName);
+      const err = guardPerm('support.tickets.manage', 'transition support ticket status');
+      if (err) return { success: false, error: err };
+      const res = platformStore.transitionSupportTicketStatus(id, status, reason, actorProfile || actorName);
       if (res.success && res.ticket) {
         addToast({
           type: status === 'closed' || status === 'resolved' ? 'success' : 'info',
@@ -2097,7 +2285,12 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     assignSupportTicket: (id, operatorId, teamId, reason, actorName) => {
-      const res = platformStore.assignSupportTicket(id, operatorId, teamId, reason, actorName);
+      const err = guardPerm('support.tickets.manage', 'assign support ticket', [
+        'support.tickets.manage',
+        'support.tickets.escalate',
+      ]);
+      if (err) return { success: false, error: err };
+      const res = platformStore.assignSupportTicket(id, operatorId, teamId, reason, actorProfile || actorName);
       if (res.success && res.ticket) {
         addToast({
           type: 'info',
@@ -2110,7 +2303,16 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     escalateSupportTicket: (id, reason, targetTeamId, urgencyLevel, targetTier, actorName) => {
-      const res = platformStore.escalateSupportTicket(id, reason, targetTeamId, urgencyLevel, targetTier, actorName);
+      const err = guardPerm('support.tickets.escalate', 'escalate support ticket');
+      if (err) return { success: false, error: err };
+      const res = platformStore.escalateSupportTicket(
+        id,
+        reason,
+        targetTeamId,
+        urgencyLevel,
+        targetTier,
+        actorProfile || actorName
+      );
       if (res.success && res.ticket) {
         addToast({
           type: 'warning',
@@ -2123,7 +2325,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     deescalateSupportTicket: (id, notes, actorName) => {
-      const res = platformStore.deescalateSupportTicket(id, notes, actorName);
+      const err = guardPerm('support.tickets.escalate', 'de-escalate support ticket');
+      if (err) return { success: false, error: err };
+      const res = platformStore.deescalateSupportTicket(id, notes, actorProfile || actorName);
       if (res.success && res.ticket) {
         addToast({
           type: 'info',
@@ -2136,7 +2340,20 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     addSupportTicketMessage: (ticketId, type, content, isDraft, actorName) => {
-      const res = platformStore.addSupportTicketMessage(ticketId, type, content, isDraft, actorName);
+      const reqPerm =
+        type === 'internal_note' ? 'support.internal_notes.manage' : 'support.tickets.manage';
+      const err = guardPerm(
+        reqPerm,
+        type === 'internal_note' ? 'add internal operator note' : 'send support reply'
+      );
+      if (err) return { success: false, error: err };
+      const res = platformStore.addSupportTicketMessage(
+        ticketId,
+        type,
+        content,
+        isDraft,
+        actorProfile || actorName
+      );
       if (res.success) {
         addToast({
           type: 'success',
@@ -2275,11 +2492,13 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     },
     getCsTasks: (filters) => platformStore.getCsTasks(filters),
     createCsTask: (input, actorName) => {
-      const res = platformStore.createCsTask(input, actorName);
+      const err = guardPerm('operations.tasks.manage', 'create operational follow-up task');
+      if (err) return { success: false, error: err };
+      const res = platformStore.createCsTask(input, actorProfile || actorName);
       if (res.success && res.task) {
         addToast({
           type: 'success',
-          title: 'CS Task Created',
+          title: 'Task Created',
           message: `Created task "${res.task.title}".`,
         });
       } else if (res.error) {
@@ -2288,11 +2507,13 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     updateCsTask: (id, updates, actorName) => {
-      const res = platformStore.updateCsTask(id, updates, actorName);
+      const err = guardPerm('operations.tasks.manage', 'update operational task');
+      if (err) return { success: false, error: err };
+      const res = platformStore.updateCsTask(id, updates, actorProfile || actorName);
       if (res.success && res.task) {
         addToast({
           type: 'success',
-          title: 'CS Task Updated',
+          title: 'Task Updated',
           message: `Saved changes to "${res.task.title}".`,
         });
       } else if (res.error) {
@@ -2301,7 +2522,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     setCsTaskStatus: (id, status, notes, actorName) => {
-      const res = platformStore.setCsTaskStatus(id, status, notes, actorName);
+      const err = guardPerm('operations.tasks.manage', 'update operational task status');
+      if (err) return { success: false, error: err };
+      const res = platformStore.setCsTaskStatus(id, status, notes, actorProfile || actorName);
       if (res.success && res.task) {
         addToast({
           type: status === 'completed' ? 'success' : 'info',
@@ -2314,7 +2537,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     deleteCsTask: (id, actorName) => {
-      const res = platformStore.deleteCsTask(id, actorName);
+      const err = guardPerm('operations.tasks.manage', 'delete operational task');
+      if (err) return { success: false, error: err };
+      const res = platformStore.deleteCsTask(id, actorName || actorProfile?.name);
       if (res.success) {
         addToast({
           type: 'info',
@@ -2557,7 +2782,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     updatePrivacyRequestStatus: (id, targetStatus, reviewNotes, resolutionCategory, actorName) => {
-      const res = platformStore.updatePrivacyRequestStatus(id, targetStatus, reviewNotes, resolutionCategory, actorName);
+      const err = guardPerm('audit.governance.manage', 'update privacy request workflow');
+      if (err) return { success: false, error: err };
+      const res = platformStore.updatePrivacyRequestStatus(id, targetStatus, reviewNotes, resolutionCategory, actorName || actorProfile?.name);
       if (res.success && res.request) {
         addToast({
           type: targetStatus === 'rejected_with_grounds' ? 'warning' : 'info',
@@ -2639,7 +2866,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     reviewGovernanceException: (id, reviewStatus, resolutionSummary, actorName) => {
-      const res = platformStore.reviewGovernanceException(id, reviewStatus, resolutionSummary, actorName);
+      const err = guardPerm('audit.governance.manage', 'review governance exception');
+      if (err) return { success: false, error: err };
+      const res = platformStore.reviewGovernanceException(id, reviewStatus, resolutionSummary, actorName || actorProfile?.name);
       if (res.success && res.exception) {
         addToast({
           type: reviewStatus === 'approved_demo' ? 'success' : 'warning',
@@ -2654,6 +2883,108 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     getTenantGovernanceSummaries: () => platformStore.getTenantGovernanceSummaries(),
     getGovernanceMetrics: () => platformStore.getGovernanceMetrics(),
     getGovernanceAuditLogs: (filters) => platformStore.getGovernanceAuditLogs(filters),
+
+    // P0-6: Operations Center, Approvals, Notices & Exceptions
+    operationalOverview: platformStore.getOperationalOverview().overview,
+    operationalQueues: platformStore.getOperationalOverview().queues,
+    platformApprovals: platformStore.getPlatformApprovals(),
+    platformNotices: platformStore.getPlatformNotices(),
+    operationalExceptions: platformStore.getOperationalExceptions(),
+    createApprovalRequest: (input) => {
+      const err = guardPerm('operations.tasks.manage', 'submit administrative approval request', [
+        'operations.approvals.manage',
+        'operations.tasks.manage',
+        'organizations.lifecycle.manage',
+        'communications.notices.manage',
+        'support.tickets.escalate',
+      ]);
+      if (err) return { success: false, error: err };
+      const res = platformStore.createApprovalRequest(input, actorProfile || 'Platform Operator');
+      if (res.success && res.approval) {
+        addToast({
+          type: 'success',
+          title: 'Approval Request Submitted',
+          message: `Created governance approval ${res.approval.referenceCode}.`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Request Failed', message: res.error });
+      }
+      return res;
+    },
+    reviewApprovalRequest: (approvalId, decision, notes) => {
+      const err = guardPerm('operations.approvals.manage', `${decision} governance approval request`);
+      if (err) return { success: false, error: err };
+      const res = platformStore.reviewApprovalRequest(
+        approvalId,
+        decision,
+        actorProfile || 'Platform Operator',
+        notes
+      );
+      if (res.success && res.approval) {
+        addToast({
+          type: decision === 'approved' ? 'success' : 'warning',
+          title: `Approval ${decision.toUpperCase()}`,
+          message: `${res.approval.referenceCode} updated (Frontend demonstration workflow).`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Decision Blocked', message: res.error });
+      }
+      return res;
+    },
+    createPlatformNotice: (input) => {
+      const err = guardPerm('communications.notices.manage', 'create platform notice');
+      if (err) return { success: false, error: err };
+      const res = platformStore.createPlatformNotice(input, actorProfile || 'Platform Operator');
+      if (res.success && res.notice) {
+        addToast({
+          type: 'success',
+          title: 'Platform Notice Created',
+          message: `Saved simulated notice ${res.notice.referenceCode} (${res.notice.status}).`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Notice Failed', message: res.error });
+      }
+      return res;
+    },
+    transitionPlatformNoticeStatus: (noticeId, nextStatus) => {
+      const err = guardPerm('communications.notices.manage', 'update platform notice status');
+      if (err) return { success: false, error: err };
+      const res = platformStore.transitionPlatformNoticeStatus(
+        noticeId,
+        nextStatus,
+        actorProfile || 'Platform Operator'
+      );
+      if (res.success && res.notice) {
+        addToast({
+          type: nextStatus === 'published_simulated' ? 'success' : 'info',
+          title: 'Notice Status Updated',
+          message: `${res.notice.referenceCode} transitioned to ${nextStatus} (simulated only).`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Notice Action Blocked', message: res.error });
+      }
+      return res;
+    },
+    triageOperationalException: (exceptionId, nextStatus, options) => {
+      const err = guardPerm('operations.exceptions.manage', 'triage operational exception');
+      if (err) return { success: false, error: err };
+      const res = platformStore.triageOperationalException(
+        exceptionId,
+        nextStatus,
+        actorProfile || 'Platform Operator',
+        options
+      );
+      if (res.success && res.exception) {
+        addToast({
+          type: nextStatus === 'resolved' ? 'success' : 'warning',
+          title: 'Exception Updated',
+          message: `${res.exception.referenceCode} marked as ${nextStatus}.`,
+        });
+      } else if (res.error) {
+        addToast({ type: 'error', title: 'Exception Triage Failed', message: res.error });
+      }
+      return res;
+    },
   };
 
 

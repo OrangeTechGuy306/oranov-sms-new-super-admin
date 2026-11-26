@@ -27279,11 +27279,14 @@ export const CANONICAL_MODULE_REGISTRY: CanonicalModuleDefinition[] = [
     "macroCategory": "administration",
     "href": "/settings",
     "routes": [
+      "/onboarding",
       "/settings",
       "/settings/account",
+      "/settings/activity",
       "/settings/profile",
       "/settings/security",
-      "/settings/subscription"
+      "/settings/subscription",
+      "/support"
     ],
     "status": "implemented",
     "availabilityStatus": "enabled",
@@ -30281,6 +30284,9 @@ export const CANONICAL_FEATURE_KEY_TO_ID: Record<string, string> = {
 };
 
 export const CANONICAL_ROUTE_TO_MODULE_ID: Record<string, string> = {
+  "/onboarding": "mod_settings",
+  "/support": "mod_settings",
+  "/settings/activity": "mod_settings",
   "/cbt": "sub_exam_cbt",
   "/examinations/cbt/login": "sub_exam_cbt",
   "/examinations/cbt/student": "sub_exam_cbt",

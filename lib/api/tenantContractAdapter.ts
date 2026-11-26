@@ -1,24 +1,25 @@
 /**
  * Super Admin <-> Tenant Dashboard Shared Contract Compatibility Adapter
  *
- * Documents and bridges intentional enum/shape differences between the
- * Super Admin Control Plane (`dashboard/`) and Tenant Dashboard (`frontend/`):
- *
- * 1. Organization vs Tenant Status:
- *    - Control Plane (`Organization['status']`): `'active' | 'suspended' | 'pending' | 'inactive' | 'draft' | 'archived'`
- *    - Tenant Dashboard (`SchoolTenant.status`): `'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'ARCHIVED'`
- *
- * 2. Campus Lifecycle Status:
- *    - Control Plane (`Campus['status']`): mapped explicitly onto `'ACTIVE' | 'INACTIVE' | 'ARCHIVED' | 'PLANNED' | 'UNDER_MAINTENANCE'`
- *
- * 3. Module Entitlements & Feature Flags:
- *    - Control Plane plans specify `includedModuleIds` matching `MASTER_MODULE_REGISTRY`.
- *    - Tenant Dashboard derives both `includedModuleIds` and boolean `features` map from those IDs.
+ * Bridges intentional enum/shape mappings between the Super Admin Control Plane (`dashboard/`)
+ * and Tenant Dashboard (`frontend/`), preserving P0-3 backwards compatibility while
+ * carrying full P0-5 canonical lifecycle, separated subscription/payment/onboarding states,
+ * multi-category institution classification, and unified campus status fields.
  */
 
-import type { Organization } from "@/lib/types/organizations";
+import {
+  normalizeTenantLifecycleStatus,
+  TENANT_LIFECYCLE_STATE_META,
+  type CanonicalTenantLifecycleStatus,
+} from "@/lib/lifecycle/canonical-lifecycle";
+import type { CanonicalSchoolType } from "@/lib/modules/canonical-contract";
+import type {
+  Organization,
+  OrganizationOwnershipType,
+  OrganizationPaymentStatus,
+} from "@/lib/types/organizations";
 import type { Campus, CampusStatus } from "@/lib/types/campuses";
-import type { SubscriptionPlan } from "@/lib/types/subscriptions";
+import type { SubscriptionPlan, SubscriptionStatus } from "@/lib/types/subscriptions";
 
 export type OrganizationStatusCompat = Organization["status"];
 export type OrganizationClassificationCompat = Organization["classification"];
@@ -28,16 +29,27 @@ export type TenantCampusStatusCompat =
   | "INACTIVE"
   | "ARCHIVED"
   | "PLANNED"
-  | "UNDER_MAINTENANCE";
+  | "UNDER_MAINTENANCE"
+  | "SUSPENDED";
 
 export interface TenantContractProjection {
   id: string;
   name: string;
+  legalName?: string;
   code: string;
   slug: string;
   domain: string;
+  organizationType?: OrganizationOwnershipType;
   classification: OrganizationClassificationCompat;
+  institutionCategories: CanonicalSchoolType[];
+  /** Legacy P0-3 coarse summary status (`ACTIVE | INACTIVE | SUSPENDED | ARCHIVED`) */
   status: TenantStatusCompat;
+  /** Canonical P0-5 lifecycle state (explicitly decoupled from subscription & payment states) */
+  lifecycleStatus: CanonicalTenantLifecycleStatus;
+  onboardingStatus: Organization["onboardingStatus"];
+  provisioningStatus: Organization["provisioningStatus"];
+  subscriptionStatus?: SubscriptionStatus;
+  paymentStatus?: OrganizationPaymentStatus;
   subscriptionPlan: string;
   includedModuleIds: string[];
   features: {
@@ -58,22 +70,34 @@ export interface TenantContractProjection {
   }>;
 }
 
-export function mapOrganizationStatusToTenantStatus(
-  status: OrganizationStatusCompat
-): TenantStatusCompat {
-  switch (status) {
-    case "active":
-      return "ACTIVE";
-    case "suspended":
-      return "SUSPENDED";
-    case "archived":
-      return "ARCHIVED";
-    case "pending":
-    case "inactive":
-    case "draft":
-    default:
-      return "INACTIVE";
+export function normalizeSchoolCategories(
+  classification?: Organization["classification"] | string,
+  institutionCategories?: CanonicalSchoolType[]
+): CanonicalSchoolType[] {
+  if (institutionCategories && institutionCategories.length > 0) {
+    return Array.from(new Set(institutionCategories));
   }
+  const c = String(classification || "combined").toLowerCase();
+  if (c === "k12" || c === "combined") return ["primary", "secondary"];
+  if (c === "higher_education" || c === "college") return ["college"];
+  if (
+    c === "nursery" ||
+    c === "primary" ||
+    c === "secondary" ||
+    c === "vocational" ||
+    c === "international"
+  ) {
+    return [c];
+  }
+  return ["combined"];
+}
+
+export function mapOrganizationStatusToTenantStatus(
+  status: OrganizationStatusCompat | string
+): TenantStatusCompat {
+  const canonical = normalizeTenantLifecycleStatus(status);
+  if (canonical === "unknown") return "INACTIVE";
+  return TENANT_LIFECYCLE_STATE_META[canonical].legacyTenantStatus;
 }
 
 export function mapPlatformCampusStatusToTenantStatus(
@@ -82,6 +106,7 @@ export function mapPlatformCampusStatusToTenantStatus(
   const normalized = String(status).toLowerCase();
   if (normalized === "active") return "ACTIVE";
   if (normalized === "archived") return "ARCHIVED";
+  if (normalized === "suspended") return "SUSPENDED";
   if (normalized === "under_review" || normalized === "planned") return "PLANNED";
   if (normalized === "under_maintenance") return "UNDER_MAINTENANCE";
   return "INACTIVE";
@@ -110,12 +135,21 @@ export function deriveTenantFeaturesFromModules(
   };
 }
 
+function formatPlatformCampusAddress(address: Campus["address"] | string | undefined): string {
+  if (!address) return "";
+  if (typeof address === "string") return address;
+  return [address.street, address.city, address.stateOrProvince, address.country]
+    .filter(Boolean)
+    .join(", ");
+}
+
 export function projectOrganizationToTenantContract(
   org: Organization,
   plan: SubscriptionPlan | undefined,
   campuses: Campus[],
   explicitModuleOverrides?: string[]
 ): TenantContractProjection {
+  const canonical = normalizeTenantLifecycleStatus(org.status);
   const projectedStatus = mapOrganizationStatusToTenantStatus(org.status);
   const rawModuleIds = Array.from(
     new Set([
@@ -123,7 +157,7 @@ export function projectOrganizationToTenantContract(
       ...(explicitModuleOverrides ?? []),
     ])
   );
-  // Fail closed when tenant is suspended/inactive/archived
+  // Fail closed when tenant lifecycle does not permit active modules
   const moduleIds = projectedStatus === "ACTIVE" ? rawModuleIds : [];
   const record = org as unknown as Record<string, unknown>;
   const slug =
@@ -138,11 +172,19 @@ export function projectOrganizationToTenantContract(
   return {
     id: org.id,
     name: org.name,
+    legalName: org.legalName,
     code: org.code,
     slug,
     domain,
+    organizationType: org.organizationType,
     classification: org.classification,
+    institutionCategories: normalizeSchoolCategories(org.classification, org.institutionCategories),
     status: projectedStatus,
+    lifecycleStatus: canonical === "unknown" ? "awaiting_configuration" : canonical,
+    onboardingStatus: org.onboardingStatus,
+    provisioningStatus: org.provisioningStatus,
+    subscriptionStatus: org.subscriptionStatus,
+    paymentStatus: org.paymentStatus,
     subscriptionPlan: (plan?.tier || org.planId || "starter").toUpperCase(),
     includedModuleIds: moduleIds,
     features: deriveTenantFeaturesFromModules(moduleIds),
@@ -153,7 +195,7 @@ export function projectOrganizationToTenantContract(
         name: c.name,
         code: c.code,
         isMainCampus: c.isMainCampus,
-        address: typeof c.address === "string" ? c.address : "",
+        address: formatPlatformCampusAddress(c.address),
         status: mapPlatformCampusStatusToTenantStatus(c.status),
       })),
   };

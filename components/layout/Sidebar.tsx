@@ -39,6 +39,8 @@ import {
   LifeBuoy,
   Webhook,
   Database,
+  CheckSquare,
+  AlertOctagon,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -207,6 +209,20 @@ export function Sidebar({ isCollapsed, onToggleCollapse, onCloseMobile }: Sideba
           icon: LifeBuoy,
           badge: metrics.openTicketsCount > 0 ? metrics.openTicketsCount : undefined,
           badgeVariant: metrics.urgentTicketsCount > 0 ? 'warning' : 'default',
+        },
+        {
+          label: 'Approvals & Workflows',
+          href: '/approvals',
+          icon: CheckSquare,
+          badge: metrics.pendingApprovalsCount && metrics.pendingApprovalsCount > 0 ? metrics.pendingApprovalsCount : undefined,
+          badgeVariant: 'warning',
+        },
+        {
+          label: 'Operational Exceptions',
+          href: '/exceptions',
+          icon: AlertOctagon,
+          badge: metrics.openExceptionsCount && metrics.openExceptionsCount > 0 ? metrics.openExceptionsCount : undefined,
+          badgeVariant: 'warning',
         },
         {
           label: 'APIs & Integrations',

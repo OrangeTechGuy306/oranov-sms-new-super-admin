@@ -7,6 +7,8 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { StatCard } from '@/components/ui/StatCard';
 import { Badge } from '@/components/ui/Badge';
 import { AlertBanner } from '@/components/ui/AlertBanner';
+import { PlatformOperationsQueues } from '@/components/operations/PlatformOperationsQueues';
+import { CANONICAL_TENANT_LIFECYCLE_STATUSES } from '@/lib/lifecycle/canonical-lifecycle';
 import { formatCurrency, formatDate } from '@/lib/utils/formatters';
 import {
   Building2,
@@ -19,18 +21,23 @@ import {
   CheckCircle2,
   Layers,
   ChevronRight,
+  LifeBuoy,
+  CheckSquare,
+  AlertOctagon,
 } from 'lucide-react';
 
 export default function PlatformOverviewPage() {
-  const { metrics, organizations, plans, auditEvents, systemServices } = usePlatformStore();
+  const {
+    metrics,
+    organizations,
+    plans,
+    auditEvents,
+    systemServices,
+    operationalOverview,
+    operationalQueues,
+  } = usePlatformStore();
 
-  const pendingOnboardingOrgs = organizations.filter(
-    (o) => o.onboardingStatus === 'in_progress' || o.onboardingStatus === 'verification_pending'
-  );
-
-  const suspendedOrgs = organizations.filter((o) => o.status === 'suspended');
-
-  const recentAudits = auditEvents.slice(0, 5);
+  const recentAudits = auditEvents.slice(0, 6);
 
   // Calculate estimated monthly revenue from mock active subscriptions
   const estimatedMrr = plans.reduce((acc, plan) => {
@@ -41,10 +48,24 @@ export default function PlatformOverviewPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Platform Administration Overview"
-        description="Global operational indicators, organization lifecycle health, subscription distribution, and administrative tasks."
+        title="Platform Tenant Operations Center"
+        description="Platform-wide operational telemetry across all 12 P0-5 tenant lifecycle states, support cases, approvals, exceptions, and subscriptions."
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link
+              href="/approvals"
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-card border border-border text-foreground font-semibold text-xs rounded-lg hover:bg-muted transition-colors"
+            >
+              <CheckSquare className="w-4 h-4 text-primary" />
+              Approvals ({operationalOverview.pendingApprovalsTotal})
+            </Link>
+            <Link
+              href="/exceptions"
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-card border border-border text-foreground font-semibold text-xs rounded-lg hover:bg-muted transition-colors"
+            >
+              <AlertOctagon className="w-4 h-4 text-amber-500" />
+              Exceptions ({operationalOverview.openExceptionsTotal})
+            </Link>
             <Link
               href="/organizations/new"
               className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground font-semibold text-xs rounded-lg hover:bg-primary/90 transition-colors shadow-xs"
@@ -59,55 +80,89 @@ export default function PlatformOverviewPage() {
       {/* Operational Disclaimer Alert */}
       <AlertBanner
         variant="notice"
-        title="Demonstration Operational Model (Phase E-09.21 Certified)"
+        title="Frontend Operational Simulation Workspace (No Live Telemetry or Dispatch)"
         dismissible
       >
-        All metrics, school directories, plan subscriptions, and audit trails displayed below are calculated from client-side development fixtures and local UI state. Live infrastructure telemetry, payment gateways, and backend authorization will be connected in future development phases.
+        All operational metrics, queues, support statuses, approvals, and exceptions are evaluated in-browser from typed deterministic fixtures. Live infrastructure health checks, real tenant provisioning, and external email/SMS dispatches are deferred to backend implementation.
       </AlertBanner>
 
-      {/* Top Metric Cards */}
+      {/* Primary KPI Grid (Separated Indicators — Zero Status Conflation) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          title="Total Registered Schools"
-          value={metrics.totalOrganizations}
-          subtitle={`${metrics.activeOrganizations} active • ${metrics.suspendedOrganizations} suspended`}
+          title="Registered & Active Tenants"
+          value={operationalOverview.totalOrganizations}
+          subtitle={`${operationalOverview.activeOrganizations} active • ${operationalOverview.trialOrganizations} trial • ${operationalOverview.suspendedOrganizations} suspended`}
           icon={<Building2 className="w-5 h-5" />}
           badge={{
-            label: `${metrics.pendingOrganizations} Pending`,
-            variant: metrics.pendingOrganizations > 0 ? 'warning' : 'neutral',
+            label: `${operationalOverview.awaitingActivationOrganizations} Awaiting Activation`,
+            variant: operationalOverview.awaitingActivationOrganizations > 0 ? 'warning' : 'neutral',
           }}
         />
 
         <StatCard
-          title="Estimated Monthly ARR/MRR"
-          value={formatCurrency(estimatedMrr)}
-          subtitle={`${metrics.activeOrganizations} active paid subscriptions`}
-          icon={<CreditCard className="w-5 h-5" />}
-          trend={{ value: '12.4%', isPositive: true, label: 'vs last quarter' }}
-        />
-
-        <StatCard
-          title="Onboarding Pipeline"
-          value={metrics.onboardingInProgress}
-          subtitle={`${metrics.onboardingCompleted} successfully completed`}
+          title="Onboarding & Provisioning Pipeline"
+          value={operationalOverview.undergoingOnboardingOrganizations}
+          subtitle={`${operationalOverview.incompleteProvisioningOrganizations} incomplete provisioning • ${metrics.onboardingCompleted} completed`}
           icon={<UserCheck className="w-5 h-5" />}
           badge={{
-            label: metrics.trialOrganizations > 0 ? `${metrics.trialOrganizations} on Trial` : 'No Trials',
-            variant: 'info',
+            label: `${operationalQueues.provisioning_exceptions.length} Prov. Exceptions`,
+            variant: operationalQueues.provisioning_exceptions.length > 0 ? 'warning' : 'info',
           }}
         />
 
         <StatCard
-          title="Operational Services"
-          value={`${metrics.systemServicesOperational}/${metrics.systemServicesTotal}`}
-          subtitle="All core infrastructure operational"
-          icon={<Activity className="w-5 h-5" />}
+          title="Support, Approvals & Exceptions"
+          value={operationalOverview.organizationsRequiringAttention}
+          subtitle={`Orgs needing attention • ${operationalOverview.unresolvedSupportCasesTotal} open tickets • ${operationalOverview.openExceptionsTotal} exceptions`}
+          icon={<LifeBuoy className="w-5 h-5" />}
           badge={{
-            label: 'Demo Status',
-            variant: 'success',
+            label: `${operationalOverview.pendingApprovalsTotal} Pending Approvals`,
+            variant: operationalOverview.pendingApprovalsTotal > 0 ? 'warning' : 'success',
+          }}
+        />
+
+        <StatCard
+          title="Estimated Monthly MRR & Exceptions"
+          value={formatCurrency(estimatedMrr)}
+          subtitle={`${operationalOverview.organizationsWithSubscriptionExceptions} billing exception orgs • ${metrics.systemServicesOperational}/${metrics.systemServicesTotal} services`}
+          icon={<CreditCard className="w-5 h-5" />}
+          badge={{
+            label: `${operationalOverview.cancellationPendingOrganizations} Cancelling • ${operationalOverview.cancelledOrganizations + operationalOverview.archivedOrganizations} Closed/Arch`,
+            variant: 'neutral',
           }}
         />
       </div>
+
+      {/* Granular 12-State P0-5 Lifecycle Distribution Strip */}
+      <div className="bg-card text-card-foreground p-4 rounded-xl border border-border shadow-xs space-y-2.5">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            Canonical 12-State Lifecycle Distribution (Separated from Subscription & Payment)
+          </h3>
+          <Link href="/organizations" className="text-xs text-primary hover:underline font-medium">
+            Open Directory →
+          </Link>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 text-xs">
+          {CANONICAL_TENANT_LIFECYCLE_STATUSES.map((status) => (
+            <Link
+              key={status}
+              href={`/organizations?status=${status}`}
+              className="p-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-muted/50 flex items-center justify-between gap-2 transition-colors"
+            >
+              <span className="truncate capitalize text-[11px] text-muted-foreground">
+                {status.replace(/_/g, ' ')}
+              </span>
+              <span className="font-mono font-bold text-foreground">
+                {operationalOverview.byLifecycle[status] || 0}
+              </span>
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      {/* 10 Actionable Operational Queues */}
+      <PlatformOperationsQueues queues={operationalQueues} plans={plans} />
 
       {/* Two-column Section: Plan Distribution & Attention Queue */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -171,48 +226,51 @@ export default function PlatformOverviewPage() {
                 <p className="text-base font-bold text-foreground mt-0.5">{metrics.expiringSoonCount}</p>
               </div>
               <div className="p-2.5 rounded-lg bg-muted/30">
-                <p className="text-muted-foreground text-[11px]">Inactive Accounts</p>
-                <p className="text-base font-bold text-foreground mt-0.5">{metrics.inactiveOrganizations}</p>
+                <p className="text-muted-foreground text-[11px]">Subscription Exceptions</p>
+                <p className="text-base font-bold text-foreground mt-0.5">{operationalOverview.organizationsWithSubscriptionExceptions}</p>
               </div>
             </div>
           </div>
 
-          {/* Action Center: Attention Required */}
+          {/* Action Center: High-Priority Suspended, Review & Provisioning Highlights */}
           <div className="bg-card text-card-foreground p-6 rounded-xl border border-border shadow-xs space-y-4">
             <div className="flex items-center justify-between border-b border-border/50 pb-3">
               <div>
                 <h3 className="font-semibold text-sm tracking-tight text-foreground flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 text-amber-500" />
-                  Administrative Action Required
+                  High-Priority Lifecycle & Exception Highlights
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Organizations awaiting identity verification or requiring lifecycle intervention.
+                  Quick highlights from suspended holds, launch sign-offs, and open exceptions.
                 </p>
               </div>
-              <Badge variant="warning" size="sm">
-                {pendingOnboardingOrgs.length + suspendedOrgs.length} Action Items
-              </Badge>
+              <Link
+                href="/exceptions"
+                className="text-xs text-primary hover:underline font-semibold"
+              >
+                Open Exceptions Center →
+              </Link>
             </div>
 
             <div className="space-y-3">
-              {suspendedOrgs.map((org) => (
+              {operationalQueues.suspended_organizations.map((item) => (
                 <div
-                  key={org.id}
+                  key={item.id}
                   className="p-3 rounded-lg border border-rose-200/60 bg-rose-50/40 dark:bg-rose-950/20 dark:border-rose-900/60 flex items-center justify-between gap-3 text-xs"
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-rose-800 dark:text-rose-300 truncate">
-                        {org.name}
+                        {item.organizationName}
                       </span>
                       <Badge variant="error" size="sm">Suspended</Badge>
                     </div>
                     <p className="text-[11px] text-muted-foreground truncate mt-0.5">
-                      {org.notes || 'Suspended due to administrative review or overdue billing arrears.'}
+                      {item.subtitle}
                     </p>
                   </div>
                   <Link
-                    href={`/organizations/${org.id}`}
+                    href={item.href}
                     className="px-2.5 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100 dark:text-rose-300 dark:hover:bg-rose-900/40 rounded transition-colors shrink-0"
                   >
                     Inspect
@@ -220,26 +278,24 @@ export default function PlatformOverviewPage() {
                 </div>
               ))}
 
-              {pendingOnboardingOrgs.map((org) => (
+              {operationalQueues.awaiting_activation.map((item) => (
                 <div
-                  key={org.id}
+                  key={item.id}
                   className="p-3 rounded-lg border border-amber-200/60 bg-amber-50/40 dark:bg-amber-950/20 dark:border-amber-900/60 flex items-center justify-between gap-3 text-xs"
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-amber-800 dark:text-amber-300 truncate">
-                        {org.name}
+                        {item.organizationName}
                       </span>
-                      <Badge variant="warning" size="sm">
-                        {org.onboardingStatus === 'verification_pending' ? 'Verification Pending' : 'In Progress'}
-                      </Badge>
+                      <Badge variant="warning" size="sm">Awaiting Activation</Badge>
                     </div>
                     <p className="text-[11px] text-muted-foreground truncate mt-0.5">
-                      Administrator: {org.administrator.name} ({org.administrator.email})
+                      {item.subtitle}
                     </p>
                   </div>
                   <Link
-                    href={`/organizations/${org.id}`}
+                    href={item.href}
                     className="px-2.5 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-900/40 rounded transition-colors shrink-0"
                   >
                     Review
@@ -247,11 +303,12 @@ export default function PlatformOverviewPage() {
                 </div>
               ))}
 
-              {suspendedOrgs.length === 0 && pendingOnboardingOrgs.length === 0 && (
+              {operationalQueues.suspended_organizations.length === 0 &&
+                operationalQueues.awaiting_activation.length === 0 && (
                 <div className="p-6 text-center text-xs text-muted-foreground flex flex-col items-center gap-2">
                   <CheckCircle2 className="w-8 h-8 text-emerald-500" />
-                  <p className="font-medium text-foreground">All organizations are operating normally.</p>
-                  <p>No schools are currently suspended or pending onboarding review.</p>
+                  <p className="font-medium text-foreground">No suspended schools or launch holds in queue.</p>
+                  <p>Check the 10 Operational Queues above for ongoing onboarding and support items.</p>
                 </div>
               )}
             </div>

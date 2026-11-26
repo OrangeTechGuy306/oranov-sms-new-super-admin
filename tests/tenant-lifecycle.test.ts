@@ -92,11 +92,12 @@ describe('Phase E-09.7 Tenant Lifecycle, Campuses & Provisioning Control', () =>
       assert.ok(activeTransitions.some((t) => t.to === 'archived'));
 
       const draftTransitions = getAvailableTransitions('draft');
-      assert.ok(draftTransitions.some((t) => t.to === 'pending'));
+      assert.ok(draftTransitions.some((t) => t.to === 'registration_pending'));
 
       const archivedTransitions = getAvailableTransitions('archived');
-      assert.equal(archivedTransitions.length, 1, 'Archived status allows restoring to inactive review only');
-      assert.equal(archivedTransitions[0].to, 'inactive');
+      assert.ok(archivedTransitions.some((t) => t.to === 'awaiting_configuration'));
+      assert.ok(archivedTransitions.some((t) => t.to === 'closed'));
+      assert.equal(archivedTransitions.some((t) => t.to === 'active'), false);
     });
 
     test('store executes setOrganizationStatus and updates audit logs', () => {
@@ -359,7 +360,7 @@ describe('Phase E-09.7 Tenant Lifecycle, Campuses & Provisioning Control', () =>
       assert.match(res.error || '', /prerequisite/i);
     });
 
-    test('executes 5-step simulation cleanly and returns simulated_complete', () => {
+    test('executes 8-stage business preparation simulation cleanly and returns simulated_complete', () => {
       const org = store.getOrganizations()[0];
       const campuses = store.getCampusesByOrgId(org.id);
       const plan = store.getPlans().find((p) => p.id === org.planId);
@@ -376,19 +377,24 @@ describe('Phase E-09.7 Tenant Lifecycle, Campuses & Provisioning Control', () =>
         organization: org,
         readiness,
         campuses,
+        plan,
+        subscription,
       });
 
       assert.equal(res.success, true);
       assert.equal(res.status, 'simulated_complete');
-      assert.equal(res.events.length, 5);
+      assert.equal(res.events.length, 8);
 
       const stepKeys = res.events.map((e) => e.stepKey);
       assert.deepEqual(stepKeys, [
-        'dns_routing',
-        'db_container',
-        'campus_link',
-        'module_catalog',
-        'admin_dispatch',
+        'registration_accepted',
+        'profile_prepared',
+        'initial_campus_prepared',
+        'institution_structure_configured',
+        'subscription_assigned',
+        'entitlements_prepared',
+        'initial_administrator_configured',
+        'ready_for_activation',
       ]);
     });
 

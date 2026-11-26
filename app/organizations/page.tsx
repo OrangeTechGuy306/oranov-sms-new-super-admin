@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/Badge';
 import { SearchFilterBar } from '@/components/ui/SearchFilterBar';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Organization, OrganizationLifecycleStatus } from '@/lib/types';
+import { normalizeTenantLifecycleStatus } from '@/lib/lifecycle/canonical-lifecycle';
 import { generateCsvContent, downloadCsvFile } from '@/lib/utils/csv-export';
 import {
   UserPlus,
@@ -59,9 +60,13 @@ export default function OrganizationsDirectoryPage() {
         if (!matches) return false;
       }
 
-      // Status
-      if (statusFilter !== 'all' && org.status !== statusFilter) {
-        return false;
+      // Status (supports canonical + legacy filter aliases cleanly)
+      if (statusFilter !== 'all') {
+        const normalizedOrg = normalizeTenantLifecycleStatus(org.status);
+        const normalizedFilter = normalizeTenantLifecycleStatus(statusFilter);
+        if (org.status !== statusFilter && normalizedOrg !== normalizedFilter) {
+          return false;
+        }
       }
 
       // Plan
@@ -292,7 +297,8 @@ export default function OrganizationsDirectoryPage() {
             <Eye className="w-3.5 h-3.5" />
           </Link>
 
-          {canManageLifecycle && (org.status === 'pending' ? (
+          {canManageLifecycle && ((normalizeTenantLifecycleStatus(org.status) === 'registration_pending' ||
+          normalizeTenantLifecycleStatus(org.status) === 'awaiting_activation') ? (
             <button
               type="button"
               onClick={() =>
@@ -308,7 +314,8 @@ export default function OrganizationsDirectoryPage() {
             >
               <CheckCircle className="w-3.5 h-3.5" />
             </button>
-          ) : org.status === 'active' ? (
+          ) : normalizeTenantLifecycleStatus(org.status) === 'active' ||
+            normalizeTenantLifecycleStatus(org.status) === 'trial' ? (
             <button
               type="button"
               onClick={() =>
@@ -324,7 +331,7 @@ export default function OrganizationsDirectoryPage() {
             >
               <AlertTriangle className="w-3.5 h-3.5" />
             </button>
-          ) : org.status === 'suspended' ? (
+          ) : normalizeTenantLifecycleStatus(org.status) === 'suspended' ? (
             <button
               type="button"
               onClick={() =>
@@ -391,12 +398,18 @@ export default function OrganizationsDirectoryPage() {
             onChange: setStatusFilter,
             options: [
               { label: 'All Lifecycle Statuses', value: 'all' },
-              { label: 'Active', value: 'active' },
-              { label: 'Pending Approval', value: 'pending' },
-              { label: 'Suspended', value: 'suspended' },
-              { label: 'Inactive / Deactivated', value: 'inactive' },
               { label: 'Draft', value: 'draft' },
+              { label: 'Registration Pending', value: 'registration_pending' },
+              { label: 'Onboarding In Progress', value: 'onboarding_in_progress' },
+              { label: 'Awaiting Configuration', value: 'awaiting_configuration' },
+              { label: 'Awaiting Activation', value: 'awaiting_activation' },
+              { label: 'Trial Active', value: 'trial' },
+              { label: 'Active', value: 'active' },
+              { label: 'Suspended', value: 'suspended' },
+              { label: 'Cancellation Pending', value: 'cancellation_pending' },
+              { label: 'Cancelled', value: 'cancelled' },
               { label: 'Archived', value: 'archived' },
+              { label: 'Closed', value: 'closed' },
             ],
           },
           {
@@ -443,12 +456,13 @@ export default function OrganizationsDirectoryPage() {
             onChange: setClassificationFilter,
             options: [
               { label: 'All School Classifications', value: 'all' },
-              { label: 'K-12', value: 'k12' },
+              { label: 'Nursery', value: 'nursery' },
               { label: 'Primary', value: 'primary' },
               { label: 'Secondary', value: 'secondary' },
-              { label: 'International', value: 'international' },
-              { label: 'Higher Education', value: 'higher_education' },
+              { label: 'Combined / K-12', value: 'combined' },
+              { label: 'College', value: 'college' },
               { label: 'Vocational College', value: 'vocational' },
+              { label: 'International', value: 'international' },
             ],
           },
         ]}

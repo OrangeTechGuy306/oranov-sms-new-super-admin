@@ -1,255 +1,129 @@
 /**
- * Tenant Lifecycle State Machine & Transition Evaluation Engine
- * Phase E-09.7 — School Management SaaS Super-Admin
+ * Tenant Lifecycle State Machine & Transition Evaluation Engine (Phase P0-5)
  *
- * Implements decoupled, testable domain rules governing organization lifecycle transitions.
- * Enforces mandatory justifications, prevents illegal state hops, and maintains auditability.
+ * Bridges Super Admin domain operations (`PlatformStore`, UI panels, and audit logging)
+ * to `canonical-lifecycle.ts`, preserving strict state validation, transition prerequisites,
+ * safe unknown-state rejection, and UI-friendly descriptor metadata.
  */
 
-import { OrganizationLifecycleStatus } from '../types/organizations';
+import {
+  CANONICAL_LIFECYCLE_TRANSITION_RULES,
+  evaluateCanonicalLifecycleTransition,
+  getAvailableCanonicalTransitions,
+  getTenantLifecycleStateMeta,
+  normalizeTenantLifecycleStatus,
+  type CanonicalTenantLifecycleStatus,
+  type LifecycleTransitionContext,
+  type LifecycleTransitionRule as CanonicalTransitionRule,
+} from "./canonical-lifecycle";
+import type { OrganizationLifecycleStatus } from "../types/organizations";
 
 export interface LifecycleTransitionRule {
-  from: OrganizationLifecycleStatus;
+  id: string;
+  from: CanonicalTenantLifecycleStatus;
   to: OrganizationLifecycleStatus;
   actionLabel: string;
   requiresReason: boolean;
   minReasonLength?: number;
   requiresConfirmation: boolean;
-  variant: 'primary' | 'danger' | 'warning' | 'neutral';
+  requiresConfirmationCode?: boolean;
+  requireNoReadinessBlockers?: boolean;
+  requireMandatoryOnboarding?: boolean;
+  requireSubscriptionAssigned?: boolean;
+  requiredPermissions?: string[];
+  restrictions?: string[];
+  associatedSubscriptionGuidance: string;
+  auditEventAction: string;
+  variant: "primary" | "danger" | "warning" | "neutral";
   description: string;
   localDemoEffect: string;
 }
 
-export const LIFECYCLE_TRANSITION_RULES: LifecycleTransitionRule[] = [
-  // From draft
-  {
-    from: 'draft',
-    to: 'pending',
-    actionLabel: 'Submit for Onboarding Review',
-    requiresReason: false,
-    requiresConfirmation: false,
-    variant: 'primary',
-    description: 'Promote draft registration into pending onboarding queue for platform review.',
-    localDemoEffect: 'Locally transitions status to pending. Triggers readiness checks in mock store.',
-  },
-  {
-    from: 'draft',
-    to: 'inactive',
-    actionLabel: 'Decommission Draft',
-    requiresReason: false,
-    requiresConfirmation: true,
-    variant: 'neutral',
-    description: 'Mark incomplete draft registration as inactive.',
-    localDemoEffect: 'Sets organization status to inactive in development memory.',
-  },
+function toAdapterRule(rule: CanonicalTransitionRule): LifecycleTransitionRule {
+  const uiVariant: LifecycleTransitionRule["variant"] =
+    rule.variant === "success" ? "primary" : rule.variant;
 
-  // From pending
-  {
-    from: 'pending',
-    to: 'active',
-    actionLabel: 'Approve & Activate',
-    requiresReason: false,
-    requiresConfirmation: true,
-    variant: 'primary',
-    description: 'Approve tenant onboarding prerequisites and grant active tenant operational status.',
-    localDemoEffect: 'Enables active tenant status in local state. Demonstrates production go-live readiness.',
-  },
-  {
-    from: 'pending',
-    to: 'inactive',
-    actionLabel: 'Reject / Deactivate',
-    requiresReason: false,
-    requiresConfirmation: true,
-    variant: 'neutral',
-    description: 'Reject or set aside pending organization registration.',
-    localDemoEffect: 'Transitions pending record to inactive in local storage.',
-  },
-  {
-    from: 'pending',
-    to: 'draft',
-    actionLabel: 'Return to Draft',
-    requiresReason: false,
-    requiresConfirmation: false,
-    variant: 'warning',
-    description: 'Return organization to draft state to allow administrator corrections.',
-    localDemoEffect: 'Reverts organization to draft state in local store.',
-  },
+  return {
+    id: rule.id,
+    from: rule.from,
+    to: rule.to,
+    actionLabel: rule.actionLabel,
+    requiresReason: rule.requiresReason,
+    minReasonLength: rule.minReasonLength,
+    requiresConfirmation:
+      rule.to !== "registration_pending" &&
+      rule.to !== "onboarding_in_progress",
+    requiresConfirmationCode: rule.requiresConfirmationCode,
+    requireNoReadinessBlockers: rule.requireNoReadinessBlockers,
+    requireMandatoryOnboarding: rule.requireMandatoryOnboarding,
+    requireSubscriptionAssigned: rule.requireSubscriptionAssigned,
+    requiredPermissions: rule.requiredPermissions,
+    restrictions: rule.restrictions,
+    associatedSubscriptionGuidance: rule.associatedSubscriptionGuidance,
+    auditEventAction: rule.auditEventAction,
+    variant: uiVariant,
+    description: rule.description,
+    localDemoEffect: `Simulated local platform state transition to "${rule.to}" (${rule.auditEventAction}). Future backend must enforce server-side RBAC, transactional lock, and audit persistence.`,
+  };
+}
 
-  // From active
-  {
-    from: 'active',
-    to: 'suspended',
-    actionLabel: 'Suspend Operations',
-    requiresReason: true,
-    minReasonLength: 5,
-    requiresConfirmation: true,
-    variant: 'danger',
-    description: 'Temporarily halt school portal access and services with a documented justification.',
-    localDemoEffect: 'Sets simulated lock on tenant workspace. Records audit event with mandatory reason.',
-  },
-  {
-    from: 'active',
-    to: 'inactive',
-    actionLabel: 'Deactivate Tenant',
-    requiresReason: false,
-    requiresConfirmation: true,
-    variant: 'neutral',
-    description: 'Gracefully deactivate tenant operations without operational suspension flags.',
-    localDemoEffect: 'Updates status to inactive locally.',
-  },
-  {
-    from: 'active',
-    to: 'archived',
-    actionLabel: 'Archive Organization',
-    requiresReason: true,
-    minReasonLength: 5,
-    requiresConfirmation: true,
-    variant: 'danger',
-    description: 'Retire active school record into read-only archive state.',
-    localDemoEffect: 'Marks tenant as archived. Blocks academic operational changes in local state.',
-  },
-
-  // From suspended
-  {
-    from: 'suspended',
-    to: 'active',
-    actionLabel: 'Reactivate Operations',
-    requiresReason: false,
-    requiresConfirmation: true,
-    variant: 'primary',
-    description: 'Lift operational suspension and restore active status.',
-    localDemoEffect: 'Clears suspension flag and returns organization to active status in mock store.',
-  },
-  {
-    from: 'suspended',
-    to: 'inactive',
-    actionLabel: 'Transition to Inactive',
-    requiresReason: false,
-    requiresConfirmation: true,
-    variant: 'neutral',
-    description: 'Move suspended organization to regular inactive state pending long-term resolution.',
-    localDemoEffect: 'Changes state to inactive in local store.',
-  },
-  {
-    from: 'suspended',
-    to: 'archived',
-    actionLabel: 'Archive Record',
-    requiresReason: true,
-    minReasonLength: 5,
-    requiresConfirmation: true,
-    variant: 'danger',
-    description: 'Permanently archive suspended tenant.',
-    localDemoEffect: 'Transitions suspended record to archived state with reason.',
-  },
-
-  // From inactive
-  {
-    from: 'inactive',
-    to: 'active',
-    actionLabel: 'Reactivate Organization',
-    requiresReason: false,
-    requiresConfirmation: true,
-    variant: 'primary',
-    description: 'Re-enable school organization and resume active platform services.',
-    localDemoEffect: 'Sets status to active in local store.',
-  },
-  {
-    from: 'inactive',
-    to: 'pending',
-    actionLabel: 'Re-queue for Verification',
-    requiresReason: false,
-    requiresConfirmation: false,
-    variant: 'warning',
-    description: 'Send inactive organization back to onboarding verification queue.',
-    localDemoEffect: 'Re-queues organization into pending verification state.',
-  },
-  {
-    from: 'inactive',
-    to: 'archived',
-    actionLabel: 'Archive Record',
-    requiresReason: true,
-    minReasonLength: 5,
-    requiresConfirmation: true,
-    variant: 'danger',
-    description: 'Retire inactive organization into archived status.',
-    localDemoEffect: 'Marks organization as archived with documented reason.',
-  },
-
-  // From archived
-  {
-    from: 'archived',
-    to: 'inactive',
-    actionLabel: 'Restore to Inactive Review',
-    requiresReason: false,
-    requiresConfirmation: true,
-    variant: 'warning',
-    description: 'Restore archived record into inactive state for super-admin audit and remediation.',
-    localDemoEffect: 'Restores archived record to inactive state. Direct activation remains locked.',
-  },
-];
+export const LIFECYCLE_TRANSITION_RULES: LifecycleTransitionRule[] =
+  CANONICAL_LIFECYCLE_TRANSITION_RULES.map(toAdapterRule);
 
 export interface TransitionEvaluationResult {
   permitted: boolean;
   reasonRequired: boolean;
+  confirmationRequired?: boolean;
+  unknownState?: boolean;
+  failedPrerequisites?: string[];
   error?: string;
   rule?: LifecycleTransitionRule;
   localDemoEffect: string;
 }
 
 export function getAvailableTransitions(
-  currentStatus: OrganizationLifecycleStatus
+  currentStatus: OrganizationLifecycleStatus | string
 ): LifecycleTransitionRule[] {
-  return LIFECYCLE_TRANSITION_RULES.filter((rule) => rule.from === currentStatus);
+  return getAvailableCanonicalTransitions(currentStatus).map(toAdapterRule);
 }
 
 export function evaluateLifecycleTransition(
-  currentStatus: OrganizationLifecycleStatus,
-  targetStatus: OrganizationLifecycleStatus,
-  reason?: string
+  currentStatus: OrganizationLifecycleStatus | string,
+  targetStatus: OrganizationLifecycleStatus | string,
+  reason?: string,
+  context?: LifecycleTransitionContext
 ): TransitionEvaluationResult {
-  if (currentStatus === targetStatus) {
-    return {
-      permitted: false,
-      reasonRequired: false,
-      error: `Organization is already in "${currentStatus}" status.`,
-      localDemoEffect: 'No state changes applied.',
-    };
-  }
-
-  const matchingRule = LIFECYCLE_TRANSITION_RULES.find(
-    (rule) => rule.from === currentStatus && rule.to === targetStatus
+  const result = evaluateCanonicalLifecycleTransition(
+    currentStatus,
+    targetStatus,
+    reason,
+    context
   );
+  const adaptedRule = result.rule ? toAdapterRule(result.rule) : undefined;
 
-  if (!matchingRule) {
-    const allowed = getAvailableTransitions(currentStatus).map((r) => `"${r.to}"`);
-    const allowedText = allowed.length > 0 ? allowed.join(', ') : 'None (Terminal state)';
+  if (!result.permitted) {
     return {
       permitted: false,
-      reasonRequired: false,
-      error: `Invalid lifecycle transition from "${currentStatus}" to "${targetStatus}". Allowed destination states: ${allowedText}.`,
-      localDemoEffect: 'Operation rejected by domain state machine.',
+      reasonRequired: result.reasonRequired,
+      confirmationRequired: result.confirmationRequired,
+      unknownState: result.unknownState,
+      failedPrerequisites: result.failedPrerequisites,
+      error: result.error,
+      rule: adaptedRule,
+      localDemoEffect: result.unknownState
+        ? "Fail-closed guard: Unrecognized lifecycle state blocks mutation."
+        : "Transition rejected by canonical lifecycle rules.",
     };
-  }
-
-  // Reason checks
-  if (matchingRule.requiresReason) {
-    const minLength = matchingRule.minReasonLength || 5;
-    const cleanReason = (reason || '').trim();
-    if (!cleanReason || cleanReason.length < minLength) {
-      return {
-        permitted: false,
-        reasonRequired: true,
-        rule: matchingRule,
-        error: `A mandatory justification reason (min ${minLength} characters) is required when transitioning to "${targetStatus}".`,
-        localDemoEffect: 'Operation blocked pending required justification input.',
-      };
-    }
   }
 
   return {
     permitted: true,
-    reasonRequired: matchingRule.requiresReason,
-    rule: matchingRule,
-    localDemoEffect: matchingRule.localDemoEffect,
+    reasonRequired: result.reasonRequired,
+    confirmationRequired: result.confirmationRequired,
+    rule: adaptedRule,
+    localDemoEffect:
+      adaptedRule?.localDemoEffect ?? "Transition approved cleanly in local state.",
   };
 }
+
+export { normalizeTenantLifecycleStatus, getTenantLifecycleStateMeta };

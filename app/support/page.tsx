@@ -1,9 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Tabs } from '@/components/ui/Tabs';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
+import { isPlatformDevControlsEnabled } from '@/lib/auth/platformAuthConfig';
 import { SupportNotice } from '@/components/support/SupportNotice';
 import { SupportOperationsOverviewPanel } from '@/components/support/SupportOperationsOverviewPanel';
 import { TicketRegistryPanel } from '@/components/support/TicketRegistryPanel';
@@ -28,19 +31,41 @@ import {
 } from 'lucide-react';
 
 export default function SupportDeskGovernancePage() {
+  const { user, can } = usePlatformAuth();
   const {
     supportTickets,
     slaPolicies,
     kbArticles,
     csatRecords,
     csTasks,
-    platformUsers,
     resetToDefaults,
   } = usePlatformStore();
 
   const [activeTab, setActiveTab] = useState<string>('overview');
-  const [currentActorId, setCurrentActorId] = useState<string>('usr_support_03'); // Marcus Brody (Support Lead)
   const [ticketFilters, setTicketFilters] = useState<Record<string, any>>({});
+  const [initialTicketId, setInitialTicketId] = useState<string | null>(null);
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
+
+  const authenticatedActorId = user?.id || '';
+  const canResetFixtures =
+    isPlatformDevControlsEnabled() && can('system.maintenance.manage');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams(window.location.search);
+      const ticketParam = params.get('ticket');
+      const orgParam = params.get('organizationId');
+      if (ticketParam) {
+        setInitialTicketId(ticketParam);
+        setActiveTab('tickets');
+      } else if (orgParam) {
+        setTicketFilters({ organizationId: orgParam });
+        setActiveTab('tickets');
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Helper for cross-panel navigation
   const handleNavigateTab = (tabId: string, filters?: Record<string, any>) => {
@@ -107,26 +132,25 @@ export default function SupportDeskGovernancePage() {
       {/* Page Header */}
       <PageHeader
         title="Support Desk & Customer Success Governance"
-        description="Enterprise multi-tenant assistance workspace, SLA policy enforcement, ticket lifecycle management, and school success monitoring."
+        description="Enterprise multi-tenant assistance workspace, ticket lifecycle workflows, neutral age tracking, internal notes, and school success monitoring."
         badge={
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
             <LifeBuoy className="w-3 h-3" />
-            E-09.17 Governance Active
+            P0-6 Support Workflows Active
           </span>
         }
         actions={
-          <button
-            onClick={() => {
-              if (window.confirm('Reset local support state, tickets, and fixtures to default demonstration values?')) {
-                resetToDefaults();
-              }
-            }}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-            title="Reset demonstration fixtures"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            Reset Fixtures
-          </button>
+          canResetFixtures ? (
+            <button
+              type="button"
+              onClick={() => setIsResetDialogOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+              title="Reset demonstration fixtures (dev mode)"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Reset Fixtures
+            </button>
+          ) : null
         }
       />
 
@@ -141,27 +165,28 @@ export default function SupportDeskGovernancePage() {
         {activeTab === 'overview' && (
           <SupportOperationsOverviewPanel
             onNavigateTab={handleNavigateTab}
-            currentActorId={currentActorId}
-            onChangeActor={setCurrentActorId}
+            currentActorId={authenticatedActorId}
           />
         )}
 
         {activeTab === 'tickets' && (
           <TicketRegistryPanel
-            currentActorId={currentActorId}
+            key={initialTicketId || 'default'}
+            currentActorId={authenticatedActorId}
             initialFilters={ticketFilters}
+            initialSelectedTicketId={initialTicketId}
           />
         )}
 
         {activeTab === 'cs_accounts' && (
           <CustomerSuccessAccountsPanel
             onNavigateTab={handleNavigateTab}
-            currentActorId={currentActorId}
+            currentActorId={authenticatedActorId}
           />
         )}
 
         {activeTab === 'cs_tasks' && (
-          <CustomerSuccessTasksPanel currentActorId={currentActorId} />
+          <CustomerSuccessTasksPanel currentActorId={authenticatedActorId} />
         )}
 
         {activeTab === 'sla_policies' && <SlaPolicyManagementPanel />}
@@ -172,6 +197,19 @@ export default function SupportDeskGovernancePage() {
 
         {activeTab === 'analytics' && <SupportAnalyticsPanel />}
       </div>
+
+      <ConfirmDialog
+        isOpen={isResetDialogOpen}
+        onClose={() => setIsResetDialogOpen(false)}
+        onConfirm={() => {
+          resetToDefaults();
+          setIsResetDialogOpen(false);
+        }}
+        title="Reset Development Support Fixtures?"
+        description="This restores local browser demonstration tickets, tasks, and knowledge base records to initial sandbox values. Production data is unaffected."
+        confirmLabel="Reset Local Fixtures"
+        variant="warning"
+      />
     </div>
   );
 }

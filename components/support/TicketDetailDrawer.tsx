@@ -3,8 +3,10 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { SupportTicket } from '@/lib/types/support-desk';
-import { evaluateTicketSla, formatMinutesDuration } from '@/lib/support/evaluator';
+import { computeTicketNeutralAgeSummary } from '@/lib/operations/canonical-operations';
+import { formatMinutesDuration } from '@/lib/support/evaluator';
 import { StatusTransitionModal } from './StatusTransitionModal';
 import { AssignTicketModal } from './AssignTicketModal';
 import { EscalateTicketModal } from './EscalateTicketModal';
@@ -34,9 +36,13 @@ interface TicketDetailDrawerProps {
 }
 
 export function TicketDetailDrawer({ isOpen, onClose, ticketId }: TicketDetailDrawerProps) {
+  const { can } = usePlatformAuth();
+  const canManageTicket = can('support.tickets.manage');
+  const canEscalateTicket = can('support.tickets.escalate');
+  const canManageInternalNotes = can('support.internal_notes.manage');
+
   const {
     getSupportTicketById,
-    slaPolicies,
     organizations,
     platformUsers,
     supportTeams,
@@ -45,7 +51,9 @@ export function TicketDetailDrawer({ isOpen, onClose, ticketId }: TicketDetailDr
   } = usePlatformStore();
 
   const [activeTab, setActiveTab] = useState<'timeline' | 'audit'>('timeline');
-  const [composerType, setComposerType] = useState<'tenant_reply' | 'internal_note'>('internal_note');
+  const [composerType, setComposerType] = useState<'tenant_reply' | 'internal_note'>(
+    canManageInternalNotes ? 'internal_note' : 'tenant_reply'
+  );
   const [composerContent, setComposerContent] = useState('');
   const [isDraft, setIsDraft] = useState(false);
 
@@ -60,11 +68,9 @@ export function TicketDetailDrawer({ isOpen, onClose, ticketId }: TicketDetailDr
   if (!ticket) return null;
 
   const org = organizations.find((o) => o.id === ticket.organizationId);
-  const policy = slaPolicies.find((p) => p.id === ticket.slaPolicyId) || slaPolicies[0];
   const assignedUser = platformUsers.find((u) => u.id === ticket.assignedOperatorId);
   const assignedTeam = supportTeams.find((t) => t.id === ticket.assignedTeamId);
-
-  const slaEval = evaluateTicketSla(ticket, policy);
+  const ageSummary = computeTicketNeutralAgeSummary(ticket);
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,12 +97,14 @@ export function TicketDetailDrawer({ isOpen, onClose, ticketId }: TicketDetailDr
   const statusColor = {
     new: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
     open: 'bg-indigo-500/10 text-indigo-600 border-indigo-500/20',
+    assigned: 'bg-cyan-500/10 text-cyan-600 border-cyan-500/20',
     in_progress: 'bg-amber-500/10 text-amber-600 border-amber-500/20',
     awaiting_tenant: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
     awaiting_internal: 'bg-violet-500/10 text-violet-600 border-violet-500/20',
     escalated: 'bg-red-500/10 text-red-600 border-red-500/20',
     resolved: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
     closed: 'bg-slate-500/10 text-slate-600 border-slate-500/20',
+    reopened: 'bg-rose-500/10 text-rose-600 border-rose-500/20',
   }[ticket.status];
 
   return (
@@ -118,16 +126,8 @@ export function TicketDetailDrawer({ isOpen, onClose, ticketId }: TicketDetailDr
                   <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${statusColor}`}>
                     {ticket.status.replace('_', ' ')}
                   </span>
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                    slaEval.state === 'breached'
-                      ? 'bg-red-500/10 text-red-600 border-red-500/30'
-                      : slaEval.state === 'approaching_target'
-                      ? 'bg-amber-500/10 text-amber-600 border-amber-500/30'
-                      : slaEval.state === 'paused'
-                      ? 'bg-purple-500/10 text-purple-600 border-purple-500/30'
-                      : 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30'
-                  }`}>
-                    SLA: {slaEval.state.replace('_', ' ')}
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-muted text-muted-foreground border-border">
+                    Age: {ageSummary.ageLabel}
                   </span>
                 </div>
                 <h2 className="text-base font-bold text-foreground leading-snug">
@@ -159,35 +159,41 @@ export function TicketDetailDrawer({ isOpen, onClose, ticketId }: TicketDetailDr
                     </span>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => deescalateSupportTicket(ticket.id, 'De-escalated by operator')}
-                  className="px-2 py-1 rounded text-[11px] font-semibold bg-red-600 text-white hover:bg-red-700 shrink-0"
-                >
-                  De-escalate
-                </button>
+                {canEscalateTicket && (
+                  <button
+                    type="button"
+                    onClick={() => deescalateSupportTicket(ticket.id, 'De-escalated by authorized operator')}
+                    className="px-2 py-1 rounded text-[11px] font-semibold bg-red-600 text-white hover:bg-red-700 shrink-0"
+                  >
+                    De-escalate
+                  </button>
+                )}
               </div>
             )}
 
-            {/* Quick Actions Bar */}
+            {/* Quick Actions Bar (RBAC Gated) */}
             <div className="flex flex-wrap items-center gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setIsStatusModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-2xs"
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Change Status
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsAssignModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-card text-foreground hover:bg-muted transition-colors"
-              >
-                <UserCheck className="w-3.5 h-3.5 text-muted-foreground" />
-                Reassign
-              </button>
-              {!ticket.escalation?.isEscalated && (
+              {canManageTicket && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setIsStatusModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-2xs"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Change Status
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAssignModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-card text-foreground hover:bg-muted transition-colors"
+                  >
+                    <UserCheck className="w-3.5 h-3.5 text-muted-foreground" />
+                    Reassign
+                  </button>
+                </>
+              )}
+              {canEscalateTicket && !ticket.escalation?.isEscalated && (
                 <button
                   type="button"
                   onClick={() => setIsEscalateModalOpen(true)}
@@ -202,57 +208,55 @@ export function TicketDetailDrawer({ isOpen, onClose, ticketId }: TicketDetailDr
 
           {/* Body Content */}
           <div className="flex-1 overflow-y-auto p-5 space-y-5">
-            {/* SLA Performance Metrics Card */}
+            {/* Neutral Ticket Age & Last Response Telemetry (Zero Fabricated Contractual SLA Promises) */}
             <div className="p-4 rounded-xl border border-border bg-muted/30 space-y-3 text-xs">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-2">
                 <span className="font-semibold text-foreground flex items-center gap-1.5">
                   <Clock className="w-4 h-4 text-primary" />
-                  SLA Target Breakdown ({policy.name})
+                  Ticket Aging & Response Indicators
                 </span>
-                <span className="text-[11px] text-muted-foreground">
-                  {policy.businessHours.enabled ? 'Business Hours Active' : '24/7 Priority Policy'}
+                <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-muted text-muted-foreground border border-border">
+                  Neutral Metrics Only (No Implied Contractual SLA)
                 </span>
               </div>
 
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="p-2.5 rounded-lg bg-card border border-border space-y-1">
-                  <span className="text-muted-foreground block text-[11px]">First Response SLA</span>
-                  <div className="flex items-baseline justify-between">
-                    <span className="font-bold text-foreground">
-                      {formatMinutesDuration(slaEval.firstResponseMinutesElapsed)}
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">
-                      / {formatMinutesDuration(slaEval.firstResponseMinutesTarget)} target
-                    </span>
-                  </div>
-                  <span className={`text-[10px] font-semibold ${
-                    slaEval.firstResponseState === 'breached' ? 'text-red-500' : 'text-emerald-500'
-                  }`}>
-                    {ticket.firstResponseAt ? 'Met on initial response' : 'Awaiting first reply'}
+                  <span className="text-muted-foreground block text-[11px]">Time Since Creation</span>
+                  <span className="font-bold text-foreground block">{ageSummary.ageLabel}</span>
+                  <span className="text-[10px] text-muted-foreground block">
+                    Opened: {new Date(ticket.createdAt).toLocaleString()}
                   </span>
                 </div>
 
                 <div className="p-2.5 rounded-lg bg-card border border-border space-y-1">
-                  <span className="text-muted-foreground block text-[11px]">Resolution SLA</span>
-                  <div className="flex items-baseline justify-between">
-                    <span className="font-bold text-foreground">
-                      {formatMinutesDuration(slaEval.resolutionMinutesElapsed)}
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">
-                      / {formatMinutesDuration(slaEval.resolutionMinutesTarget)} target
-                    </span>
-                  </div>
-                  <span className={`text-[10px] font-semibold ${
-                    slaEval.resolutionState === 'breached' ? 'text-red-500' : 'text-emerald-500'
-                  }`}>
-                    {slaEval.isPaused ? 'Paused (awaiting tenant)' : ticket.resolvedAt ? 'Resolved' : 'Active countdown'}
+                  <span className="text-muted-foreground block text-[11px]">Last Public Response</span>
+                  <span className="font-bold text-foreground block">{ageSummary.lastResponseLabel}</span>
+                  <span className="text-[10px] text-muted-foreground block">
+                    Updated: {new Date(ticket.updatedAt).toLocaleString()}
                   </span>
                 </div>
               </div>
 
-              <p className="text-[11px] text-muted-foreground leading-relaxed italic border-t border-border/50 pt-2">
-                {slaEval.explanation}
-              </p>
+              {ticket.campusName && (
+                <div className="text-[11px] text-foreground font-medium">
+                  Scoped Campus: <span className="text-primary">{ticket.campusName}</span> ({ticket.campusId})
+                </div>
+              )}
+
+              {ticket.attachments && ticket.attachments.length > 0 && (
+                <div className="border-t border-border/50 pt-2 space-y-1">
+                  <span className="text-[11px] font-semibold text-foreground block">
+                    Attachment Metadata ({ticket.attachments.length}) — Client Mock Only
+                  </span>
+                  {ticket.attachments.map((att) => (
+                    <div key={att.id} className="text-[11px] text-muted-foreground font-mono flex items-center justify-between">
+                      <span>{att.fileName}</span>
+                      <span>{Math.max(1, Math.round(att.sizeBytes / 1024))} KB</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Organization Context Card */}
@@ -405,35 +409,40 @@ export function TicketDetailDrawer({ isOpen, onClose, ticketId }: TicketDetailDr
                     })}
                   </div>
 
-                  {/* Message Composer */}
-                  <form onSubmit={handleSendMessage} className="p-4 rounded-xl border border-border bg-card space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1 bg-muted p-1 rounded-lg text-xs">
-                        <button
-                          type="button"
-                          onClick={() => setComposerType('internal_note')}
-                          className={`px-3 py-1 rounded-md font-semibold transition-colors flex items-center gap-1.5 ${
-                            composerType === 'internal_note'
-                              ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 shadow-2xs'
-                              : 'text-muted-foreground hover:text-foreground'
-                          }`}
-                        >
-                          <Lock className="w-3.5 h-3.5" />
-                          Internal Note
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setComposerType('tenant_reply')}
-                          className={`px-3 py-1 rounded-md font-semibold transition-colors flex items-center gap-1.5 ${
-                            composerType === 'tenant_reply'
-                              ? 'bg-primary text-primary-foreground shadow-2xs'
-                              : 'text-muted-foreground hover:text-foreground'
-                          }`}
-                        >
-                          <Send className="w-3.5 h-3.5" />
-                          Tenant Reply Draft
-                        </button>
-                      </div>
+                  {/* Message Composer (RBAC Gated) */}
+                  {(canManageTicket || canManageInternalNotes) && (
+                    <form onSubmit={handleSendMessage} className="p-4 rounded-xl border border-border bg-card space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1 bg-muted p-1 rounded-lg text-xs">
+                          {canManageInternalNotes && (
+                            <button
+                              type="button"
+                              onClick={() => setComposerType('internal_note')}
+                              className={`px-3 py-1 rounded-md font-semibold transition-colors flex items-center gap-1.5 ${
+                                composerType === 'internal_note'
+                                  ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 shadow-2xs'
+                                  : 'text-muted-foreground hover:text-foreground'
+                              }`}
+                            >
+                              <Lock className="w-3.5 h-3.5" />
+                              Internal Note
+                            </button>
+                          )}
+                          {canManageTicket && (
+                            <button
+                              type="button"
+                              onClick={() => setComposerType('tenant_reply')}
+                              className={`px-3 py-1 rounded-md font-semibold transition-colors flex items-center gap-1.5 ${
+                                composerType === 'tenant_reply'
+                                  ? 'bg-primary text-primary-foreground shadow-2xs'
+                                  : 'text-muted-foreground hover:text-foreground'
+                              }`}
+                            >
+                              <Send className="w-3.5 h-3.5" />
+                              Tenant Reply Draft
+                            </button>
+                          )}
+                        </div>
 
                       <label className="text-[11px] text-muted-foreground flex items-center gap-1.5 cursor-pointer">
                         <input
@@ -473,6 +482,7 @@ export function TicketDetailDrawer({ isOpen, onClose, ticketId }: TicketDetailDr
                       </button>
                     </div>
                   </form>
+                  )}
                 </div>
               )}
 

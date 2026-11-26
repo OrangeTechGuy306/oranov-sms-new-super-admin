@@ -87,8 +87,10 @@ describe('Platform (Super Admin) RBAC Engine, Route Matrix & Security Boundaries
           `super_admin must access ${route}`
         );
       }
-      assert.equal(INITIAL_PLATFORM_PERMISSIONS.length, 38);
-      assert.equal(superAdmin.permissions.length, 38);
+      assert.equal(INITIAL_PLATFORM_PERMISSIONS.length, 50);
+      assert.equal(superAdmin.permissions.length, 50);
+      assert.equal(canPerformPlatformAction(superAdmin, 'operations.approvals.manage'), true);
+      assert.equal(canPerformPlatformAction(superAdmin, 'audit.governance.manage'), true);
     });
 
     it('enforces least-privilege separation for platform_operator, support_lead, and billing_admin', () => {
@@ -132,6 +134,10 @@ describe('Platform (Super Admin) RBAC Engine, Route Matrix & Security Boundaries
       assert.equal(canPerformPlatformAction(compliance, 'iam.roles.manage'), false);
       assert.equal(canPerformPlatformAction(compliance, 'iam.users.roles.assign'), false);
       assert.equal(canPerformPlatformAction(compliance, 'platform.settings.update'), false);
+      assert.equal(canPerformPlatformAction(compliance, 'audit.governance.manage'), false);
+      assert.equal(canPerformPlatformAction(compliance, 'operations.approvals.manage'), false);
+      assert.equal(canPerformPlatformAction(compliance, 'operations.approvals.read'), true);
+      assert.equal(canPerformPlatformAction(compliance, 'operations.exceptions.read'), true);
 
       const readonly = actorForRole('readonly_auditor');
       assert.equal(evaluatePlatformRouteAccess(readonly, '/').allowed, true);
@@ -155,6 +161,8 @@ describe('Platform (Super Admin) RBAC Engine, Route Matrix & Security Boundaries
         '/audit-logs',
         '/data-governance',
         '/support',
+        '/approvals',
+        '/exceptions',
         '/communications',
         '/integrations',
       ]) {

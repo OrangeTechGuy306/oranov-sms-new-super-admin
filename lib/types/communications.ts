@@ -65,7 +65,14 @@ export type AudienceScope =
   | 'tier_growth'
   | 'selected_tenants';
 
-export type CampaignStatus = 'draft' | 'pending_approval' | 'approved' | 'cancelled';
+export type CampaignStatus =
+  | 'draft'
+  | 'pending_approval'
+  | 'approved'
+  | 'scheduled_simulated'
+  | 'published_simulated'
+  | 'cancelled'
+  | 'archived';
 
 export interface TemplateVariableDefinition {
   key: string;

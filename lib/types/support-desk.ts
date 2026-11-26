@@ -6,28 +6,40 @@
 
 export type SupportTicketPriority = 'low' | 'normal' | 'high' | 'urgent';
 
+import type { CanonicalSupportAttachmentMetadata } from '@/lib/operations/canonical-operations';
+
 export type SupportTicketStatus =
   | 'new'
   | 'open'
+  | 'assigned'
   | 'in_progress'
   | 'awaiting_tenant'
   | 'awaiting_internal'
   | 'escalated'
   | 'resolved'
-  | 'closed';
+  | 'closed'
+  | 'reopened';
 
 export type SupportCategoryKey =
   | 'account_access'
+  | 'organization_setup'
   | 'org_onboarding'
+  | 'campus_configuration'
+  | 'academic_operations'
   | 'student_information'
   | 'academic_management'
   | 'examinations_cbt'
+  | 'finance_subscriptions'
   | 'billing_subscriptions'
+  | 'module_functionality'
   | 'communications'
   | 'integrations_api'
   | 'performance_latency'
   | 'security_compliance'
+  | 'data_reports'
   | 'data_reporting'
+  | 'technical_issues'
+  | 'general_enquiries'
   | 'general_assistance';
 
 export interface SupportCategoryDefinition {
@@ -51,6 +63,7 @@ export interface SupportTeamQueue {
 }
 
 export interface TicketRequester {
+  userId?: string;
   name: string;
   email: string;
   roleTitle: string;
@@ -68,7 +81,9 @@ export interface TicketMessage {
   type: TicketMessageType;
   content: string;
   createdAt: string;
+  isInternal?: boolean;
   isDraft?: boolean;
+  attachments?: CanonicalSupportAttachmentMetadata[];
   metadata?: Record<string, string | number | boolean>;
 }
 
@@ -148,24 +163,34 @@ export interface SupportTicket {
   subject: string;
   description: string;
   organizationId: string; // references Organization.id
+  campusId?: string | null;
+  campusName?: string;
   requester: TicketRequester;
   category: SupportCategoryKey;
   subcategory?: string;
   priority: SupportTicketPriority;
   status: SupportTicketStatus;
   assignedOperatorId?: string | null; // references PlatformUser.id
+  assignedOperatorName?: string;
   assignedTeamId?: string | null;     // references SupportTeamQueue.id
   createdAt: string;
   updatedAt: string;
   firstResponseAt?: string | null;
   resolvedAt?: string | null;
   closedAt?: string | null;
+  reopenedAt?: string | null;
+  reopenCount?: number;
+  resolutionSummary?: string;
   slaPolicyId: string;
   slaState: SlaState;
   escalation: TicketEscalationDetails;
   tags: string[];
   source: TicketSource;
   relatedIncidentId?: string | null;
+  linkedTaskIds?: string[];
+  linkedExceptionIds?: string[];
+  linkedApprovalIds?: string[];
+  attachments?: CanonicalSupportAttachmentMetadata[];
   messages: TicketMessage[];
 }
 
@@ -205,9 +230,15 @@ export interface CustomerSuccessTask {
   title: string;
   description: string;
   organizationId: string;
+  campusId?: string | null;
+  campusName?: string;
   assignedOwnerId: string; // references PlatformUser.id
   priority: SupportTicketPriority;
-  status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+  status: 'pending' | 'assigned' | 'in_progress' | 'awaiting_approval' | 'blocked' | 'completed' | 'cancelled';
+  taskCategory?: 'support_followup' | 'onboarding_review' | 'provisioning_remediation' | 'billing_review' | 'campus_setup' | 'compliance_check';
+  requiresApproval?: boolean;
+  linkedExceptionId?: string;
+  linkedApprovalId?: string;
   dueDate: string; // YYYY-MM-DD
   relatedTicketId?: string;
   completedAt?: string;
@@ -269,15 +300,19 @@ export interface CreateSupportTicketInput {
   subject: string;
   description: string;
   organizationId: string;
+  campusId?: string | null;
+  campusName?: string;
   requester: TicketRequester;
   category: SupportCategoryKey;
   priority: SupportTicketPriority;
+  initialStatus?: 'new' | 'open';
   assignedOperatorId?: string | null;
   assignedTeamId?: string | null;
   slaPolicyId?: string;
   tags?: string[];
   source?: TicketSource;
   relatedIncidentId?: string | null;
+  attachments?: CanonicalSupportAttachmentMetadata[];
 }
 
 export interface UpdateSupportTicketInput {

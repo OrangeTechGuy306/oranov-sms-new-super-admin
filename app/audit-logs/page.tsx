@@ -3,6 +3,7 @@
 import React, { useState, useMemo, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Tabs, TabItem } from '@/components/ui/Tabs';
 import {
@@ -36,6 +37,8 @@ import {
 } from 'lucide-react';
 
 function AuditLogsContent() {
+  const { user, can } = usePlatformAuth();
+  const canExportLogs = can('audit.logs.export');
   const searchParams = useSearchParams();
   const initialCategory = searchParams.get('category') || 'all';
   const initialSearch = searchParams.get('searchQuery') || '';
@@ -49,6 +52,8 @@ function AuditLogsContent() {
     governanceEvidence,
     retentionPolicies,
     organizations,
+    campuses,
+    platformUsers,
     updateSecurityEventTriage,
     updateComplianceControlRemediation,
     updateGovernanceEvidenceStatus,
@@ -65,6 +70,8 @@ function AuditLogsContent() {
   const [severityFilter, setSeverityFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [orgFilter, setOrgFilter] = useState(initialOrg);
+  const [campusFilter, setCampusFilter] = useState('all');
+  const [actorFilter, setActorFilter] = useState('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [sortBy, setSortBy] = useState('timestamp_desc');
@@ -81,6 +88,8 @@ function AuditLogsContent() {
       severity: severityFilter as AuditEventSeverity | 'all',
       status: statusFilter as AuditEventOutcome | 'all',
       organizationId: orgFilter,
+      campusId: campusFilter,
+      actorId: actorFilter,
       startDate: startDate || undefined,
       endDate: endDate || undefined,
       sortBy: sortBy as 'timestamp_desc' | 'timestamp_asc' | 'severity' | 'action',
@@ -92,6 +101,8 @@ function AuditLogsContent() {
     severityFilter,
     statusFilter,
     orgFilter,
+    campusFilter,
+    actorFilter,
     startDate,
     endDate,
     sortBy,
@@ -120,23 +131,33 @@ function AuditLogsContent() {
     setSeverityFilter('all');
     setStatusFilter('all');
     setOrgFilter('all');
+    setCampusFilter('all');
+    setActorFilter('all');
     setStartDate('');
     setEndDate('');
     setSortBy('timestamp_desc');
   };
 
   const handleLogExportAction = (details: string, format: string, scopeCount: number) => {
+    if (!canExportLogs || !user) return;
     logAuditEvent({
       category: 'data_export',
       action: 'AUDIT_DATA_EXPORTED',
       severity: 'info',
       status: 'succeeded',
+      sourceApp: 'super_admin',
+      visibility: 'platform_only',
       actor: {
-        id: 'usr_super_01',
-        name: 'Alexander Sterling',
-        email: 'alexander.s@saas-platform.internal',
-        role: 'super_admin',
-        actorType: 'super_admin',
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        actorType:
+          user.role === 'super_admin'
+            ? 'super_admin'
+            : user.role === 'compliance_auditor'
+            ? 'compliance_auditor'
+            : 'platform_operator',
       },
       targetEntity: 'AuditReport',
       targetId: `exp_${Date.now().toString(36)}`,
@@ -193,14 +214,16 @@ function AuditLogsContent() {
         title="Platform Audit Logs, Compliance & Security Governance"
         description="Unified Super-Admin control plane for chronological audit trails, administrative activity feeds, security-event triage, framework-mapped controls, verifiable evidence, and statutory retention policies."
         actions={
-          <button
-            type="button"
-            onClick={() => setIsExportModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-2 bg-card border border-border text-foreground font-semibold text-xs rounded-lg hover:bg-muted transition-colors shadow-2xs cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5 text-primary" />
-            <span>Export Governance Data</span>
-          </button>
+          canExportLogs ? (
+            <button
+              type="button"
+              onClick={() => setIsExportModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-card border border-border text-foreground font-semibold text-xs rounded-lg hover:bg-muted transition-colors shadow-2xs cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5 text-primary" />
+              <span>Export Governance Data (Simulated)</span>
+            </button>
+          ) : null
         }
       />
 
@@ -232,6 +255,12 @@ function AuditLogsContent() {
           onStatusChange={setStatusFilter}
           orgFilter={orgFilter}
           onOrgChange={setOrgFilter}
+          campusFilter={campusFilter}
+          onCampusChange={setCampusFilter}
+          campuses={campuses}
+          actorFilter={actorFilter}
+          onActorChange={setActorFilter}
+          actors={platformUsers}
           startDate={startDate}
           onStartDateChange={setStartDate}
           endDate={endDate}

@@ -235,11 +235,14 @@ describe('Phase E-09.21: Super-Admin Cross-Module Integration & Consolidation', 
       assert.ok(targetStatuses.includes('archived'), 'Suspended can transition to archived');
     });
 
-    test('archived organizations allow restoration to inactive review only, blocking direct activation', () => {
+    test('archived organizations allow restoration to awaiting_configuration or permanent closure, blocking direct activation', () => {
       const transitions = getAvailableTransitions('archived');
-      assert.equal(transitions.length, 1, 'Archived records have exactly one permitted transition');
-      assert.equal(transitions[0].to, 'inactive', 'Archived records can only transition to inactive review');
-      assert.equal(transitions[0].actionLabel, 'Restore to Inactive Review');
+      const targetStatuses = transitions.map((t) => t.to);
+      assert.ok(targetStatuses.includes('awaiting_configuration'), 'Archived records can transition to configuration review');
+      assert.ok(targetStatuses.includes('closed'), 'Archived records can be permanently closed');
+      assert.equal(targetStatuses.includes('active'), false, 'Archived records must not jump directly to active');
+      const restore = transitions.find((t) => t.to === 'awaiting_configuration');
+      assert.equal(restore?.actionLabel, 'Restore for Configuration Review');
     });
   });
 });

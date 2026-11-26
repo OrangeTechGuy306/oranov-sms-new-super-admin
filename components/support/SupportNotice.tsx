@@ -24,8 +24,8 @@ export function SupportNotice() {
           </div>
           <p className="text-xs text-muted-foreground leading-relaxed">
             Centralized platform assistance and customer success cockpit for Super-Admins. Governs ticket intake,
-            linear lifecycle state machines, team assignment queues, priority escalations, SLA compliance evaluation,
-            internal operator notes, and school account health tracking.
+            controlled lifecycle workflows (open, assigned, in progress, awaiting tenant/internal, escalated, resolved, closed, reopened),
+            team assignment queues, internal operator notes, and neutral case age tracking.
           </p>
         </div>
       </div>
@@ -34,7 +34,7 @@ export function SupportNotice() {
         <div className="flex items-start gap-1.5">
           <Info className="w-3.5 h-3.5 text-blue-500 shrink-0 mt-0.5" />
           <span>
-            <strong className="text-foreground">Honest Local Evaluation:</strong> SLA timers, approaching-target alerts, and resolution metrics are computed dynamically from client fixtures. No real-time server escalation daemon is running.
+            <strong className="text-foreground">Unratified SLA Policy Note:</strong> Contractual response SLAs are not ratified in P0-6. Primary queue views surface neutral creation age &amp; response timestamps; E-09.17 policy targets are marked as sandbox reference formulas only.
           </span>
         </div>
         <div className="flex items-start gap-1.5">

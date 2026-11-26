@@ -30,7 +30,10 @@ export type PlatformPermissionDomain =
   | 'iam.roles'
   | 'audit.logs'
   | 'system.operations'
-  | 'platform.settings';
+  | 'platform.settings'
+  | 'support.operations'
+  | 'operations.governance'
+  | 'communications.notices';
 
 export type PermissionRiskLevel = 'standard' | 'elevated' | 'privileged' | 'critical';
 

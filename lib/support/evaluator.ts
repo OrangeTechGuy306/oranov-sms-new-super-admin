@@ -17,6 +17,7 @@ import {
   CustomerSuccessTask,
 } from '@/lib/types/support-desk';
 import { Organization, OrganizationSubscription, SubscriptionPlan } from '@/lib/types';
+import { normalizeTenantLifecycleStatus } from '@/lib/lifecycle/canonical-lifecycle';
 
 // Deterministic reference date for static builds and reproducible test evaluation
 export const DEFAULT_MOCK_DATE = '2026-03-17T12:00:00Z';
@@ -35,22 +36,33 @@ export function getValidTicketTransitions(currentStatus: SupportTicketStatus): {
     case 'new':
       return [
         { targetStatus: 'open', label: 'Accept & Open', requiresReason: false, description: 'Acknowledge ticket intake into active triage queue.' },
+        { targetStatus: 'assigned', label: 'Mark Assigned', requiresReason: false, description: 'Assign ticket to a designated support operator.' },
         { targetStatus: 'in_progress', label: 'Start Investigation', requiresReason: false, description: 'Assign to operator and begin immediate diagnostic work.' },
         { targetStatus: 'escalated', label: 'Escalate Directly', requiresReason: true, description: 'Escalate immediately to specialized engineering or management.' },
         { targetStatus: 'closed', label: 'Close as Invalid/Duplicate', requiresReason: true, description: 'Close immediately if duplicate or erroneous submission.' },
       ];
     case 'open':
       return [
+        { targetStatus: 'assigned', label: 'Assign Operator', requiresReason: false, description: 'Route open ticket to an assigned support operator.' },
         { targetStatus: 'in_progress', label: 'Mark In Progress', requiresReason: false, description: 'Begin active investigation or engineering work.' },
-        { targetStatus: 'awaiting_tenant', label: 'Awaiting School Response', requiresReason: false, description: 'Pauses SLA timer while waiting for tenant clarification.' },
+        { targetStatus: 'awaiting_tenant', label: 'Awaiting School Response', requiresReason: false, description: 'Pauses active triage while waiting for tenant clarification.' },
         { targetStatus: 'awaiting_internal', label: 'Awaiting Internal Team', requiresReason: false, description: 'Waiting for infrastructure, billing, or security review.' },
         { targetStatus: 'escalated', label: 'Escalate Ticket', requiresReason: true, description: 'Trigger priority escalation workflow.' },
         { targetStatus: 'resolved', label: 'Mark as Resolved', requiresReason: false, description: 'Technical resolution or answer provided to tenant.' },
         { targetStatus: 'closed', label: 'Close Ticket', requiresReason: true, description: 'Conclude ticket with administrative rationale.' },
       ];
+    case 'assigned':
+      return [
+        { targetStatus: 'in_progress', label: 'Start Investigation', requiresReason: false, description: 'Begin active investigation by assigned operator.' },
+        { targetStatus: 'awaiting_tenant', label: 'Awaiting School Response', requiresReason: false, description: 'Request clarification or diagnostic evidence from school admin.' },
+        { targetStatus: 'awaiting_internal', label: 'Awaiting Internal Action', requiresReason: false, description: 'Coordinate internal billing, provisioning, or engineering action.' },
+        { targetStatus: 'escalated', label: 'Escalate Ticket', requiresReason: true, description: 'Escalate assigned ticket to senior review.' },
+        { targetStatus: 'resolved', label: 'Mark as Resolved', requiresReason: false, description: 'Technical resolution or guidance provided.' },
+        { targetStatus: 'closed', label: 'Close Ticket', requiresReason: true, description: 'Close ticket with audit rationale.' },
+      ];
     case 'in_progress':
       return [
-        { targetStatus: 'awaiting_tenant', label: 'Awaiting School Response', requiresReason: false, description: 'Pauses SLA timer pending information from school admin.' },
+        { targetStatus: 'awaiting_tenant', label: 'Awaiting School Response', requiresReason: false, description: 'Pauses active queue pending information from school admin.' },
         { targetStatus: 'awaiting_internal', label: 'Awaiting Internal Team', requiresReason: false, description: 'Cross-functional dependency on platform team.' },
         { targetStatus: 'escalated', label: 'Escalate Ticket', requiresReason: true, description: 'Escalate to Tier-2, Engineering, or Executive.' },
         { targetStatus: 'resolved', label: 'Mark as Resolved', requiresReason: false, description: 'Issue solved or workaround provided.' },
@@ -59,6 +71,7 @@ export function getValidTicketTransitions(currentStatus: SupportTicketStatus): {
     case 'awaiting_tenant':
       return [
         { targetStatus: 'open', label: 'Tenant Responded (Open)', requiresReason: false, description: 'School provided details; resumes active queue.' },
+        { targetStatus: 'assigned', label: 'Route to Assigned Operator', requiresReason: false, description: 'Return to assigned operator triage queue.' },
         { targetStatus: 'in_progress', label: 'Resume Investigation', requiresReason: false, description: 'Continue active technical resolution.' },
         { targetStatus: 'resolved', label: 'Mark as Resolved', requiresReason: false, description: 'Solution confirmed by school.' },
         { targetStatus: 'closed', label: 'Close (No Response)', requiresReason: true, description: 'Auto-close or manual close due to inactive requester.' },
@@ -80,12 +93,23 @@ export function getValidTicketTransitions(currentStatus: SupportTicketStatus): {
       ];
     case 'resolved':
       return [
-        { targetStatus: 'closed', label: 'Formal Close', requiresReason: false, description: 'School confirmed satisfaction or 48-hour resolution auto-close.' },
-        { targetStatus: 'open', label: 'Reopen Ticket', requiresReason: true, description: 'School reported recurring issue or incomplete resolution.' },
+        { targetStatus: 'closed', label: 'Formal Close', requiresReason: false, description: 'School confirmed satisfaction or post-resolution close.' },
+        { targetStatus: 'reopened', label: 'Reopen Case', requiresReason: true, description: 'School or operator reopened case due to recurring issue.' },
+        { targetStatus: 'open', label: 'Reopen Ticket (Open)', requiresReason: true, description: 'School reported recurring issue or incomplete resolution.' },
       ];
     case 'closed':
       return [
+        { targetStatus: 'reopened', label: 'Reopen Closed Case', requiresReason: true, description: 'Reopen closed case with mandatory audit justification.' },
         { targetStatus: 'open', label: 'Reopen Ticket', requiresReason: true, description: 'Reopen closed ticket with mandatory audit justification.' },
+      ];
+    case 'reopened':
+      return [
+        { targetStatus: 'assigned', label: 'Assign Operator', requiresReason: false, description: 'Assign reopened case to specialist.' },
+        { targetStatus: 'in_progress', label: 'Start Investigation', requiresReason: false, description: 'Begin investigating reopened issue.' },
+        { targetStatus: 'awaiting_tenant', label: 'Awaiting School Response', requiresReason: false, description: 'Request follow-up details from school.' },
+        { targetStatus: 'escalated', label: 'Escalate Reopened Case', requiresReason: true, description: 'Escalate reopened case for priority review.' },
+        { targetStatus: 'resolved', label: 'Mark Resolved', requiresReason: false, description: 'Reopened issue resolved.' },
+        { targetStatus: 'closed', label: 'Close Ticket', requiresReason: true, description: 'Close reopened case with rationale.' },
       ];
     default:
       return [];
@@ -262,7 +286,16 @@ export function calculateSupportMetrics(
   refDate?: string
 ): SupportMetricsSummary {
   const totalTickets = tickets.length;
-  const openStatuses = new Set(['new', 'open', 'in_progress', 'awaiting_tenant', 'awaiting_internal', 'escalated']);
+  const openStatuses = new Set([
+    'new',
+    'open',
+    'assigned',
+    'in_progress',
+    'awaiting_tenant',
+    'awaiting_internal',
+    'escalated',
+    'reopened',
+  ]);
 
   const openTickets = tickets.filter((t) => openStatuses.has(t.status)).length;
   const unassignedTickets = tickets.filter((t) => openStatuses.has(t.status) && !t.assignedOperatorId).length;
@@ -365,15 +398,28 @@ export function calculateAccountHealthScore(
   // Baseline 100 points
   let score = 100;
 
-  // 1. Subscription & Account Standing
-  if (org.status === 'suspended') {
+  // 1. Subscription & Account Standing (Normalized P0-5 Lifecycle States)
+  const normalizedLifecycle = normalizeTenantLifecycleStatus(org.status);
+  if (normalizedLifecycle === 'suspended') {
     deductions.push({ reason: 'Institution is currently suspended for policy or compliance holds', points: 40 });
     score -= 40;
     readinessGaps.push('Suspended institution status requires administrative clearance');
-  } else if (org.status === 'pending') {
-    deductions.push({ reason: 'Institution onboarding status is pending verification', points: 15 });
+  } else if (
+    normalizedLifecycle === 'registration_pending' ||
+    normalizedLifecycle === 'onboarding_in_progress' ||
+    normalizedLifecycle === 'awaiting_configuration' ||
+    normalizedLifecycle === 'awaiting_activation'
+  ) {
+    deductions.push({
+      reason: `Institution lifecycle is currently in ${normalizedLifecycle.replace(/_/g, ' ')}`,
+      points: 15,
+    });
     score -= 15;
-    readinessGaps.push('Pending administrative onboarding verification');
+    readinessGaps.push(`Onboarding / activation progression required (${normalizedLifecycle.replace(/_/g, ' ')})`);
+  } else if (normalizedLifecycle === 'cancellation_pending') {
+    deductions.push({ reason: 'Institution has an active pending cancellation request', points: 30 });
+    score -= 30;
+    readinessGaps.push('Offboarding / retention review required prior to effective cancellation date');
   }
 
   if (sub && sub.status === 'past_due') {
