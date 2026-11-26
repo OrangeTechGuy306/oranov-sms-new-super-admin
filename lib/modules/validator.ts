@@ -1,46 +1,58 @@
 /**
  * Master Tenant Module Registry Integrity Validator
- * Phase E-09.6: Reusable validation engine to detect inconsistent module definitions,
- * unresolved parent/dependency references, circular cycles, and route mapping conflicts.
+ * Phase P0-4: Combines structural + dependency + override checks with canonical Zod graph validation
+ * across modules, features, plans, routes, and permissions.
  */
 
-import {
-  TenantModuleDefinition,
-  RegistryValidationReport,
-  RegistryValidationIssue,
+import type {
   OrganizationModuleOverride,
-} from './types';
-import { MASTER_MODULE_REGISTRY } from './registry-data';
-import { detectDependencyCycles } from './evaluator';
+  RegistryValidationIssue,
+  RegistryValidationReport,
+  TenantModuleDefinition,
+} from "./types";
+import type { SubscriptionPlan } from "../types/subscriptions";
+import {
+  CANONICAL_FEATURE_REGISTRY,
+  CANONICAL_SUBSCRIPTION_PLANS,
+  MASTER_MODULE_REGISTRY,
+} from "./registry-data";
+import {
+  validateCanonicalRegistryGraph,
+  type CanonicalFeatureDefinition,
+  type CanonicalModuleDefinition,
+  type CanonicalPlanDefinition,
+} from "./canonical-contract";
+import { detectDependencyCycles } from "./evaluator";
 
 export interface ValidateRegistryOptions {
   modules?: TenantModuleDefinition[];
+  features?: CanonicalFeatureDefinition[];
+  plans?: SubscriptionPlan[];
   organizationOverrides?: OrganizationModuleOverride[];
   knownOrganizationIds?: string[];
+  knownRoutes?: Set<string>;
+  knownPermissions?: Set<string>;
 }
 
-/**
- * Validates the entire module registry and optional organization overrides.
- * Returns a comprehensive, actionable RegistryValidationReport.
- */
 export function validateModuleRegistry(
   options: ValidateRegistryOptions = {}
 ): RegistryValidationReport {
   const modules = options.modules || MASTER_MODULE_REGISTRY;
+  const features = options.features || CANONICAL_FEATURE_REGISTRY;
   const issues: RegistryValidationIssue[] = [];
 
   const idMap = new Map<string, TenantModuleDefinition>();
   const codeMap = new Map<string, string>();
   const routeOwnerMap = new Map<string, string>();
 
-  // 1. Module Identity & Uniqueness Checks
+  // 1. Identity, Code & Metadata Checks
   for (const mod of modules) {
-    if (!mod.id || typeof mod.id !== 'string') {
+    if (!mod.id || typeof mod.id !== "string") {
       issues.push({
-        id: `missing-id-${Math.random()}`,
-        severity: 'error',
-        category: 'identity',
-        message: 'Module definition is missing a valid string identifier.',
+        id: `missing-id-${issues.length}`,
+        severity: "error",
+        category: "identity",
+        message: "Module definition is missing a valid string identifier.",
       });
       continue;
     }
@@ -48,8 +60,8 @@ export function validateModuleRegistry(
     if (idMap.has(mod.id)) {
       issues.push({
         id: `duplicate-id-${mod.id}`,
-        severity: 'error',
-        category: 'identity',
+        severity: "error",
+        category: "identity",
         moduleId: mod.id,
         message: `Duplicate module ID "${mod.id}" detected in registry. Module IDs must be unique.`,
       });
@@ -57,15 +69,14 @@ export function validateModuleRegistry(
       idMap.set(mod.id, mod);
     }
 
-    // Code uniqueness
     if (mod.code) {
       if (codeMap.has(mod.code)) {
         issues.push({
           id: `duplicate-code-${mod.code}`,
-          severity: 'error',
-          category: 'identity',
+          severity: "error",
+          category: "identity",
           moduleId: mod.id,
-          message: `Duplicate module code "${mod.code}" used by both "${codeMap.get(mod.code)}" and "${mod.id}".`,
+          message: `Duplicate module code "${mod.code}" shared between "${codeMap.get(mod.code)}" and "${mod.id}".`,
         });
       } else {
         codeMap.set(mod.code, mod.id);
@@ -73,214 +84,248 @@ export function validateModuleRegistry(
     } else {
       issues.push({
         id: `missing-code-${mod.id}`,
-        severity: 'error',
-        category: 'identity',
+        severity: "error",
+        category: "identity",
         moduleId: mod.id,
-        message: `Module "${mod.id}" is missing a mandatory machine-readable code.`,
+        message: `Module "${mod.id}" is missing a machine-readable code.`,
       });
     }
 
-    // Mandatory metadata fields
-    if (!mod.name || !mod.name.trim()) {
+    if (!mod.name || !mod.description || mod.description.trim().length < 10) {
       issues.push({
-        id: `missing-name-${mod.id}`,
-        severity: 'error',
-        category: 'identity',
+        id: `missing-meta-${mod.id}`,
+        severity: "warning",
+        category: "evidence",
         moduleId: mod.id,
-        message: `Module "${mod.id}" is missing a human-readable name.`,
+        message: `Module "${mod.id}" has missing or overly short display metadata/description.`,
       });
     }
 
-    if (!mod.description || !mod.description.trim()) {
-      issues.push({
-        id: `missing-desc-${mod.id}`,
-        severity: 'warning',
-        category: 'identity',
-        moduleId: mod.id,
-        message: `Module "${mod.id}" is missing a descriptive summary.`,
-      });
-    }
-
-    if (!mod.href || !mod.href.startsWith('/')) {
-      issues.push({
-        id: `invalid-href-${mod.id}`,
-        severity: 'error',
-        category: 'route',
-        moduleId: mod.id,
-        message: `Module "${mod.id}" href "${mod.href}" must be an absolute path starting with "/".`,
-      });
-    }
-
-    if (!mod.includedInPlans || mod.includedInPlans.length === 0) {
-      issues.push({
-        id: `empty-plans-${mod.id}`,
-        severity: 'warning',
-        category: 'plan',
-        moduleId: mod.id,
-        message: `Module "${mod.id}" has no assigned subscription plans.`,
-      });
-    }
-
-    // Source evidence checks
-    if (!mod.sourceEvidence || !mod.sourceEvidence.routePath) {
-      issues.push({
-        id: `missing-evidence-${mod.id}`,
-        severity: 'warning',
-        category: 'evidence',
-        moduleId: mod.id,
-        message: `Module "${mod.id}" lacks traceable sourceEvidence routePath.`,
-      });
-    }
-  }
-
-  // 2. Parent-Child Relationship Checks
-  for (const mod of modules) {
-    if (mod.parentId) {
-      if (mod.parentId === mod.id) {
-        issues.push({
-          id: `self-parent-${mod.id}`,
-          severity: 'error',
-          category: 'parent',
-          moduleId: mod.id,
-          message: `Module "${mod.id}" cannot be its own parent.`,
-        });
-      } else if (!idMap.has(mod.parentId)) {
-        issues.push({
-          id: `unresolved-parent-${mod.id}`,
-          severity: 'error',
-          category: 'parent',
-          moduleId: mod.id,
-          message: `Submodule "${mod.id}" references non-existent parent module "${mod.parentId}".`,
-        });
+    for (const route of mod.routes || []) {
+      const owner = routeOwnerMap.get(route);
+      if (owner && owner !== mod.id && mod.availabilityStatus !== "deprecated") {
+        // Shared parent/overview or cross-reference shortcut is allowed as info/warning only when both are different top modules
+        const ownerMod = idMap.get(owner);
+        if (ownerMod && ownerMod.parentId !== mod.id && mod.parentId !== owner) {
+          issues.push({
+            id: `route-overlap-${mod.id}-${route}`,
+            severity: "info",
+            category: "route",
+            moduleId: mod.id,
+            message: `Route "${route}" is referenced by both "${owner}" and "${mod.id}".`,
+          });
+        }
+      } else if (!owner) {
+        routeOwnerMap.set(route, mod.id);
       }
     }
   }
 
-  // 3. Dependency Integrity Checks
+  // 2. Parent & Dependency Reference Integrity
   for (const mod of modules) {
-    if (mod.dependencies && Array.isArray(mod.dependencies)) {
-      for (const dep of mod.dependencies) {
-        if (!dep.moduleId) {
+    if (mod.parentId && !idMap.has(mod.parentId)) {
+      issues.push({
+        id: `missing-parent-${mod.id}`,
+        severity: "error",
+        category: "parent",
+        moduleId: mod.id,
+        message: `Submodule "${mod.id}" references missing parent module "${mod.parentId}".`,
+      });
+    }
+
+    for (const dep of mod.dependencies || []) {
+      if (!idMap.has(dep.moduleId)) {
+        issues.push({
+          id: `missing-dep-${mod.id}-${dep.moduleId}`,
+          severity: "error",
+          category: "dependency",
+          moduleId: mod.id,
+          message: `Module "${mod.id}" depends on unknown module "${dep.moduleId}".`,
+        });
+      }
+      if (dep.moduleId === mod.id) {
+        issues.push({
+          id: `self-dep-${mod.id}`,
+          severity: "error",
+          category: "cycle",
+          moduleId: mod.id,
+          message: `Module "${mod.id}" declares a self-dependency.`,
+        });
+      }
+    }
+
+    if (options.knownRoutes && options.knownRoutes.size > 0 && mod.availabilityStatus !== "deprecated") {
+      for (const route of mod.routes || []) {
+        if (!options.knownRoutes.has(route)) {
           issues.push({
-            id: `empty-dep-id-${mod.id}`,
-            severity: 'error',
-            category: 'dependency',
+            id: `unknown-route-${mod.id}-${route}`,
+            severity: "warning",
+            category: "route",
             moduleId: mod.id,
-            message: `Module "${mod.id}" has a dependency entry with missing moduleId.`,
+            message: `Module "${mod.id}" references unknown route "${route}".`,
           });
-        } else if (!idMap.has(dep.moduleId)) {
+        }
+      }
+    }
+
+    if (options.knownPermissions && options.knownPermissions.size > 0) {
+      for (const perm of mod.requiredPermissions || []) {
+        if (!options.knownPermissions.has(perm)) {
           issues.push({
-            id: `unresolved-dep-${mod.id}-${dep.moduleId}`,
-            severity: 'error',
-            category: 'dependency',
+            id: `unknown-perm-${mod.id}-${perm}`,
+            severity: "warning",
+            category: "identity",
             moduleId: mod.id,
-            message: `Module "${mod.id}" references unresolvable dependency "${dep.moduleId}".`,
+            message: `Module "${mod.id}" references unknown permission "${perm}".`,
           });
         }
       }
     }
   }
 
-  // 4. Circular Dependency Cycle Detection
+  // 3. Cycle Detection
   const cycles = detectDependencyCycles(modules);
   for (const cycle of cycles) {
     issues.push({
-      id: `cycle-${cycle.join('->')}`,
-      severity: 'error',
-      category: 'cycle',
-      message: `Circular dependency detected: ${cycle.join(' -> ')}`,
-      details: { cycle },
+      id: `cycle-${cycle.join("-")}`,
+      severity: "error",
+      category: "cycle",
+      moduleId: cycle[0],
+      message: `Circular required dependency cycle detected: ${cycle.join(" -> ")}.`,
     });
   }
 
-  // 5. Route Mapping Conflict Checks
-  let totalMappedRoutes = 0;
-  for (const mod of modules) {
-    if (mod.routes && Array.isArray(mod.routes)) {
-      totalMappedRoutes += mod.routes.length;
-      for (const r of mod.routes) {
-        if (!r.startsWith('/')) {
-          issues.push({
-            id: `invalid-route-${mod.id}-${r}`,
-            severity: 'error',
-            category: 'route',
-            moduleId: mod.id,
-            message: `Mapped route "${r}" on module "${mod.id}" does not start with "/".`,
-          });
-        }
-        // Check for conflicting assignment to unrelated modules
-        const existingOwner = routeOwnerMap.get(r);
-        if (existingOwner && existingOwner !== mod.id) {
-          // Allow parent and child to share primary href, but flag unrelated modules
-          const existingMod = idMap.get(existingOwner);
-          const isParentChild =
-            mod.parentId === existingOwner || existingMod?.parentId === mod.id;
+  // 4. Plan-to-Module & Feature-to-Module Cross-Validation
+  const plansToCheck: CanonicalPlanDefinition[] = options.plans
+    ? options.plans.map((p) => ({
+        id: p.id,
+        name: p.name,
+        tier: p.tier,
+        normalizedTier: p.normalizedTier || p.tier,
+        status: p.status || "published",
+        visibility: p.visibility || "public",
+        description: p.description || p.name,
+        billingIntervals: p.billingIntervals || ["monthly", "annual"],
+        currency: p.currency,
+        priceMonthly: p.priceMonthly,
+        priceAnnual: p.priceAnnual,
+        priceQuarterly: p.priceQuarterly,
+        trialDays: p.trialDays ?? 14,
+        targetSchoolTypes: p.targetSchoolTypes || ["primary", "secondary", "combined"],
+        maxStudents: p.maxStudents,
+        maxStaff: p.maxStaff,
+        maxCampuses: p.maxCampuses,
+        storageGb: p.storageGb,
+        features: p.features || [],
+        includedModuleIds: p.includedModuleIds || [],
+        includedFeatureIds: p.includedFeatureIds || [],
+        optionalAddOnModuleIds: p.optionalAddOnModuleIds || [],
+        optionalAddOnFeatureIds: p.optionalAddOnFeatureIds || [],
+        upgradeToPlanIds: p.upgradeToPlanIds || [],
+        downgradeToPlanIds: p.downgradeToPlanIds || [],
+        version: p.version ?? 1,
+        isActive: p.isActive,
+      }))
+    : [];
 
-          if (!isParentChild) {
-            issues.push({
-              id: `duplicate-route-${r}`,
-              severity: 'warning',
-              category: 'route',
-              moduleId: mod.id,
-              message: `Route "${r}" is mapped to both "${existingOwner}" and "${mod.id}".`,
-            });
-          }
-        } else {
-          routeOwnerMap.set(r, mod.id);
-        }
+  for (const plan of plansToCheck) {
+    for (const modId of plan.includedModuleIds) {
+      const mod = idMap.get(modId);
+      if (!mod) {
+        issues.push({
+          id: `plan-unknown-mod-${plan.id}-${modId}`,
+          severity: "error",
+          category: "plan",
+          moduleId: modId,
+          message: `Subscription plan "${plan.name}" (${plan.id}) references unknown module ID "${modId}".`,
+        });
+      } else if (mod.availabilityStatus === "deprecated" && plan.status === "published") {
+        issues.push({
+          id: `plan-deprecated-mod-${plan.id}-${modId}`,
+          severity: "warning",
+          category: "plan",
+          moduleId: modId,
+          message: `Published plan "${plan.name}" references deprecated module "${modId}".`,
+        });
       }
     }
   }
 
-  // 6. Organization Overrides Integrity (if provided)
+  // If canonical registry is being validated, also run strict Zod canonical validator
+  if (modules === MASTER_MODULE_REGISTRY && !options.modules) {
+    const canonicalReport = validateCanonicalRegistryGraph({
+      modules: modules as unknown as CanonicalModuleDefinition[],
+      features,
+      plans: plansToCheck.length > 0 ? plansToCheck : CANONICAL_SUBSCRIPTION_PLANS,
+      knownRoutes: options.knownRoutes,
+      knownPermissions: options.knownPermissions,
+    });
+    for (const err of canonicalReport.errors) {
+      issues.push({
+        id: `canonical-${err.code}-${err.entityId}`,
+        severity: "error",
+        category:
+          err.code === "INVALID_PLAN_ASSOCIATION" || err.code === "DEPRECATED_IN_ACTIVE_PLAN"
+            ? "plan"
+            : err.code === "CIRCULAR_DEPENDENCY"
+            ? "cycle"
+            : err.code === "MISSING_PARENT_MODULE"
+            ? "parent"
+            : "identity",
+        moduleId: err.entityId,
+        message: err.message,
+      });
+    }
+  }
+
+  // 5. Override Integrity Checks
   if (options.organizationOverrides) {
-    const knownOrgs = new Set(options.knownOrganizationIds || []);
+    const orgIdSet = options.knownOrganizationIds
+      ? new Set(options.knownOrganizationIds)
+      : undefined;
     for (const ov of options.organizationOverrides) {
       if (!idMap.has(ov.moduleId)) {
         issues.push({
-          id: `override-unregistered-mod-${ov.organizationId}-${ov.moduleId}`,
-          severity: 'error',
-          category: 'override',
+          id: `orphan-override-mod-${ov.organizationId}-${ov.moduleId}`,
+          severity: "warning",
+          category: "override",
           moduleId: ov.moduleId,
-          message: `Organization override references unregistered module ID "${ov.moduleId}".`,
+          message: `Organization override for "${ov.organizationId}" references unknown module "${ov.moduleId}".`,
         });
       }
-      if (knownOrgs.size > 0 && !knownOrgs.has(ov.organizationId)) {
+      if (orgIdSet && !orgIdSet.has(ov.organizationId)) {
         issues.push({
-          id: `override-unknown-org-${ov.organizationId}-${ov.moduleId}`,
-          severity: 'error',
-          category: 'override',
-          message: `Organization override references unknown organization ID "${ov.organizationId}".`,
-        });
-      }
-      if (!ov.action || !['inherit', 'force_enable', 'force_disable'].includes(ov.action)) {
-        issues.push({
-          id: `override-invalid-action-${ov.organizationId}-${ov.moduleId}`,
-          severity: 'error',
-          category: 'override',
-          message: `Organization override has invalid action "${ov.action}".`,
+          id: `orphan-override-org-${ov.organizationId}-${ov.moduleId}`,
+          severity: "warning",
+          category: "override",
+          moduleId: ov.moduleId,
+          message: `Module override on "${ov.moduleId}" references unknown organization "${ov.organizationId}".`,
         });
       }
     }
   }
 
-  const errorCount = issues.filter((i) => i.severity === 'error').length;
-  const warningCount = issues.filter((i) => i.severity === 'warning').length;
-  const infoCount = issues.filter((i) => i.severity === 'info').length;
-
-  const topLevelCount = modules.filter((m) => !m.parentId).length;
-  const submoduleCount = modules.filter((m) => !!m.parentId).length;
+  const errorCount = issues.filter((i) => i.severity === "error").length;
+  const warningCount = issues.filter((i) => i.severity === "warning").length;
+  const infoCount = issues.filter((i) => i.severity === "info").length;
 
   return {
     isValid: errorCount === 0,
     timestamp: new Date().toISOString(),
     totalModulesCount: modules.length,
-    topLevelModulesCount: topLevelCount,
-    submodulesCount: submoduleCount,
-    mappedRoutesCount: totalMappedRoutes,
+    topLevelModulesCount: modules.filter((m) => !m.parentId).length,
+    submodulesCount: modules.filter((m) => !!m.parentId).length,
+    mappedRoutesCount: new Set(modules.flatMap((m) => m.routes || [])).size,
     errorCount,
     warningCount,
     infoCount,
+    totalFeaturesCount: features.length,
+    totalPlansCount: plansToCheck.length > 0 ? plansToCheck.length : CANONICAL_SUBSCRIPTION_PLANS.length,
+    deprecatedModulesCount: modules.filter((m) => m.availabilityStatus === "deprecated" || m.status === "deprecated").length,
+    comingSoonModulesCount: modules.filter((m) => m.availabilityStatus === "coming_soon").length,
+    unassignedModulesCount: modules.filter(
+      (m) => m.availabilityStatus !== "deprecated" && (!m.includedInPlans || m.includedInPlans.length === 0)
+    ).length,
     issues,
   };
 }

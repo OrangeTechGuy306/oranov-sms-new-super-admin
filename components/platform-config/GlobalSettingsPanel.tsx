@@ -517,9 +517,9 @@ export function GlobalSettingsPanel() {
                 { code: 'mod_students', label: 'Student Information' },
                 { code: 'mod_academics', label: 'Academics & Classes' },
                 { code: 'mod_attendance', label: 'Daily Attendance' },
-                { code: 'mod_report_cards', label: 'Report Cards' },
-                { code: 'mod_cbt', label: 'Examinations & CBT' },
-                { code: 'mod_fees', label: 'Fee Management' },
+                { code: 'sub_results_report_cards', label: 'Report Cards' },
+                { code: 'sub_exam_cbt', label: 'Examinations & CBT' },
+                { code: 'sub_finance_fees', label: 'Fee Management' },
                 { code: 'mod_transport', label: 'Transport Fleet' },
                 { code: 'mod_library', label: 'Library Catalog' },
               ].map((item) => {

@@ -11,6 +11,7 @@ import {
   CreateOrganizationInput,
   InitialCampusInput,
 } from '@/lib/types';
+import type { CanonicalSchoolType } from '@/lib/modules/canonical-contract';
 import { formatCurrency } from '@/lib/utils/formatters';
 import {
   Building2,
@@ -27,6 +28,14 @@ import {
   Sparkles,
   Check,
 } from 'lucide-react';
+
+function mapClassificationToCanonicalSchoolType(
+  classification: SchoolClassification
+): CanonicalSchoolType {
+  if (classification === 'k12') return 'combined';
+  if (classification === 'higher_education') return 'college';
+  return classification;
+}
 
 const STEPS = [
   { id: 1, title: 'Profile', subtitle: 'Identity & Code' },
@@ -300,9 +309,16 @@ export default function OrganizationOnboardingWizardPage() {
   };
 
   const selectedPlan = plans.find((p) => p.id === formData.planId) || plans[0];
-  const includedModulesCount = modules.filter(
-    (m) => selectedPlan && m.includedInPlans.includes(selectedPlan.tier)
-  ).length;
+  const selectedIncludedModules = modules.filter((m) =>
+    selectedPlan && Array.isArray(selectedPlan.includedModuleIds)
+      ? selectedPlan.includedModuleIds.includes(m.id)
+      : selectedPlan && m.includedInPlans.includes(selectedPlan.tier)
+  );
+  const includedModulesCount = selectedIncludedModules.length;
+  const selectedOptionalAddOns = modules.filter(
+    (m) => selectedPlan?.optionalAddOnModuleIds?.includes(m.id)
+  );
+  const normalizedClassification = mapClassificationToCanonicalSchoolType(formData.classification);
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -830,7 +846,12 @@ export default function OrganizationOnboardingWizardPage() {
                   {plans.map((plan) => {
                     const isSelected = formData.planId === plan.id;
                     const price = formData.billingCycle === 'annual' ? plan.priceAnnual : plan.priceMonthly;
-                    const planModulesCount = modules.filter((m) => m.includedInPlans.includes(plan.tier)).length;
+                    const planModulesCount = Array.isArray(plan.includedModuleIds)
+                      ? plan.includedModuleIds.length
+                      : modules.filter((m) => m.includedInPlans.includes(plan.tier)).length;
+                    const supportsClassification =
+                      !plan.targetSchoolTypes ||
+                      plan.targetSchoolTypes.includes(normalizedClassification);
 
                     return (
                       <div
@@ -843,29 +864,41 @@ export default function OrganizationOnboardingWizardPage() {
                         }`}
                       >
                         <div className="space-y-3">
-                          <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between gap-2">
                             <span className="font-bold text-sm text-foreground">{plan.name}</span>
-                            {plan.isPopular && (
-                              <span className="text-[10px] bg-primary text-primary-foreground font-extrabold px-1.5 py-0.2 rounded-full">
-                                Popular
-                              </span>
-                            )}
+                            <div className="flex items-center gap-1">
+                              {plan.status && plan.status !== 'published' && (
+                                <span className="text-[10px] bg-muted text-muted-foreground font-bold px-1.5 py-0.5 rounded uppercase">
+                                  {plan.status}
+                                </span>
+                              )}
+                              {plan.isPopular && (
+                                <span className="text-[10px] bg-primary text-primary-foreground font-extrabold px-1.5 py-0.2 rounded-full">
+                                  Popular
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <p className="text-xs text-muted-foreground leading-relaxed">{plan.description}</p>
                           <div className="pt-2">
-                            <span className="text-2xl font-black text-foreground">{formatCurrency(price)}</span>
+                            <span className="text-2xl font-black text-foreground">{formatCurrency(price, plan.currency)}</span>
                             <span className="text-xs text-muted-foreground">
                               /{formData.billingCycle === 'annual' ? 'year' : 'month'}
                             </span>
                           </div>
+                          {!supportsClassification && (
+                            <p className="text-[11px] text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1">
+                              Warning: Plan targets {(plan.targetSchoolTypes || []).join(', ')}; incompatible with selected &quot;{formData.classification}&quot; classification.
+                            </p>
+                          )}
                         </div>
 
                         <div className="pt-4 border-t border-border/60 mt-4 space-y-1.5 text-xs text-muted-foreground">
-                          <p>• Max Students: <strong>{plan.maxStudents.toLocaleString()}</strong></p>
-                          <p>• Max Staff: <strong>{plan.maxStaff.toLocaleString()}</strong></p>
-                          <p>• Max Campuses: <strong>{plan.maxCampuses}</strong></p>
-                          <p>• Cloud Storage: <strong>{plan.storageGb} GB</strong></p>
-                          <p>• Included Modules: <strong>{planModulesCount} Modules</strong></p>
+                          <p>• Max Students: <strong>{plan.maxStudents > 50000 ? 'Unlimited' : plan.maxStudents.toLocaleString()}</strong></p>
+                          <p>• Max Staff: <strong>{plan.maxStaff > 50000 ? 'Unlimited' : plan.maxStaff.toLocaleString()}</strong></p>
+                          <p>• Max Campuses: <strong>{plan.maxCampuses > 50 ? 'Unlimited' : plan.maxCampuses}</strong></p>
+                          <p>• Cloud Storage: <strong>{plan.storageGb} GB</strong> • Trial: <strong>{plan.trialDays ?? 14}d</strong></p>
+                          <p>• Included Modules: <strong>{planModulesCount}</strong> ({plan.optionalAddOnModuleIds?.length || 0} optional add-ons)</p>
                         </div>
                       </div>
                     );
@@ -890,61 +923,54 @@ export default function OrganizationOnboardingWizardPage() {
                 <div className="p-4 bg-muted/30 rounded-xl border border-border flex items-center justify-between">
                   <div>
                     <span className="text-xs font-semibold text-foreground block">
-                      Entitlement Coverage: {includedModulesCount} of {modules.length} Canonical Modules Unlocked
+                      Entitlement Coverage: {includedModulesCount} of {modules.length} Canonical Modules Included
                     </span>
                     <span className="text-[11px] text-muted-foreground">
-                      Derived from Phase E-09.6 master tenant registry. All core functional domains are ready.
+                      Computed directly from {selectedPlan.name} (`{selectedPlan.id}` • {selectedOptionalAddOns.length} optional add-ons available).
                     </span>
                   </div>
                   <Badge variant="success" size="sm">
-                    {modules.length > 0 ? Math.round((includedModulesCount / modules.length) * 100) : 100}% Coverage
+                    {modules.length > 0 ? Math.round((includedModulesCount / modules.length) * 100) : 100}% Included
                   </Badge>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                  <div className="p-3.5 rounded-lg border border-border bg-card space-y-2">
-                    <div className="flex items-center gap-2 font-semibold text-foreground">
-                      <Check className="w-4 h-4 text-emerald-500" />
-                      Academic & Curriculum Governance
-                    </div>
-                    <p className="text-muted-foreground text-[11px]">
-                      Classes, terms, grading schemes, lesson timetables, and report card generation.
-                    </p>
-                  </div>
-
-                  <div className="p-3.5 rounded-lg border border-border bg-card space-y-2">
-                    <div className="flex items-center gap-2 font-semibold text-foreground">
-                      <Check className="w-4 h-4 text-emerald-500" />
-                      Admissions & Student Information
-                    </div>
-                    <p className="text-muted-foreground text-[11px]">
-                      Application pipelines, enrollment verification, student records, and health profiles.
-                    </p>
-                  </div>
-
-                  <div className="p-3.5 rounded-lg border border-border bg-card space-y-2">
-                    <div className="flex items-center gap-2 font-semibold text-foreground">
-                      <Check className="w-4 h-4 text-emerald-500" />
-                      Attendance & Classroom Operations
-                    </div>
-                    <p className="text-muted-foreground text-[11px]">
-                      Daily attendance logging, biometric clocking, absence notifications, and discipline logs.
-                    </p>
-                  </div>
-
-                  <div className="p-3.5 rounded-lg border border-border bg-card space-y-2">
-                    <div className="flex items-center gap-2 font-semibold text-foreground">
-                      <Check className="w-4 h-4 text-emerald-500" />
-                      Financial Ledger & Fee Collections
-                    </div>
-                    <p className="text-muted-foreground text-[11px]">
-                      Tuition schedules, automated invoice generation, payment receipts, and balance summaries.
-                    </p>
-                  </div>
+                  {selectedIncludedModules
+                    .filter((m) => !m.parentId)
+                    .slice(0, 10)
+                    .map((mod) => {
+                      const maturity = mod.implementationMaturity || mod.status;
+                      return (
+                        <div key={mod.id} className="p-3.5 rounded-lg border border-border bg-card space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 font-semibold text-foreground">
+                              <Check className="w-4 h-4 text-emerald-500 shrink-0" />
+                              <span>{mod.name}</span>
+                            </div>
+                            <Badge variant={maturity === 'implemented' ? 'success' : 'warning'} size="sm">
+                              {maturity}
+                            </Badge>
+                          </div>
+                          <p className="text-muted-foreground text-[11px] line-clamp-2">{mod.description}</p>
+                        </div>
+                      );
+                    })}
                 </div>
 
+                {selectedOptionalAddOns.length > 0 && (
+                  <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/5 text-xs space-y-1">
+                    <span className="font-semibold text-foreground block">
+                      Optional Plan Add-Ons ({selectedOptionalAddOns.length}):
+                    </span>
+                    <p className="text-[11px] text-muted-foreground">
+                      {selectedOptionalAddOns.slice(0, 8).map((m) => m.name).join(' • ')}
+                      {selectedOptionalAddOns.length > 8 ? ` + ${selectedOptionalAddOns.length - 8} more` : ''}
+                    </p>
+                  </div>
+                )}
+
                 <div className="p-3 bg-muted/40 rounded-lg border border-border text-xs text-muted-foreground">
-                  💡 <strong>Administrative Note:</strong> Specific module overrides (force-enabling or force-disabling individual capabilities) can be fine-tuned after creation in the organization details workspace.
+                  💡 <strong>Administrative Note:</strong> Specific module overrides and add-on grants can be fine-tuned after onboarding in the Organization Entitlements or Subscription governance panel.
                 </div>
               </div>
             )}

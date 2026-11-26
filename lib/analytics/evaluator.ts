@@ -508,6 +508,8 @@ export function computeModuleAdoptionMetrics(
       const evalResult = evaluateModuleEntitlement({
         moduleId: mod.id,
         organizationId: org.id,
+        organizationStatus: org.status,
+        schoolType: org.classification,
         planId: org.planId,
         plans,
         organizationOverrides: overrides,

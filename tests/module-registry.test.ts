@@ -12,18 +12,18 @@ import {
 } from '../lib/modules';
 
 describe('Master Tenant Module Registry Integrity', () => {
-  it('contains the verified 321 tenant navigation entities (56 top-level, 265 submodules)', () => {
-    assert.strictEqual(MASTER_MODULE_REGISTRY.length, 321);
+  it('contains the verified 398 canonical tenant entities (57 top-level, 341 submodules)', () => {
+    assert.strictEqual(MASTER_MODULE_REGISTRY.length, 398);
 
     const topLevel = getTopLevelModules(MASTER_MODULE_REGISTRY);
-    assert.strictEqual(topLevel.length, 56);
+    assert.strictEqual(topLevel.length, 57);
 
     const submodules = MASTER_MODULE_REGISTRY.filter((m) => m.parentId !== undefined);
-    assert.strictEqual(submodules.length, 265);
-    assert.strictEqual(topLevel.length + submodules.length, 321);
+    assert.strictEqual(submodules.length, 341);
+    assert.strictEqual(topLevel.length + submodules.length, 398);
   });
 
-  it('guarantees unique machine-readable IDs across all 321 modules', () => {
+  it('guarantees unique machine-readable IDs across all 398 modules', () => {
     const idSet = new Set<string>();
     for (const mod of MASTER_MODULE_REGISTRY) {
       assert.ok(mod.id && mod.id.length > 0, `Module must have non-empty id`);
@@ -34,10 +34,10 @@ describe('Master Tenant Module Registry Integrity', () => {
       );
       idSet.add(mod.id);
     }
-    assert.strictEqual(idSet.size, 321);
+    assert.strictEqual(idSet.size, 398);
   });
 
-  it('guarantees unique machine-readable module codes across all 321 modules', () => {
+  it('guarantees unique machine-readable module codes across all 398 modules', () => {
     const codeSet = new Set<string>();
     for (const mod of MASTER_MODULE_REGISTRY) {
       assert.ok(mod.code && mod.code.length > 0, `Module must have non-empty code`);
@@ -48,7 +48,7 @@ describe('Master Tenant Module Registry Integrity', () => {
       );
       codeSet.add(mod.code);
     }
-    assert.strictEqual(codeSet.size, 321);
+    assert.strictEqual(codeSet.size, 398);
   });
 
   it('ensures all submodules reference valid parent top-level module IDs', () => {
@@ -83,7 +83,12 @@ describe('Master Tenant Module Registry Integrity', () => {
       assert.ok(mod.href && mod.href.startsWith('/'), `Module ${mod.id} href must start with /`);
       assert.ok(Array.isArray(mod.routes) && mod.routes.length > 0, `Module ${mod.id} must have at least one mapped route`);
       assert.ok(mod.sourceEvidence && mod.sourceEvidence.routePath, `Module ${mod.id} must have sourceEvidence.routePath`);
-      assert.ok(Array.isArray(mod.includedInPlans) && mod.includedInPlans.length > 0, `Module ${mod.id} must have includedInPlans`);
+      if (mod.availabilityStatus === 'deprecated') {
+        assert.strictEqual(mod.includedInPlans.length, 0, `Deprecated module ${mod.id} must not be assigned to active plans`);
+        assert.ok(mod.replacedByModuleId, `Deprecated module ${mod.id} must specify replacedByModuleId`);
+      } else {
+        assert.ok(Array.isArray(mod.includedInPlans) && mod.includedInPlans.length > 0, `Module ${mod.id} must have includedInPlans`);
+      }
       assert.ok(mod.status, `Module ${mod.id} must have status`);
       assert.strictEqual(typeof mod.isGloballyEnabled, 'boolean', `Module ${mod.id} must have boolean isGloballyEnabled`);
     }
@@ -93,9 +98,9 @@ describe('Master Tenant Module Registry Integrity', () => {
     const validation = validateModuleRegistry({ modules: MASTER_MODULE_REGISTRY });
 
     assert.strictEqual(validation.isValid, true, 'Module registry must be valid');
-    assert.strictEqual(validation.totalModulesCount, 321);
-    assert.strictEqual(validation.topLevelModulesCount, 56);
-    assert.strictEqual(validation.submodulesCount, 265);
+    assert.strictEqual(validation.totalModulesCount, 398);
+    assert.strictEqual(validation.topLevelModulesCount, 57);
+    assert.strictEqual(validation.submodulesCount, 341);
     assert.strictEqual(validation.errorCount, 0, `Expected 0 validation errors, got: ${JSON.stringify(validation.issues.filter(i => i.severity === 'error'))}`);
   });
 
@@ -119,21 +124,20 @@ describe('Master Tenant Module Registry Integrity', () => {
     }
   });
 
-  it('verifies that sourceEvidence references correspond to actual files in tenant-dashboard', () => {
+  it('verifies that sourceEvidence references correspond to actual files in frontend', () => {
     const projectRoot = path.resolve(__dirname, '..', '..');
-    const tenantDashboardRoot = path.join(projectRoot, 'tenant-dashboard');
+    const tenantDashboardRoot = path.join(projectRoot, 'frontend');
 
-    if (fs.existsSync(tenantDashboardRoot)) {
-      const sampleIndices = [0, 10, 25, 50, 75, 100, 125, 150, 175, 200, 225, 250, 275, 300, 320];
-      for (const idx of sampleIndices) {
-        const mod = MASTER_MODULE_REGISTRY[idx];
-        if (mod && mod.sourceEvidence && mod.sourceEvidence.routePath) {
-          const fullPath = path.join(tenantDashboardRoot, mod.sourceEvidence.routePath);
-          assert.ok(
-            fs.existsSync(fullPath),
-            `Source evidence file must exist on disk: ${fullPath} (for module ${mod.id})`
-          );
-        }
+    assert.ok(fs.existsSync(tenantDashboardRoot), `Expected tenant app root at ${tenantDashboardRoot}`);
+    const sampleIndices = [0, 10, 25, 50, 75, 100, 125, 150, 175, 200, 225, 250, 275, 300, 320];
+    for (const idx of sampleIndices) {
+      const mod = MASTER_MODULE_REGISTRY[idx];
+      if (mod && mod.sourceEvidence && mod.sourceEvidence.routePath) {
+        const fullPath = path.join(tenantDashboardRoot, mod.sourceEvidence.routePath);
+        assert.ok(
+          fs.existsSync(fullPath),
+          `Source evidence file must exist on disk: ${fullPath} (for module ${mod.id})`
+        );
       }
     }
   });
@@ -141,13 +145,18 @@ describe('Master Tenant Module Registry Integrity', () => {
   it('computes accurate registry metrics', () => {
     const metrics = getModuleMetrics(MASTER_MODULE_REGISTRY);
 
-    assert.strictEqual(metrics.totalModules, 321);
-    assert.strictEqual(metrics.topLevelModules, 56);
-    assert.strictEqual(metrics.submodules, 265);
-    assert.strictEqual(metrics.byImplementationStatus.implemented, 321);
-    assert.strictEqual(metrics.byImplementationStatus.partial, 0);
+    assert.strictEqual(metrics.totalModules, 398);
+    assert.strictEqual(metrics.topLevelModules, 57);
+    assert.strictEqual(metrics.submodules, 341);
+    assert.strictEqual(
+      metrics.byImplementationStatus.implemented +
+        metrics.byImplementationStatus.partial +
+        metrics.byImplementationStatus.deprecated,
+      398
+    );
+    assert.strictEqual(metrics.byImplementationStatus.deprecated, 3);
     assert.strictEqual(metrics.byImplementationStatus.planned, 0);
-    assert.strictEqual(metrics.byPlatformAvailability.generally_available, 321);
+    assert.strictEqual(metrics.byPlatformAvailability.generally_available, 395);
     assert.strictEqual(metrics.byPlanTier.starter > 0, true);
     assert.strictEqual(metrics.byPlanTier.growth > 0, true);
     assert.strictEqual(metrics.byPlanTier.enterprise > 0, true);

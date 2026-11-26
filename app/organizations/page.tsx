@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, Column } from '@/components/ui/DataTable';
 import { Badge } from '@/components/ui/Badge';
@@ -22,6 +23,10 @@ import {
 
 export default function OrganizationsDirectoryPage() {
   const router = useRouter();
+  const { can } = usePlatformAuth();
+  const canCreateOrg = can('organizations.create');
+  const canManageLifecycle = can('organizations.lifecycle.manage');
+  const canExportDirectory = can('platform.overview.export') || can('organizations.update');
   const { organizations, plans, campuses, evaluateOrganizationReadiness, setOrganizationStatus } = usePlatformStore();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -287,7 +292,7 @@ export default function OrganizationsDirectoryPage() {
             <Eye className="w-3.5 h-3.5" />
           </Link>
 
-          {org.status === 'pending' ? (
+          {canManageLifecycle && (org.status === 'pending' ? (
             <button
               type="button"
               onClick={() =>
@@ -335,7 +340,7 @@ export default function OrganizationsDirectoryPage() {
             >
               <CheckCircle className="w-3.5 h-3.5" />
             </button>
-          ) : null}
+          ) : null)}
         </div>
       ),
     },
@@ -348,21 +353,25 @@ export default function OrganizationsDirectoryPage() {
         description="Search, inspect, and administer multi-tenant school organizations across the SaaS platform."
         actions={
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleExportCsv}
-              className="inline-flex items-center gap-2 px-3 py-2 bg-card border border-border text-foreground hover:bg-muted font-semibold text-xs rounded-lg transition-colors shadow-2xs"
-            >
-              <Download className="w-4 h-4 text-muted-foreground" />
-              Export Directory CSV
-            </button>
-            <Link
-              href="/organizations/new"
-              className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground font-semibold text-xs rounded-lg hover:bg-primary/90 transition-colors shadow-xs"
-            >
-              <UserPlus className="w-4 h-4" />
-              Onboard New School
-            </Link>
+            {canExportDirectory && (
+              <button
+                type="button"
+                onClick={handleExportCsv}
+                className="inline-flex items-center gap-2 px-3 py-2 bg-card border border-border text-foreground hover:bg-muted font-semibold text-xs rounded-lg transition-colors shadow-2xs"
+              >
+                <Download className="w-4 h-4 text-muted-foreground" />
+                Export Directory CSV
+              </button>
+            )}
+            {canCreateOrg && (
+              <Link
+                href="/organizations/new"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground font-semibold text-xs rounded-lg hover:bg-primary/90 transition-colors shadow-xs"
+              >
+                <UserPlus className="w-4 h-4" />
+                Onboard New School
+              </Link>
+            )}
           </div>
         }
       />

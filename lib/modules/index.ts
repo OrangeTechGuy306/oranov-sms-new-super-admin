@@ -8,6 +8,8 @@ import { TenantModuleDefinition } from './types';
 import { evaluateModuleEntitlement, evaluateAllModules } from './evaluator';
 
 export * from './types';
+export * from './canonical-contract';
+export * from './canonical-entitlements';
 export * from './registry-data';
 export * from './evaluator';
 export * from './validator';
@@ -53,27 +55,59 @@ export function getModuleMetrics(
     byCategory[m.category] = (byCategory[m.category] || 0) + 1;
   }
 
+  const comingSoonCount = modules.filter((m) => m.availabilityStatus === 'coming_soon').length;
+  const deprecatedCount = modules.filter(
+    (m) => m.availabilityStatus === 'deprecated' || m.status === 'deprecated'
+  ).length;
+  const unavailableCount = modules.filter((m) => m.availabilityStatus === 'unavailable').length;
+  const unassignedToPlanCount = modules.filter(
+    (m) => m.availabilityStatus !== 'deprecated' && (!m.includedInPlans || m.includedInPlans.length === 0)
+  ).length;
+  const partialCount = modules.filter(
+    (m) => m.implementationMaturity === 'partial' || m.status === 'partial'
+  ).length;
+  const plannedCount = modules.filter(
+    (m) => m.implementationMaturity === 'planned' || m.status === 'planned'
+  ).length;
+  const implementedCount = modules.filter(
+    (m) => (m.implementationMaturity || m.status) === 'implemented'
+  ).length;
+
   return {
     totalModules: modules.length,
     topLevelModules: topModules.length,
     submodules: submodules.length,
     totalMappedRoutes,
     byCategory,
+    implementedCount,
+    partialCount,
+    plannedCount,
+    deprecatedCount,
+    comingSoonCount,
+    unavailableCount,
+    unassignedToPlanCount,
+    platformEnabledCount: modules.filter((m) => m.isGloballyEnabled).length,
+    globallyDisabledCount: modules.filter((m) => !m.isGloballyEnabled).length,
     byImplementationStatus: {
       implemented: modules.filter((m) => m.status === 'implemented').length,
       partial: modules.filter((m) => m.status === 'partial').length,
       planned: modules.filter((m) => m.status === 'planned').length,
+      deprecated: deprecatedCount,
       missing: modules.filter((m) => m.status === 'missing').length,
       unknown: modules.filter((m) => m.status === 'unknown').length,
     },
     byPlatformAvailability: {
       generally_available: modules.filter((m) => m.isGloballyEnabled).length,
       disabled: modules.filter((m) => !m.isGloballyEnabled).length,
+      coming_soon: comingSoonCount,
+      deprecated: deprecatedCount,
+      unavailable: unavailableCount,
     },
     byPlanTier: {
       starter: modules.filter((m) => m.includedInPlans.includes('starter')).length,
       growth: modules.filter((m) => m.includedInPlans.includes('growth')).length,
       enterprise: modules.filter((m) => m.includedInPlans.includes('enterprise')).length,
+      custom: modules.filter((m) => m.includedInPlans.includes('custom')).length,
     },
   };
 }

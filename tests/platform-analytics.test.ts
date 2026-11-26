@@ -237,10 +237,15 @@ describe('Phase E-09.18: Platform Analytics, BI and Executive Reporting Governan
       assert.ok(metrics.averageAdoptionRatePercent > 0 && metrics.averageAdoptionRatePercent <= 100);
 
       // Check a core module vs an enterprise-only module
+      // Fail-closed P0-4 governance excludes suspended/inactive/archived tenants even for core modules
+      const nonSuspendedCount = INITIAL_ORGANIZATIONS.filter(
+        (o) => !['suspended', 'inactive', 'archived'].includes(o.status)
+      ).length;
       const coreModule = metrics.allModuleStats.find((m) => m.moduleId === 'mod_dashboard');
       assert.ok(coreModule);
-      assert.equal(coreModule.enabledTenantCount, INITIAL_ORGANIZATIONS.length);
-      assert.equal(coreModule.totalAdoptionRatePercent, 100);
+      assert.equal(coreModule.enabledTenantCount, nonSuspendedCount);
+      assert.equal(coreModule.eligibleTenantCount, INITIAL_ORGANIZATIONS.length);
+      assert.ok(coreModule.totalAdoptionRatePercent > 0 && coreModule.totalAdoptionRatePercent < 100);
 
       // Enterprise-specific module (e.g. learning LMS or hr_payroll)
       const enterpriseModule = metrics.allModuleStats.find((m) => m.moduleId === 'mod_hr_payroll');

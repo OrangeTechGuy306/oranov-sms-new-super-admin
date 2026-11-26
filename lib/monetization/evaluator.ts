@@ -274,8 +274,21 @@ export function getGracePeriodStatus(
 /**
  * Resolves modules included in a plan tier from the canonical Master Tenant Module Registry.
  */
-export function getModulesIncludedInPlanTier(tier: PlanTier): TenantModuleDefinition[] {
-  return MASTER_MODULE_REGISTRY.filter((mod) => mod.includedInPlans.includes(tier));
+export function getModulesIncludedInPlanTier(
+  tier: PlanTier,
+  plans?: SubscriptionPlan[]
+): TenantModuleDefinition[] {
+  if (plans && plans.length > 0) {
+    const plan = plans.find((p) => p.tier === tier);
+    if (plan && Array.isArray(plan.includedModuleIds)) {
+      return plan.includedModuleIds
+        .map((id) => MODULES_BY_ID.get(id))
+        .filter((m): m is TenantModuleDefinition => Boolean(m));
+    }
+  }
+  return MASTER_MODULE_REGISTRY.filter(
+    (mod) => mod.availabilityStatus !== 'deprecated' && mod.includedInPlans.includes(tier)
+  );
 }
 
 /**
@@ -509,12 +522,64 @@ export function validatePlanDefinition(
     errors.push('Maximum student capacity must be greater than zero.');
   }
 
+  if (typeof plan.maxStaff === 'number' && plan.maxStaff <= 0) {
+    errors.push('Maximum staff quota must be greater than zero.');
+  }
+
   if (typeof plan.maxCampuses === 'number' && plan.maxCampuses <= 0) {
     errors.push('Maximum campus quota must be at least 1.');
   }
 
   if (typeof plan.trialDays === 'number' && plan.trialDays < 0) {
     errors.push('Trial days cannot be negative.');
+  }
+
+  // Canonical module ID, duplicate, deprecated & dependency validation
+  if (Array.isArray(plan.includedModuleIds)) {
+    const seen = new Set<string>();
+    const includedSet = new Set(plan.includedModuleIds);
+    for (const modId of plan.includedModuleIds) {
+      if (seen.has(modId)) {
+        errors.push(`Duplicate module ID "${modId}" in plan allocation.`);
+        continue;
+      }
+      seen.add(modId);
+
+      const mod = MODULES_BY_ID.get(modId);
+      if (!mod) {
+        errors.push(`Unknown module ID "${modId}" cannot be assigned to a plan.`);
+        continue;
+      }
+      if (mod.availabilityStatus === 'deprecated' && plan.status === 'published') {
+        errors.push(
+          `Deprecated module "${mod.name}" (${modId}) cannot be included in a published plan. Use "${mod.replacedByModuleId || 'canonical replacement'}".`
+        );
+      }
+      if (mod.parentId && !includedSet.has(mod.parentId)) {
+        errors.push(
+          `Submodule "${mod.name}" (${modId}) requires parent module "${mod.parentId}" to also be included in the plan.`
+        );
+      }
+      for (const dep of mod.dependencies || []) {
+        if (dep.type === 'required' && !includedSet.has(dep.moduleId)) {
+          errors.push(
+            `Module "${mod.name}" (${modId}) requires dependency module "${dep.moduleId}" to be included in the plan.`
+          );
+        }
+      }
+    }
+  }
+
+  if (Array.isArray(plan.optionalAddOnModuleIds)) {
+    for (const addOnId of plan.optionalAddOnModuleIds) {
+      if (!MODULES_BY_ID.has(addOnId)) {
+        errors.push(`Unknown optional add-on module ID "${addOnId}".`);
+      }
+    }
+  }
+
+  if (Array.isArray(plan.upgradeToPlanIds) && plan.id && plan.upgradeToPlanIds.includes(plan.id)) {
+    errors.push('A plan cannot list itself as an upgrade target.');
   }
 
   return {

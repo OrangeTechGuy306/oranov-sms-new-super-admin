@@ -90,15 +90,20 @@ describe('Phase E-09.21: Super-Admin Cross-Module Integration & Consolidation', 
         seenIds.add(mod.id);
         seenCodes.add(mod.code);
 
-        assert.ok(
-          mod.includedInPlans.length > 0,
-          `Module ${mod.id} must be included in at least one tier`
-        );
-        for (const plan of mod.includedInPlans) {
+        if (mod.availabilityStatus === 'deprecated') {
+          assert.equal(mod.includedInPlans.length, 0, `Deprecated module ${mod.id} must not be assigned to active plans`);
+          assert.ok(mod.replacedByModuleId, `Deprecated module ${mod.id} must declare replacedByModuleId`);
+        } else {
           assert.ok(
-            ['starter', 'growth', 'enterprise'].includes(plan),
-            `Plan inclusion ${plan} must be valid`
+            mod.includedInPlans.length > 0,
+            `Module ${mod.id} must be included in at least one tier`
           );
+          for (const plan of mod.includedInPlans) {
+            assert.ok(
+              ['starter', 'growth', 'enterprise'].includes(plan),
+              `Plan inclusion ${plan} must be valid`
+            );
+          }
         }
       }
     });

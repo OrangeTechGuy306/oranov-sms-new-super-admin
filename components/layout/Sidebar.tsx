@@ -5,6 +5,12 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils/cn';
 import { usePlatformStore } from '../providers/PlatformStoreContext';
+import { usePlatformAuth } from '../providers/PlatformAuthContext';
+import {
+  getAccessiblePlatformNavigation,
+  hasAnyPlatformPermission,
+} from '@/lib/iam/rbac';
+import { isPlatformDevControlsEnabled } from '@/lib/auth/platformAuthConfig';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import {
   LayoutDashboard,
@@ -60,9 +66,17 @@ interface NavGroup {
 export function Sidebar({ isCollapsed, onToggleCollapse, onCloseMobile }: SidebarProps) {
   const pathname = usePathname();
   const { metrics, resetToDefaults } = usePlatformStore();
+  const { user, primaryRole, permissions } = usePlatformAuth();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
-  const navGroups: NavGroup[] = [
+  const canResetFixtures =
+    isPlatformDevControlsEnabled() &&
+    hasAnyPlatformPermission(permissions, [
+      'platform.settings.update',
+      'system.maintenance.manage',
+    ]);
+
+  const rawNavGroups: NavGroup[] = [
     {
       title: 'Platform Core',
       items: [
@@ -215,6 +229,15 @@ export function Sidebar({ isCollapsed, onToggleCollapse, onCloseMobile }: Sideba
     },
   ];
 
+  const navGroups = React.useMemo(
+    () =>
+      getAccessiblePlatformNavigation(
+        { user, primaryRole, permissions },
+        rawNavGroups
+      ),
+    [user, primaryRole, permissions, metrics]
+  );
+
   const isItemActive = (href: string, exact = false) => {
     if (exact || href === '/') {
       return pathname === href;
@@ -335,58 +358,62 @@ export function Sidebar({ isCollapsed, onToggleCollapse, onCloseMobile }: Sideba
         ))}
       </div>
 
-      {/* Footer Area: Development Reset & Version */}
-      <div className="p-3 border-t border-sidebar-border space-y-2 shrink-0">
-        {!isCollapsed ? (
-          <div className="p-2.5 rounded-lg bg-sidebar-accent/40 border border-sidebar-border text-[11px] space-y-2">
-            <div className="flex items-center justify-between text-sidebar-foreground/70">
-              <span className="font-semibold flex items-center gap-1.5">
-                <ShieldCheck className="w-3.5 h-3.5 text-sidebar-primary" />
-                Dev Mock Mode
-              </span>
+      {/* Footer Area: Development Reset (Only shown when dev mock controls enabled & authorized) */}
+      {canResetFixtures && (
+        <div className="p-3 border-t border-sidebar-border space-y-2 shrink-0">
+          {!isCollapsed ? (
+            <div className="p-2.5 rounded-lg bg-sidebar-accent/40 border border-sidebar-border text-[11px] space-y-2">
+              <div className="flex items-center justify-between text-sidebar-foreground/70">
+                <span className="font-semibold flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-sidebar-primary" />
+                  Dev Mock Mode
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowResetConfirm(true)}
+                  className="text-[10px] hover:text-sidebar-foreground flex items-center gap-1 text-sidebar-foreground/50 hover:underline"
+                >
+                  <RotateCcw className="w-2.5 h-2.5" />
+                  Reset Data
+                </button>
+              </div>
+              <p className="text-[10px] text-sidebar-foreground/50 leading-tight">
+                Client-side state only. No backend connected yet.
+              </p>
+            </div>
+          ) : (
+            <div className="flex justify-center">
               <button
                 type="button"
                 onClick={() => setShowResetConfirm(true)}
-                className="text-[10px] hover:text-sidebar-foreground flex items-center gap-1 text-sidebar-foreground/50 hover:underline"
+                title="Reset development fixtures"
+                className="p-2 rounded-lg text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent"
               >
-                <RotateCcw className="w-2.5 h-2.5" />
-                Reset Data
+                <RotateCcw className="w-4 h-4" />
               </button>
             </div>
-            <p className="text-[10px] text-sidebar-foreground/50 leading-tight">
-              Client-side state only. No backend connected yet.
-            </p>
-          </div>
-        ) : (
-          <div className="flex justify-center">
-            <button
-              type="button"
-              onClick={() => setShowResetConfirm(true)}
-              title="Reset development fixtures"
-              className="p-2 rounded-lg text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
-      <ConfirmDialog
-        isOpen={showResetConfirm}
-        onClose={() => setShowResetConfirm(false)}
-        onConfirm={() => {
-          resetToDefaults();
-          setShowResetConfirm(false);
-        }}
-        title="Reset Development Store Fixtures"
-        variant="warning"
-        confirmLabel="Reset Fixtures"
-        description={
-          <p>
-            Are you sure you want to reset all organizations, subscriptions, invoices, and ledger records to default demonstration fixtures? Any local edits will be discarded.
-          </p>
-        }
-      />
+      {canResetFixtures && (
+        <ConfirmDialog
+          isOpen={showResetConfirm}
+          onClose={() => setShowResetConfirm(false)}
+          onConfirm={() => {
+            resetToDefaults();
+            setShowResetConfirm(false);
+          }}
+          title="Reset Development Store Fixtures"
+          variant="warning"
+          confirmLabel="Reset Fixtures"
+          description={
+            <p>
+              Are you sure you want to reset all organizations, subscriptions, invoices, and ledger records to default demonstration fixtures? Any local edits will be discarded.
+            </p>
+          }
+        />
+      )}
     </aside>
   );
 }

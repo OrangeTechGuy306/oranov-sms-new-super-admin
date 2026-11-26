@@ -52,12 +52,21 @@ export type FeatureCategory =
 
 export interface PlatformFeatureItem {
   id: string;
+  key?: string;
   code: string;
   name: string;
   description: string;
   category: FeatureCategory;
+  moduleId?: string;
   availableInPlans: string[]; // plan IDs or tiers
+  optionalAddOnPlanIds?: string[];
   isGloballyEnabled: boolean;
   isBeta: boolean;
   requiresAddonLicense?: boolean;
+  availabilityStatus?: 'available' | 'enabled' | 'disabled' | 'coming_soon' | 'deprecated' | 'unavailable';
+  implementationMaturity?: 'implemented' | 'partial' | 'planned';
+  dependencies?: string[];
+  requiredPermissions?: string[];
+  supportedSchoolTypes?: string[];
+  commercialConfigStatus?: 'configured' | 'requires_product_owner_configuration';
 }

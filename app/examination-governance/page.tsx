@@ -3,7 +3,8 @@
 import React, { useState, useMemo } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Tabs } from '@/components/ui/Tabs';
-import { INITIAL_EXAM_GOVERNANCE_DATA } from '@/lib/data/examination-governance-fixtures';
+import { platformService } from '@/lib/api/platformService';
+import { getUserFriendlyPlatformError } from '@/lib/api/dataSource';
 import {
   filterExamGovernanceData,
   computeAggregatedExamMetrics,
@@ -56,9 +57,47 @@ export default function ExaminationGovernancePage() {
   const [selectedOrg, setSelectedOrg] = useState<OrganizationExamGovernance | null>(null);
 
   // Compute filtered dataset
+  const [records, setRecords] = React.useState<OrganizationExamGovernance[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+
+  const loadData = React.useCallback(async () => {
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const res = await platformService.getExaminationGovernance();
+      setRecords(res.data || []);
+    } catch (err) {
+      setLoadError(getUserFriendlyPlatformError(err).message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    let active = true;
+    void platformService
+      .getExaminationGovernance()
+      .then((res) => {
+        if (!active) return;
+        setRecords(res.data || []);
+        setLoadError(null);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setLoadError(getUserFriendlyPlatformError(err).message);
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const filteredData = useMemo(() => {
-    return filterExamGovernanceData(INITIAL_EXAM_GOVERNANCE_DATA, filter);
-  }, [filter]);
+    return filterExamGovernanceData(records, filter);
+  }, [records, filter]);
 
   // Derived aggregate metrics
   const aggregatedMetrics = useMemo(() => {
@@ -97,11 +136,30 @@ export default function ExaminationGovernancePage() {
       {/* Privacy by Design & Governance Notice */}
       <PrivacyExamGovernanceNotice />
 
+      {loadError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/30 p-4 flex items-center justify-between gap-4">
+          <p className="text-xs text-red-700 dark:text-red-300">{loadError}</p>
+          <button
+            type="button"
+            onClick={loadData}
+            className="px-3 py-1.5 rounded-md bg-red-600 text-white text-xs font-medium hover:bg-red-700 cursor-pointer shrink-0"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {isLoading && (
+        <div className="rounded-lg border border-border bg-card p-4 text-xs text-muted-foreground">
+          Loading examination governance telemetry...
+        </div>
+      )}
+
       {/* Dynamic Filter Bar */}
       <ExamGovernanceFilters
         filter={filter}
         onFilterChange={setFilter}
-        allRecords={INITIAL_EXAM_GOVERNANCE_DATA}
+        allRecords={records}
         filteredRecords={filteredData}
       />
 

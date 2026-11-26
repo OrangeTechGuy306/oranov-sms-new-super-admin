@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Badge } from '@/components/ui/Badge';
 import { Tabs } from '@/components/ui/Tabs';
@@ -27,6 +28,8 @@ import {
 } from 'lucide-react';
 
 export default function MasterTenantModuleRegistryPage() {
+  const { hasAnyPermission } = usePlatformAuth();
+  const canToggleFeatures = hasAnyPermission(['system.features.toggle', 'modules.registry.manage']);
   const {
     modules,
     moduleMetrics,
@@ -34,7 +37,9 @@ export default function MasterTenantModuleRegistryPage() {
     organizations,
     features,
     toggleFeature,
+    updateFeatureDefinition,
     setModuleGlobalAvailability,
+    setModuleAvailabilityStatus,
     validateRegistry,
   } = usePlatformStore();
 
@@ -46,7 +51,9 @@ export default function MasterTenantModuleRegistryPage() {
   const [selectedPlanTier, setSelectedPlanTier] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [hierarchyFilter, setHierarchyFilter] = useState<'all' | 'top_only' | 'sub_only'>('all');
-  const [availabilityFilter, setAvailabilityFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
+  const [availabilityFilter, setAvailabilityFilter] = useState<
+    'all' | 'enabled' | 'disabled' | 'coming_soon' | 'deprecated' | 'unavailable' | 'unassigned'
+  >('all');
 
   // Overrides tab selected school
   const [selectedOrgId, setSelectedOrgId] = useState<string>(
@@ -79,11 +86,19 @@ export default function MasterTenantModuleRegistryPage() {
         return false;
       }
 
-      if (selectedPlanTier !== 'all' && !mod.includedInPlans.includes(selectedPlanTier as 'starter' | 'growth' | 'enterprise')) {
-        return false;
+      if (selectedPlanTier !== 'all') {
+        const targetPlan = plans.find((p) => p.id === selectedPlanTier || p.tier === selectedPlanTier);
+        if (targetPlan && Array.isArray(targetPlan.includedModuleIds)) {
+          if (!targetPlan.includedModuleIds.includes(mod.id)) {
+            return false;
+          }
+        } else if (!mod.includedInPlans.includes(selectedPlanTier as 'starter' | 'growth' | 'enterprise')) {
+          return false;
+        }
       }
 
-      if (selectedStatus !== 'all' && mod.status !== selectedStatus) {
+      const effectiveMaturity = mod.implementationMaturity || mod.status;
+      if (selectedStatus !== 'all' && effectiveMaturity !== selectedStatus) {
         return false;
       }
 
@@ -103,10 +118,29 @@ export default function MasterTenantModuleRegistryPage() {
         return false;
       }
 
+      if (
+        (availabilityFilter === 'coming_soon' ||
+          availabilityFilter === 'deprecated' ||
+          availabilityFilter === 'unavailable') &&
+        mod.availabilityStatus !== availabilityFilter
+      ) {
+        return false;
+      }
+
+      if (availabilityFilter === 'unassigned') {
+        const isAssignedToAnyPlan = plans.some(
+          (p) =>
+            p.includedModuleIds?.includes(mod.id) ||
+            p.optionalAddOnModuleIds?.includes(mod.id)
+        );
+        if (isAssignedToAnyPlan) return false;
+      }
+
       return true;
     });
   }, [
     modules,
+    plans,
     searchQuery,
     selectedCategory,
     selectedPlanTier,
@@ -156,19 +190,19 @@ export default function MasterTenantModuleRegistryPage() {
         <StatCard
           title="Implementation Readiness"
           value={`${moduleMetrics.implementedCount}`}
-          subtitle="100% Verified in Next.js"
+          subtitle={`${moduleMetrics.partialCount} Partial • ${moduleMetrics.plannedCount} Planned`}
           icon={<CheckCircle2 className="w-4 h-4 text-emerald-500" />}
         />
         <StatCard
           title="Platform Available"
           value={`${moduleMetrics.platformEnabledCount}`}
-          subtitle={moduleMetrics.platformDisabledCount > 0 ? `${moduleMetrics.platformDisabledCount} Suspended` : 'All Globally Active'}
+          subtitle={`${moduleMetrics.comingSoonCount || 0} Coming Soon • ${moduleMetrics.deprecatedCount || 0} Deprecated`}
           icon={<Power className="w-4 h-4 text-blue-500" />}
         />
         <StatCard
-          title="Plan Tier Coverage"
-          value={`Starter: ${moduleMetrics.planStarterCount}`}
-          subtitle={`Growth: ${moduleMetrics.planGrowthCount} | Ent: ${moduleMetrics.planEnterpriseCount}`}
+          title="Plan & Feature Coverage"
+          value={`${moduleMetrics.totalFeaturesCount || features.length} Features`}
+          subtitle={`${moduleMetrics.unassignedModulesCount || 0} modules unassigned • Starter ${moduleMetrics.planStarterCount}`}
           icon={<Sparkles className="w-4 h-4 text-amber-500" />}
         />
         <StatCard
@@ -203,7 +237,7 @@ export default function MasterTenantModuleRegistryPage() {
           },
           {
             id: 'flags',
-            label: 'Release Canary Flags',
+            label: 'Feature Registry & Flags',
             icon: <ShieldCheck className="w-3.5 h-3.5" />,
             count: features.length,
           },
@@ -258,31 +292,60 @@ export default function MasterTenantModuleRegistryPage() {
                   aria-label="Filter by module hierarchy"
                 >
                   <option value="all">All Hierarchies</option>
-                  <option value="top_only">Top-Level Modules Only (56)</option>
-                  <option value="sub_only">Submodules Only (265)</option>
+                  <option value="top_only">Top-Level Modules Only ({moduleMetrics.topLevelModules})</option>
+                  <option value="sub_only">Submodules Only ({moduleMetrics.submodules})</option>
+                </select>
+
+                <select
+                  value={selectedStatus}
+                  onChange={(e) => setSelectedStatus(e.target.value)}
+                  className="px-2.5 py-1.5 bg-muted/30 border border-border rounded-lg text-xs font-medium focus:outline-none"
+                  aria-label="Filter by implementation maturity"
+                >
+                  <option value="all">Maturity: All</option>
+                  <option value="implemented">Implemented ({moduleMetrics.implementedCount})</option>
+                  <option value="partial">Partial ({moduleMetrics.partialCount})</option>
+                  <option value="planned">Planned ({moduleMetrics.plannedCount})</option>
                 </select>
 
                 <select
                   value={selectedPlanTier}
                   onChange={(e) => setSelectedPlanTier(e.target.value)}
                   className="px-2.5 py-1.5 bg-muted/30 border border-border rounded-lg text-xs font-medium focus:outline-none"
-                  aria-label="Filter by subscription plan tier"
+                  aria-label="Filter by subscription plan"
                 >
-                  <option value="all">All Plan Tiers</option>
-                  <option value="starter">Included in Starter</option>
-                  <option value="growth">Included in Growth</option>
-                  <option value="enterprise">Included in Enterprise</option>
+                  <option value="all">All Plans ({plans.length})</option>
+                  {plans.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      Included in {p.name}
+                    </option>
+                  ))}
                 </select>
 
                 <select
                   value={availabilityFilter}
-                  onChange={(e) => setAvailabilityFilter(e.target.value as 'all' | 'enabled' | 'disabled')}
+                  onChange={(e) =>
+                    setAvailabilityFilter(
+                      e.target.value as
+                        | 'all'
+                        | 'enabled'
+                        | 'disabled'
+                        | 'coming_soon'
+                        | 'deprecated'
+                        | 'unavailable'
+                        | 'unassigned'
+                    )
+                  }
                   className="px-2.5 py-1.5 bg-muted/30 border border-border rounded-lg text-xs font-medium focus:outline-none"
                   aria-label="Filter by platform availability"
                 >
-                  <option value="all">Platform State: All</option>
-                  <option value="enabled">Platform: Enabled Only</option>
-                  <option value="disabled">Platform: Disabled Only</option>
+                  <option value="all">Availability: All</option>
+                  <option value="enabled">Available / Enabled</option>
+                  <option value="disabled">Disabled / Suspended</option>
+                  <option value="coming_soon">Coming Soon ({moduleMetrics.comingSoonCount || 0})</option>
+                  <option value="deprecated">Deprecated ({moduleMetrics.deprecatedCount || 0})</option>
+                  <option value="unavailable">Unavailable</option>
+                  <option value="unassigned">Unassigned to Any Plan ({moduleMetrics.unassignedModulesCount || 0})</option>
                 </select>
               </div>
             </div>
@@ -364,62 +427,96 @@ export default function MasterTenantModuleRegistryPage() {
 
                           {/* Readiness Status */}
                           <td className="p-3.5">
-                            <Badge
-                              variant={
-                                mod.status === 'implemented'
-                                  ? 'success'
-                                  : mod.status === 'partial'
-                                  ? 'warning'
-                                  : 'error'
-                              }
-                              className="text-[10px] capitalize"
-                            >
-                              {mod.status}
-                            </Badge>
+                            <div className="flex flex-col items-start gap-1">
+                              <Badge
+                                variant={
+                                  (mod.implementationMaturity || mod.status) === 'implemented'
+                                    ? 'success'
+                                    : (mod.implementationMaturity || mod.status) === 'partial'
+                                    ? 'warning'
+                                    : 'error'
+                                }
+                                className="text-[10px] capitalize"
+                              >
+                                {mod.implementationMaturity || mod.status}
+                              </Badge>
+                              {mod.availabilityStatus && mod.availabilityStatus !== 'available' && mod.availabilityStatus !== 'enabled' && (
+                                <Badge variant={mod.availabilityStatus === 'coming_soon' ? 'warning' : 'error'} className="text-[9px] capitalize">
+                                  {mod.availabilityStatus.replace(/_/g, ' ')}
+                                </Badge>
+                              )}
+                            </div>
                           </td>
 
                           {/* Platform Availability */}
                           <td className="p-3.5" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              type="button"
-                              onClick={(e) => handleToggleGlobal(e, mod)}
-                              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold cursor-pointer border ${
-                                mod.isGloballyEnabled
-                                  ? 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300'
-                                  : 'border-rose-300 bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-300'
-                              }`}
-                              title={mod.isGloballyEnabled ? 'Click to disable platform-wide' : 'Click to enable platform-wide'}
-                            >
-                              <span
-                                className={`w-1.5 h-1.5 rounded-full ${
-                                  mod.isGloballyEnabled ? 'bg-emerald-500' : 'bg-rose-500'
+                            <div className="flex flex-col items-start gap-1">
+                              <button
+                                type="button"
+                                onClick={(e) => handleToggleGlobal(e, mod)}
+                                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-semibold cursor-pointer border ${
+                                  mod.isGloballyEnabled
+                                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300'
+                                    : 'border-rose-300 bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-300'
                                 }`}
-                              />
-                              <span>{mod.isGloballyEnabled ? 'Enabled' : 'Disabled'}</span>
-                            </button>
+                                title={mod.isGloballyEnabled ? 'Click to disable platform-wide' : 'Click to enable platform-wide'}
+                              >
+                                <span
+                                  className={`w-1.5 h-1.5 rounded-full ${
+                                    mod.isGloballyEnabled ? 'bg-emerald-500' : 'bg-rose-500'
+                                  }`}
+                                />
+                                <span>{mod.isGloballyEnabled ? 'Enabled' : 'Disabled'}</span>
+                              </button>
+                              <select
+                                value={mod.availabilityStatus || (mod.isGloballyEnabled ? 'available' : 'disabled')}
+                                onChange={(e) =>
+                                  setModuleAvailabilityStatus(
+                                    mod.id,
+                                    e.target.value as
+                                      | 'available'
+                                      | 'enabled'
+                                      | 'disabled'
+                                      | 'coming_soon'
+                                      | 'deprecated'
+                                      | 'unavailable'
+                                  )
+                                }
+                                aria-label={`Availability status for ${mod.name}`}
+                                className="px-1.5 py-0.5 bg-muted/40 border border-border rounded text-[10px] text-foreground focus:outline-none"
+                              >
+                                <option value="available">Available</option>
+                                <option value="enabled">Enabled</option>
+                                <option value="disabled">Disabled</option>
+                                <option value="coming_soon">Coming Soon</option>
+                                <option value="deprecated">Deprecated</option>
+                                <option value="unavailable">Unavailable</option>
+                              </select>
+                            </div>
                           </td>
 
                           {/* Plans Inclusion */}
                           <td className="p-3.5">
                             <div className="flex flex-wrap items-center gap-1">
-                              {mod.includedInPlans.includes('starter') && (
-                                <Badge variant="neutral" className="text-[9px]">
-                                  Starter
-                                </Badge>
-                              )}
-                              {mod.includedInPlans.includes('growth') && (
-                                <Badge variant="neutral" className="text-[9px]">
-                                  Growth
-                                </Badge>
-                              )}
-                              {mod.includedInPlans.includes('enterprise') && (
-                                <Badge variant="neutral" className="text-[9px]">
-                                  Enterprise
-                                </Badge>
-                              )}
-                              {mod.requiresAddonLicense && (
+                              {plans
+                                .filter((p) => p.includedModuleIds?.includes(mod.id))
+                                .map((p) => (
+                                  <Badge key={p.id} variant="neutral" className="text-[9px]">
+                                    {p.name.replace(/ Academy| Plan| Workspace/gi, '')}
+                                  </Badge>
+                                ))}
+                              {plans.some((p) => p.optionalAddOnModuleIds?.includes(mod.id)) && (
                                 <Badge variant="warning" className="text-[9px]">
                                   Add-on
+                                </Badge>
+                              )}
+                              {!plans.some(
+                                (p) =>
+                                  p.includedModuleIds?.includes(mod.id) ||
+                                  p.optionalAddOnModuleIds?.includes(mod.id)
+                              ) && (
+                                <Badge variant="error" className="text-[9px]">
+                                  Unassigned
                                 </Badge>
                               )}
                             </div>
@@ -510,46 +607,148 @@ export default function MasterTenantModuleRegistryPage() {
         </div>
       )}
 
-      {/* TAB 4: RELEASE CANARY FLAGS */}
+      {/* TAB 4: CANONICAL FEATURE REGISTRY & RELEASE FLAGS */}
       {activeTab === 'flags' && (
         <div className="space-y-4">
           <div className="p-4 rounded-xl border border-border bg-card flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
             <div>
-              <h3 className="font-semibold text-foreground text-sm">Platform Global Feature Flags</h3>
+              <h3 className="font-semibold text-foreground text-sm">
+                Canonical Feature Registry &amp; Release Flags ({features.length})
+              </h3>
               <p className="text-muted-foreground text-xs mt-0.5">
-                Manage canary rollout stages and release toggles for high-level platform feature domains.
+                Granular capabilities (`feat_*`) linked to parent modules (`mod_*`), showing independent implementation maturity and availability status.
               </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-[11px]">
+              <Badge variant="success">{moduleMetrics.activeFeaturesCount ?? features.filter((f) => f.isGloballyEnabled).length} Active</Badge>
+              <Badge variant="warning">{moduleMetrics.comingSoonFeaturesCount ?? features.filter((f) => f.availabilityStatus === 'coming_soon').length} Coming Soon</Badge>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {features.map((feat) => (
-              <div
-                key={feat.id}
-                className="p-4 rounded-xl border border-border bg-card space-y-3 shadow-xs text-xs"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <h4 className="font-semibold text-foreground">{feat.name}</h4>
-                    <span className="font-mono text-[10px] text-muted-foreground">{feat.code}</span>
+            {features.map((feat) => {
+              const linkedPlans = plans.filter(
+                (p) =>
+                  p.includedFeatureIds?.includes(feat.id) ||
+                  feat.availableInPlans.includes(p.id) ||
+                  feat.availableInPlans.includes(p.tier)
+              );
+              const avail = feat.availabilityStatus || (feat.isGloballyEnabled ? 'available' : 'disabled');
+              const maturity = feat.implementationMaturity || 'implemented';
+
+              return (
+                <div
+                  key={feat.id}
+                  className="p-4 rounded-xl border border-border bg-card space-y-3 shadow-xs text-xs flex flex-col justify-between"
+                >
+                  <div className="space-y-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h4 className="font-semibold text-foreground">{feat.name}</h4>
+                        <span className="font-mono text-[10px] text-muted-foreground block">
+                          {feat.id} • {feat.code}
+                        </span>
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <Badge
+                          variant={
+                            avail === 'coming_soon'
+                              ? 'warning'
+                              : feat.isGloballyEnabled
+                              ? 'success'
+                              : 'error'
+                          }
+                          className="text-[10px] capitalize"
+                        >
+                          {avail.replace(/_/g, ' ')}
+                        </Badge>
+                        <Badge
+                          variant={maturity === 'implemented' ? 'info' : 'warning'}
+                          className="text-[9px] capitalize"
+                        >
+                          Maturity: {maturity}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <p className="text-muted-foreground text-[11px] leading-relaxed">{feat.description}</p>
+
+                    <div className="flex flex-wrap items-center gap-1 text-[10px]">
+                      {feat.moduleId && (
+                        <Badge variant="neutral" className="font-mono text-[9px]">
+                          Parent: {feat.moduleId}
+                        </Badge>
+                      )}
+                      {feat.isBeta && (
+                        <Badge variant="warning" className="text-[9px]">
+                          Beta / Rollout
+                        </Badge>
+                      )}
+                      {feat.requiresAddonLicense && (
+                        <Badge variant="warning" className="text-[9px]">
+                          Add-on License
+                        </Badge>
+                      )}
+                    </div>
+
+                    {linkedPlans.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        {linkedPlans.map((p) => (
+                          <Badge key={p.id} variant="neutral" className="text-[9px]">
+                            {p.name.replace(/ Academy| Plan/gi, '')}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+
+                    {feat.commercialConfigStatus === 'requires_product_owner_configuration' && (
+                      <p className="text-[10px] text-amber-700 dark:text-amber-300 bg-amber-500/10 px-2 py-1 rounded">
+                        Commercial add-on pricing requires Product Owner configuration.
+                      </p>
+                    )}
                   </div>
-                  <Badge variant={feat.isGloballyEnabled ? 'success' : 'error'} className="text-[10px]">
-                    {feat.isGloballyEnabled ? 'Active' : 'Disabled'}
-                  </Badge>
+
+                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-border/50 text-[11px]">
+                    <span className="capitalize text-muted-foreground">Domain: {feat.category}</span>
+                    {canToggleFeatures ? (
+                      <div className="flex items-center gap-1.5">
+                        <select
+                          value={avail}
+                          onChange={(e) =>
+                            updateFeatureDefinition(feat.id, {
+                              availabilityStatus: e.target.value as
+                                | 'available'
+                                | 'enabled'
+                                | 'disabled'
+                                | 'coming_soon'
+                                | 'deprecated'
+                                | 'unavailable',
+                            })
+                          }
+                          aria-label={`Availability for ${feat.name}`}
+                          className="px-1.5 py-1 rounded border border-border bg-muted/40 text-foreground text-[10px] focus:outline-none"
+                        >
+                          <option value="available">Available</option>
+                          <option value="enabled">Enabled</option>
+                          <option value="coming_soon">Coming Soon</option>
+                          <option value="disabled">Disabled</option>
+                          <option value="deprecated">Deprecated</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => toggleFeature(feat.id)}
+                          className="px-2 py-1 rounded border border-border bg-muted/40 hover:bg-muted text-foreground font-semibold cursor-pointer text-[10px]"
+                        >
+                          Toggle Flag
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-[10px] text-muted-foreground">Read-only</span>
+                    )}
+                  </div>
                 </div>
-                <p className="text-muted-foreground text-[11px] leading-relaxed">{feat.description}</p>
-                <div className="flex items-center justify-between pt-2 border-t border-border/50 text-[11px]">
-                  <span className="capitalize text-muted-foreground">Domain: {feat.category}</span>
-                  <button
-                    type="button"
-                    onClick={() => toggleFeature(feat.id)}
-                    className="px-2 py-1 rounded border border-border bg-muted/40 hover:bg-muted text-foreground font-semibold cursor-pointer text-[10px]"
-                  >
-                    Toggle Flag
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

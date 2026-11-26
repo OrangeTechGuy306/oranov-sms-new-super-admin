@@ -162,7 +162,7 @@ export const INITIAL_STUDENT_OVERSIGHT_DATA: OrganizationStudentOversight[] = [
       },
       {
         campusId: 'camp_002_2',
-        campusName: 'St. Jude St. Joseph Junior Annex',
+        campusName: 'St. Jude Junior Grammar Annex',
         campusCode: 'JOSEPH',
         isMainCampus: false,
         studentCapacity: 300,
@@ -211,8 +211,8 @@ export const INITIAL_STUDENT_OVERSIGHT_DATA: OrganizationStudentOversight[] = [
   // --------------------------------------------------------------------------
   {
     organizationId: 'org_003',
-    organizationName: 'Beacon Hill Montessori School',
-    organizationCode: 'BEACON',
+    organizationName: 'Apex Institute of Technical Sciences',
+    organizationCode: 'APEXTECH',
     classification: 'primary',
     lifecycleStatus: 'active',
     academicSession: '2025/2026',
@@ -244,7 +244,7 @@ export const INITIAL_STUDENT_OVERSIGHT_DATA: OrganizationStudentOversight[] = [
     campuses: [
       {
         campusId: 'camp_003_1',
-        campusName: 'Beacon Hill Primary House',
+        campusName: 'Apex Institute Main Campus',
         campusCode: 'HOUSE',
         isMainCampus: true,
         studentCapacity: 180,
@@ -254,7 +254,7 @@ export const INITIAL_STUDENT_OVERSIGHT_DATA: OrganizationStudentOversight[] = [
       },
       {
         campusId: 'camp_003_2',
-        campusName: 'Beacon Hill Toddler Pavilion',
+        campusName: 'Apex Institute Technology Park',
         campusCode: 'TODDLER',
         isMainCampus: false,
         studentCapacity: 100,
@@ -303,8 +303,8 @@ export const INITIAL_STUDENT_OVERSIGHT_DATA: OrganizationStudentOversight[] = [
   // --------------------------------------------------------------------------
   {
     organizationId: 'org_004',
-    organizationName: 'Horizon Science & Technology Academy',
-    organizationCode: 'HORIZON',
+    organizationName: 'Valley View Community High School',
+    organizationCode: 'VALLEYVIEW',
     classification: 'secondary',
     lifecycleStatus: 'active',
     academicSession: '2025/2026',
@@ -336,7 +336,7 @@ export const INITIAL_STUDENT_OVERSIGHT_DATA: OrganizationStudentOversight[] = [
     campuses: [
       {
         campusId: 'camp_004_1',
-        campusName: 'Horizon STEM Main Campus',
+        campusName: 'Valley View Main Campus',
         campusCode: 'STEM',
         isMainCampus: true,
         studentCapacity: 850,
@@ -393,8 +393,8 @@ export const INITIAL_STUDENT_OVERSIGHT_DATA: OrganizationStudentOversight[] = [
   // --------------------------------------------------------------------------
   {
     organizationId: 'org_005',
-    organizationName: 'Westwood Preparatory College',
-    organizationCode: 'WESTWOOD',
+    organizationName: 'Kids Haven Montessori Elementary',
+    organizationCode: 'KIDSHAVEN',
     classification: 'higher_education',
     lifecycleStatus: 'active',
     academicSession: '2025/2026',
@@ -426,7 +426,7 @@ export const INITIAL_STUDENT_OVERSIGHT_DATA: OrganizationStudentOversight[] = [
     campuses: [
       {
         campusId: 'camp_005_1',
-        campusName: 'Westwood University Prep Quad',
+        campusName: 'Kids Haven Meadowvale Campus',
         campusCode: 'QUAD',
         isMainCampus: true,
         studentCapacity: 1500,
@@ -475,8 +475,8 @@ export const INITIAL_STUDENT_OVERSIGHT_DATA: OrganizationStudentOversight[] = [
   // --------------------------------------------------------------------------
   {
     organizationId: 'org_006',
-    organizationName: 'Pinecrest Christian School',
-    organizationCode: 'PINECREST',
+    organizationName: 'Horizon Polytechnic & Vocational College',
+    organizationCode: 'HORIZONVOC',
     classification: 'k12',
     lifecycleStatus: 'active',
     academicSession: '2025/2026',
@@ -508,7 +508,7 @@ export const INITIAL_STUDENT_OVERSIGHT_DATA: OrganizationStudentOversight[] = [
     campuses: [
       {
         campusId: 'camp_006_1',
-        campusName: 'Pinecrest Main Valley Campus',
+        campusName: 'Horizon Poly Main Campus',
         campusCode: 'VALLEY',
         isMainCampus: true,
         studentCapacity: 450,
@@ -518,7 +518,7 @@ export const INITIAL_STUDENT_OVERSIGHT_DATA: OrganizationStudentOversight[] = [
       },
       {
         campusId: 'camp_006_2',
-        campusName: 'Pinecrest South Creek Annex',
+        campusName: 'Horizon Poly Technical Workshops Annex',
         campusCode: 'CREEK',
         isMainCampus: false,
         studentCapacity: 200,
@@ -577,8 +577,8 @@ export const INITIAL_STUDENT_OVERSIGHT_DATA: OrganizationStudentOversight[] = [
   // --------------------------------------------------------------------------
   {
     organizationId: 'org_007',
-    organizationName: 'Cedar Valley Community High',
-    organizationCode: 'CEDAR',
+    organizationName: 'Beacon Hill Preparatory School',
+    organizationCode: 'BEACONHILL',
     classification: 'secondary',
     lifecycleStatus: 'draft',
     academicSession: '2025/2026',
@@ -611,7 +611,7 @@ export const INITIAL_STUDENT_OVERSIGHT_DATA: OrganizationStudentOversight[] = [
     campuses: [
       {
         campusId: 'camp_007_1',
-        campusName: 'Cedar Valley Main Academic Center',
+        campusName: 'Beacon Hill Upper School',
         campusCode: 'MAIN',
         isMainCampus: true,
         studentCapacity: 400,
@@ -621,7 +621,7 @@ export const INITIAL_STUDENT_OVERSIGHT_DATA: OrganizationStudentOversight[] = [
       },
       {
         campusId: 'camp_007_2',
-        campusName: 'Cedar Valley Athletic Fieldhouse',
+        campusName: 'Beacon Hill Lower Academy',
         campusCode: 'FIELD',
         isMainCampus: false,
         studentCapacity: 150,
@@ -671,8 +671,8 @@ export const INITIAL_STUDENT_OVERSIGHT_DATA: OrganizationStudentOversight[] = [
   // --------------------------------------------------------------------------
   {
     organizationId: 'org_008',
-    organizationName: 'Royal Crown College of Science',
-    organizationCode: 'ROYAL',
+    organizationName: 'Crestwood Collegiate Institute',
+    organizationCode: 'CRESTWOOD',
     classification: 'higher_education',
     lifecycleStatus: 'pending',
     academicSession: '2025/2026',
@@ -705,7 +705,7 @@ export const INITIAL_STUDENT_OVERSIGHT_DATA: OrganizationStudentOversight[] = [
     campuses: [
       {
         campusId: 'camp_008_1',
-        campusName: 'Royal Crown Victoria Campus',
+        campusName: 'Crestwood Collegiate Main Campus',
         campusCode: 'VICTORIA',
         isMainCampus: true,
         studentCapacity: 900,
@@ -755,8 +755,8 @@ export const INITIAL_STUDENT_OVERSIGHT_DATA: OrganizationStudentOversight[] = [
   // --------------------------------------------------------------------------
   {
     organizationId: 'org_009',
-    organizationName: 'Summit Ridge Classical Academy',
-    organizationCode: 'SUMMIT',
+    organizationName: 'Nordic International School',
+    organizationCode: 'NORDICINTL',
     classification: 'k12',
     lifecycleStatus: 'suspended',
     academicSession: '2025/2026',
@@ -789,7 +789,7 @@ export const INITIAL_STUDENT_OVERSIGHT_DATA: OrganizationStudentOversight[] = [
     campuses: [
       {
         campusId: 'camp_009_1',
-        campusName: 'Summit Ridge Heights Campus',
+        campusName: 'Nordic International Stockholm Campus',
         campusCode: 'HEIGHTS',
         isMainCampus: true,
         studentCapacity: 350,
@@ -799,7 +799,7 @@ export const INITIAL_STUDENT_OVERSIGHT_DATA: OrganizationStudentOversight[] = [
       },
       {
         campusId: 'camp_009_2',
-        campusName: 'Summit Ridge Foothills Branch',
+        campusName: 'Nordic International Uppsala Secondary Branch',
         campusCode: 'FOOTHILLS',
         isMainCampus: false,
         studentCapacity: 200,
@@ -857,8 +857,8 @@ export const INITIAL_STUDENT_OVERSIGHT_DATA: OrganizationStudentOversight[] = [
   // --------------------------------------------------------------------------
   {
     organizationId: 'org_010',
-    organizationName: 'Maplewood Day School',
-    organizationCode: 'MAPLE',
+    organizationName: 'Solaris STEM Academy',
+    organizationCode: 'SOLARIS',
     classification: 'primary',
     lifecycleStatus: 'inactive',
     academicSession: '2025/2026',
@@ -891,7 +891,7 @@ export const INITIAL_STUDENT_OVERSIGHT_DATA: OrganizationStudentOversight[] = [
     campuses: [
       {
         campusId: 'camp_010_1',
-        campusName: 'Maplewood Grove Campus',
+        campusName: 'Solaris Science Campus',
         campusCode: 'GROVE',
         isMainCampus: true,
         studentCapacity: 250,

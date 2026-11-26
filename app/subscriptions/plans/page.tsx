@@ -10,6 +10,7 @@ import { MonetizationSimulationBanner } from '@/components/monetization/Monetiza
 import { formatCurrency } from '@/lib/utils/formatters';
 import { getPlanModuleEntitlementsSummary } from '@/lib/monetization/evaluator';
 import { MASTER_MODULE_REGISTRY } from '@/lib/modules/registry-data';
+import { PlanComparisonMatrix } from '@/components/modules/PlanComparisonMatrix';
 import {
   Check,
   Building2,
@@ -23,10 +24,11 @@ import {
 } from 'lucide-react';
 
 export default function PlanCataloguePage() {
-  const { plans, organizations } = usePlatformStore();
+  const { plans, organizations, modules } = usePlatformStore();
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('annual');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [showComparison, setShowComparison] = useState(false);
 
   const filteredPlans = useMemo(() => {
     return plans.filter((plan) => {
@@ -105,6 +107,13 @@ export default function PlanCataloguePage() {
         </div>
 
         <div className="flex items-center gap-2 text-xs">
+          <button
+            type="button"
+            onClick={() => setShowComparison((prev) => !prev)}
+            className="px-3 py-1.5 rounded-lg border border-border bg-muted/40 hover:bg-muted text-foreground font-semibold cursor-pointer"
+          >
+            {showComparison ? 'Hide Registry Matrix' : 'Compare Canonical Matrix'}
+          </button>
           <Filter className="w-3.5 h-3.5 text-muted-foreground" />
           <select
             value={statusFilter}
@@ -114,6 +123,7 @@ export default function PlanCataloguePage() {
             <option value="all">All Plan Statuses</option>
             <option value="published">Published</option>
             <option value="draft">Draft</option>
+            <option value="deprecated">Deprecated</option>
             <option value="archived">Archived</option>
           </select>
         </div>
@@ -184,27 +194,30 @@ export default function PlanCataloguePage() {
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground flex items-center gap-1.5">
                       <Users className="w-3.5 h-3.5 text-primary" />
-                      Student Capacity:
+                      Student / Staff Limits:
                     </span>
                     <strong className="text-foreground font-mono">
-                      {plan.maxStudents > 50000 ? 'Unlimited' : plan.maxStudents.toLocaleString()}
+                      {plan.maxStudents > 50000 ? 'Unlimited' : plan.maxStudents.toLocaleString()} /{' '}
+                      {plan.maxStaff > 50000 ? 'Unlimited' : plan.maxStaff.toLocaleString()}
                     </strong>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground flex items-center gap-1.5">
                       <Building2 className="w-3.5 h-3.5 text-primary" />
-                      Campuses / Branches:
+                      Campuses / Trial Window:
                     </span>
                     <strong className="text-foreground font-mono">
-                      {plan.maxCampuses > 50 ? 'Unlimited' : plan.maxCampuses}
+                      {plan.maxCampuses > 50 ? 'Unlimited' : plan.maxCampuses} • {plan.trialDays ?? 14}d
                     </strong>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground flex items-center gap-1.5">
                       <HardDrive className="w-3.5 h-3.5 text-primary" />
-                      Cloud Storage:
+                      Cloud Storage / Add-ons:
                     </span>
-                    <strong className="text-foreground font-mono">{plan.storageGb} GB</strong>
+                    <strong className="text-foreground font-mono">
+                      {plan.storageGb} GB • {plan.optionalAddOnModuleIds?.length || 0} add-ons
+                    </strong>
                   </div>
                   <div className="flex items-center justify-between border-t border-border/50 pt-1.5">
                     <span className="text-muted-foreground flex items-center gap-1.5">
@@ -215,6 +228,16 @@ export default function PlanCataloguePage() {
                       {entitlements.totalIncluded} of {MASTER_MODULE_REGISTRY.length} Included
                     </strong>
                   </div>
+                  {plan.targetSchoolTypes && plan.targetSchoolTypes.length > 0 && (
+                    <div className="pt-1 border-t border-border/40 text-[10px] text-muted-foreground">
+                      School Types: <span className="text-foreground capitalize">{plan.targetSchoolTypes.join(', ')}</span>
+                    </div>
+                  )}
+                  {plan.commercialPricingNote && (
+                    <div className="pt-1 text-[10px] text-amber-700 dark:text-amber-300">
+                      {plan.commercialPricingNote}
+                    </div>
+                  )}
                 </div>
 
                 {/* Feature Checklist */}
@@ -261,6 +284,15 @@ export default function PlanCataloguePage() {
           );
         })}
       </div>
+
+      {showComparison && (
+        <div className="space-y-3 pt-2">
+          <h3 className="text-sm font-bold text-foreground">
+            Canonical Plan Comparison Matrix (Generated from Live Registry &amp; Plans)
+          </h3>
+          <PlanComparisonMatrix modules={modules} includeDraftPlans />
+        </div>
+      )}
     </div>
   );
 }

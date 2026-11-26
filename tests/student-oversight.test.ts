@@ -168,21 +168,21 @@ describe('Phase E-09.8: Student Information & Admissions Oversight Engine', () =
     });
 
     test('distinguishes zero reporting from unprovisioned/dormant states without fabrication', () => {
-      const cedar = INITIAL_STUDENT_OVERSIGHT_DATA.find((o) => o.organizationCode === 'CEDAR');
-      assert.ok(cedar);
-      assert.equal(cedar.isReporting, false);
-      assert.equal(cedar.reportingStatus, 'not_provisioned');
-      assert.ok(cedar.statusExplanation?.includes('draft'));
+      const beaconHill = INITIAL_STUDENT_OVERSIGHT_DATA.find((o) => o.organizationCode === 'BEACONHILL');
+      assert.ok(beaconHill);
+      assert.equal(beaconHill.isReporting, false);
+      assert.equal(beaconHill.reportingStatus, 'not_provisioned');
+      assert.ok(beaconHill.statusExplanation?.includes('draft'));
 
-      const royal = INITIAL_STUDENT_OVERSIGHT_DATA.find((o) => o.organizationCode === 'ROYAL');
-      assert.ok(royal);
-      assert.equal(royal.isReporting, false);
-      assert.equal(royal.reportingStatus, 'unverified');
+      const crestwood = INITIAL_STUDENT_OVERSIGHT_DATA.find((o) => o.organizationCode === 'CRESTWOOD');
+      assert.ok(crestwood);
+      assert.equal(crestwood.isReporting, false);
+      assert.equal(crestwood.reportingStatus, 'unverified');
 
-      const summit = INITIAL_STUDENT_OVERSIGHT_DATA.find((o) => o.organizationCode === 'SUMMIT');
-      assert.ok(summit);
-      assert.equal(summit.reportingStatus, 'dormant');
-      assert.ok(summit.statusExplanation?.includes('suspended'));
+      const nordic = INITIAL_STUDENT_OVERSIGHT_DATA.find((o) => o.organizationCode === 'NORDICINTL');
+      assert.ok(nordic);
+      assert.equal(nordic.reportingStatus, 'dormant');
+      assert.ok(nordic.statusExplanation?.includes('suspended'));
     });
 
     test('historical session progression records valid trend indicators', () => {
@@ -251,12 +251,12 @@ describe('Phase E-09.8: Student Information & Admissions Oversight Engine', () =
         organizationId: 'ALL',
         campusId: 'ALL',
         academicSession: 'ALL',
-        searchQuery: 'beacon',
+        searchQuery: 'beaconhill',
         reportingStatus: 'ALL',
       };
       const resultCode = filterStudentOversightData(INITIAL_STUDENT_OVERSIGHT_DATA, filterByCode);
       assert.equal(resultCode.length, 1);
-      assert.equal(resultCode[0].organizationCode, 'BEACON');
+      assert.equal(resultCode[0].organizationCode, 'BEACONHILL');
     });
 
     test('filters accurately by reporting status scope', () => {
@@ -334,29 +334,29 @@ describe('Phase E-09.8: Student Information & Admissions Oversight Engine', () =
   // --------------------------------------------------------------------------
   describe('5. Data Governance & Quality Audit Rules', () => {
     test('detects physical capacity exceedance issue on over-capacity campus', () => {
-      const horizon = INITIAL_STUDENT_OVERSIGHT_DATA.find((o) => o.organizationCode === 'HORIZON');
-      assert.ok(horizon);
+      const valleyView = INITIAL_STUDENT_OVERSIGHT_DATA.find((o) => o.organizationCode === 'VALLEYVIEW');
+      assert.ok(valleyView);
 
-      const capacityIssue = horizon.dataQualityIssues.find((i) => i.code === 'OVER_CAPACITY');
-      assert.ok(capacityIssue, 'Horizon must have an OVER_CAPACITY issue flagged');
+      const capacityIssue = valleyView.dataQualityIssues.find((i) => i.code === 'OVER_CAPACITY');
+      assert.ok(capacityIssue, 'Valley View must have an OVER_CAPACITY issue flagged');
       assert.equal(capacityIssue.severity, 'warning');
       assert.equal(capacityIssue.affectedCount, 25);
     });
 
     test('detects excessive applicant verification documents pending review', () => {
-      const pinecrest = INITIAL_STUDENT_OVERSIGHT_DATA.find((o) => o.organizationCode === 'PINECREST');
-      assert.ok(pinecrest);
+      const horizonVoc = INITIAL_STUDENT_OVERSIGHT_DATA.find((o) => o.organizationCode === 'HORIZONVOC');
+      assert.ok(horizonVoc);
 
-      const docsIssue = pinecrest.dataQualityIssues.find((i) => i.code === 'DOCS_PENDING_EXCESSIVE');
-      assert.ok(docsIssue, 'Pinecrest must have DOCS_PENDING_EXCESSIVE issue flagged');
+      const docsIssue = horizonVoc.dataQualityIssues.find((i) => i.code === 'DOCS_PENDING_EXCESSIVE');
+      assert.ok(docsIssue, 'Horizon Polytechnic must have DOCS_PENDING_EXCESSIVE issue flagged');
       assert.equal(docsIssue.affectedCount, 18);
     });
 
     test('detects compliance hold status on suspended organization', () => {
-      const summit = INITIAL_STUDENT_OVERSIGHT_DATA.find((o) => o.organizationCode === 'SUMMIT');
-      assert.ok(summit);
+      const nordic = INITIAL_STUDENT_OVERSIGHT_DATA.find((o) => o.organizationCode === 'NORDICINTL');
+      assert.ok(nordic);
 
-      const unmappedIssue = summit.dataQualityIssues.find((i) => i.code === 'UNMAPPED_STATUS');
+      const unmappedIssue = nordic.dataQualityIssues.find((i) => i.code === 'UNMAPPED_STATUS');
       assert.ok(unmappedIssue, 'Suspended org must have UNMAPPED_STATUS compliance hold flagged');
       assert.equal(unmappedIssue.severity, 'critical');
     });

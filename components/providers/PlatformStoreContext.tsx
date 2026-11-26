@@ -2,6 +2,8 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { platformStore, PlatformMetrics } from '@/lib/data/platform-store';
+import { useOptionalPlatformAuth } from './PlatformAuthContext';
+import { hasAnyPlatformPermission, hasPlatformPermission } from '@/lib/iam/rbac';
 import {
   Organization,
   SubscriptionPlan,
@@ -242,7 +244,12 @@ interface PlatformStoreContextType {
   setOrganizationModuleOverride: (input: { organizationId: string; moduleId: string; action: OrganizationOverrideAction; reason: string; actorName?: string }) => { success: boolean; error?: string };
   resetOrganizationModuleOverride: (organizationId: string, moduleId: string, actorName?: string) => { success: boolean; error?: string };
   setModuleGlobalAvailability: (moduleId: string, isGloballyEnabled: boolean, actorName?: string) => { success: boolean; error?: string };
-  evaluateEntitlement: (moduleId: string, organizationId?: string, planId?: string) => EffectiveEntitlementResult;
+  setModuleAvailabilityStatus: (moduleId: string, status: 'available' | 'enabled' | 'disabled' | 'coming_soon' | 'deprecated' | 'unavailable', actorName?: string, reason?: string) => { success: boolean; error?: string };
+  updateModuleMetadata: (moduleId: string, updates: Parameters<typeof platformStore.updateModuleMetadata>[1], actorName?: string) => { success: boolean; error?: string };
+  updateFeatureDefinition: (featureId: string, updates: Partial<PlatformFeatureItem>, actorName?: string) => { success: boolean; error?: string };
+  manageSubscriptionAddOn: (subscriptionId: string, action: 'grant' | 'revoke' | 'expire', addOn: { moduleId?: string; featureId?: string; name: string; expiryDate?: string }, actorName?: string) => { success: boolean; subscription?: OrganizationSubscription; error?: string };
+  extendSubscriptionTrial: (subscriptionId: string, newTrialEndDate: string, reason: string, actorName?: string) => { success: boolean; subscription?: OrganizationSubscription; error?: string };
+  evaluateEntitlement: (moduleId: string, organizationId?: string, planId?: string, asOfDate?: string) => EffectiveEntitlementResult;
   validateRegistry: () => RegistryValidationReport;
   logAuditEvent: (event: Omit<AuditEvent, 'id' | 'timestamp'> & { id?: string; timestamp?: string }) => AuditEvent;
   getSecurityEvents: (filters?: { searchQuery?: string; category?: string; severity?: string; triageStatus?: string }) => SecurityEvent[];
@@ -437,6 +444,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   // Subscribe to changes in platformStore
   const [, setVersion] = useState(0);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const authCtx = useOptionalPlatformAuth();
+  const actorUser = authCtx?.user;
+  const actorPerms = authCtx?.permissions || [];
 
   useEffect(() => {
     const unsubscribe = platformStore.subscribe(() => {
@@ -458,7 +468,35 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     }, 4500);
   }, [removeToast]);
 
+  const guardPerm = useCallback(
+    (requiredPermission: string, actionLabel: string, anyPerms?: string[]) => {
+      if (!authCtx || !actorUser) {
+        addToast({
+          type: 'error',
+          title: 'Authentication Required',
+          message: `You must sign in to ${actionLabel}.`,
+        });
+        return `Unauthenticated: Cannot ${actionLabel}.`;
+      }
+      const allowed = anyPerms
+        ? hasAnyPlatformPermission(actorPerms, anyPerms)
+        : hasPlatformPermission(actorPerms, requiredPermission);
+      if (!allowed) {
+        addToast({
+          type: 'error',
+          title: 'Authorization Required',
+          message: `Missing permission '${requiredPermission}' to ${actionLabel}.`,
+        });
+        return `Forbidden: Missing required permission '${requiredPermission}' to ${actionLabel}.`;
+      }
+      return null;
+    },
+    [authCtx, actorUser, actorPerms, addToast]
+  );
+
   const createOrganization = (input: CreateOrganizationInput) => {
+    const err = guardPerm('organizations.create', 'create an organization');
+    if (err) return { success: false, error: err };
     const res = platformStore.createOrganization(input);
     if (res.success && res.organization) {
       addToast({
@@ -477,6 +515,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const updateOrganization = (id: string, input: UpdateOrganizationInput) => {
+    const err = guardPerm('organizations.update', 'update organization details');
+    if (err) return { success: false, error: err };
     const res = platformStore.updateOrganization(id, input);
     if (res.success && res.organization) {
       addToast({
@@ -495,6 +535,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const setOrganizationStatus = (id: string, status: OrganizationLifecycleStatus, reason?: string) => {
+    const err = guardPerm('organizations.lifecycle.manage', 'change organization lifecycle status');
+    if (err) return { success: false, error: err };
     const res = platformStore.setOrganizationStatus(id, status, reason);
     if (res.success) {
       addToast({
@@ -513,6 +555,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const updateOrganizationPlan = (id: string, planId: string, billingCycle?: 'monthly' | 'annual') => {
+    const err = guardPerm('billing.subscriptions.manage', 'modify subscription plan');
+    if (err) return { success: false, error: err };
     const res = platformStore.updateOrganizationPlan(id, planId, billingCycle);
     if (res.success) {
       addToast({
@@ -531,6 +575,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const recordPayment = (input: { invoiceId: string; amount: number; method: PaymentMethodType; referenceNumber: string; notes?: string }) => {
+    const err = guardPerm('billing.payments.manage', 'record subscription payment');
+    if (err) return { success: false, error: err };
     const res = platformStore.recordPayment(input);
     if (res.success && res.payment) {
       addToast({
@@ -549,6 +595,18 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const createPlatformUser = (input: { name: string; email: string; role: PlatformRoleKey; assignedRoles?: string[]; department?: string; notes?: string }) => {
+    const err = guardPerm('iam.users.create', 'create platform administrator');
+    if (err) return { success: false, error: err };
+    const requestedRoles = [input.role, ...(input.assignedRoles || [])];
+    const targetRoles = platformStore.getPlatformRoles();
+    for (const roleId of requestedRoles) {
+      const def = targetRoles.find((r) => r.id === roleId);
+      if (def && !def.permissions.every((p) => actorPerms.includes(p))) {
+        const msg = `Forbidden: Cannot grant role '${roleId}' holding permissions you do not possess.`;
+        addToast({ type: 'error', title: 'Privilege Escalation Blocked', message: msg });
+        return { success: false, error: msg };
+      }
+    }
     const res = platformStore.createPlatformUser(input);
     if (res.success && res.user) {
       addToast({
@@ -567,6 +625,19 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const updatePlatformUserRole = (id: string, role: PlatformRoleKey) => {
+    const err = guardPerm('iam.users.roles.assign', 'reassign administrator role');
+    if (err) return { success: false, error: err };
+    if (actorUser && id === actorUser.id) {
+      const msg = 'Forbidden: Administrators cannot modify their own role assignments.';
+      addToast({ type: 'error', title: 'Self-Modification Blocked', message: msg });
+      return { success: false, error: msg };
+    }
+    const targetRoleDef = platformStore.getPlatformRoles().find((r) => r.id === role);
+    if (targetRoleDef && !targetRoleDef.permissions.every((p) => actorPerms.includes(p))) {
+      const msg = `Forbidden: Cannot assign role '${role}' with unheld permissions.`;
+      addToast({ type: 'error', title: 'Privilege Escalation Blocked', message: msg });
+      return { success: false, error: msg };
+    }
     const res = platformStore.updatePlatformUserRole(id, role);
     if (res.success) {
       addToast({
@@ -585,6 +656,13 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const updatePlatformUserStatus = (id: string, status: PlatformUserStatus) => {
+    const err = guardPerm('iam.users.suspend', 'change administrator account status');
+    if (err) return { success: false, error: err };
+    if (actorUser && id === actorUser.id) {
+      const msg = 'Forbidden: Administrators cannot change or suspend their own account status.';
+      addToast({ type: 'error', title: 'Self-Modification Blocked', message: msg });
+      return { success: false, error: msg };
+    }
     const res = platformStore.updatePlatformUserStatus(id, status);
     if (res.success) {
       addToast({
@@ -603,6 +681,19 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const assignRoleToUser = (userId: string, roleId: string) => {
+    const err = guardPerm('iam.users.roles.assign', 'assign additional role');
+    if (err) return { success: false, error: err };
+    if (actorUser && userId === actorUser.id) {
+      const msg = 'Forbidden: Administrators cannot assign roles to themselves.';
+      addToast({ type: 'error', title: 'Self-Modification Blocked', message: msg });
+      return { success: false, error: msg };
+    }
+    const targetRoleDef = platformStore.getPlatformRoles().find((r) => r.id === roleId);
+    if (targetRoleDef && !targetRoleDef.permissions.every((p) => actorPerms.includes(p))) {
+      const msg = `Forbidden: Cannot assign role '${roleId}' holding permissions you do not possess.`;
+      addToast({ type: 'error', title: 'Privilege Escalation Blocked', message: msg });
+      return { success: false, error: msg };
+    }
     const res = platformStore.assignRoleToUser(userId, roleId);
     if (res.success) {
       addToast({
@@ -621,6 +712,13 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const removeRoleFromUser = (userId: string, roleId: string) => {
+    const err = guardPerm('iam.users.roles.assign', 'revoke role from administrator');
+    if (err) return { success: false, error: err };
+    if (actorUser && userId === actorUser.id) {
+      const msg = 'Forbidden: Administrators cannot modify their own roles.';
+      addToast({ type: 'error', title: 'Self-Modification Blocked', message: msg });
+      return { success: false, error: msg };
+    }
     const res = platformStore.removeRoleFromUser(userId, roleId);
     if (res.success) {
       addToast({
@@ -639,6 +737,13 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const createPlatformRole = (input: CreateCustomRoleInput) => {
+    const err = guardPerm('iam.roles.create', 'create custom platform role');
+    if (err) return { success: false, error: err };
+    if (!input.permissions.every((p) => actorPerms.includes(p))) {
+      const msg = 'Forbidden: Custom roles cannot include permissions the creator does not hold.';
+      addToast({ type: 'error', title: 'Privilege Escalation Blocked', message: msg });
+      return { success: false, error: msg };
+    }
     const res = platformStore.createPlatformRole(input);
     if (res.success && res.role) {
       addToast({
@@ -657,6 +762,13 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const updatePlatformRolePermissions = (roleId: string, permissions: string[]) => {
+    const err = guardPerm('iam.roles.manage', 'edit platform role permissions');
+    if (err) return { success: false, error: err };
+    if (!permissions.every((p) => actorPerms.includes(p))) {
+      const msg = 'Forbidden: Cannot grant role permissions you do not hold yourself.';
+      addToast({ type: 'error', title: 'Privilege Escalation Blocked', message: msg });
+      return { success: false, error: msg };
+    }
     const res = platformStore.updatePlatformRolePermissions(roleId, permissions);
     if (res.success) {
       addToast({
@@ -675,6 +787,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const deletePlatformRole = (roleId: string) => {
+    const err = guardPerm('iam.roles.manage', 'delete custom platform role');
+    if (err) return { success: false, error: err };
     const res = platformStore.deletePlatformRole(roleId);
     if (res.success) {
       addToast({
@@ -693,6 +807,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const toggleFeature = (id: string) => {
+    const err = guardPerm('system.features.toggle', 'toggle platform feature', ['system.features.toggle', 'modules.registry.manage']);
+    if (err) return { success: false, error: err };
     const res = platformStore.toggleFeature(id);
     if (res.success) {
       addToast({
@@ -705,6 +821,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const updateSettings = (settings: Partial<PlatformSettings>) => {
+    const err = guardPerm('platform.settings.update', 'update platform settings');
+    if (err) return { success: false, error: err };
     const res = platformStore.updateSettings(settings);
     if (res.success) {
       addToast({
@@ -717,6 +835,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const resetToDefaults = () => {
+    const err = guardPerm('system.maintenance.manage', 'reset platform store fixtures', ['system.maintenance.manage', 'platform.settings.update']);
+    if (err) return;
     platformStore.resetToDefaults();
     addToast({
       type: 'info',
@@ -732,6 +852,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     reason: string;
     actorName?: string;
   }) => {
+    const err = guardPerm('modules.registry.manage', 'override organization module entitlement');
+    if (err) return { success: false, error: err };
     const res = platformStore.setOrganizationModuleOverride(input);
     if (res.success) {
       addToast({
@@ -750,6 +872,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const resetOrganizationModuleOverride = (organizationId: string, moduleId: string, actorName?: string) => {
+    const err = guardPerm('modules.registry.manage', 'reset organization module entitlement');
+    if (err) return { success: false, error: err };
     const res = platformStore.resetOrganizationModuleOverride(organizationId, moduleId, actorName);
     if (res.success) {
       addToast({
@@ -768,6 +892,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const setModuleGlobalAvailability = (moduleId: string, isGloballyEnabled: boolean, actorName?: string) => {
+    const err = guardPerm('modules.registry.manage', 'change module availability');
+    if (err) return { success: false, error: err };
     const res = platformStore.setModuleGlobalAvailability(moduleId, isGloballyEnabled, actorName);
     if (res.success) {
       addToast({
@@ -785,7 +911,91 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     return res;
   };
 
+  const setModuleAvailabilityStatus = (
+    moduleId: string,
+    status: 'available' | 'enabled' | 'disabled' | 'coming_soon' | 'deprecated' | 'unavailable',
+    actorName?: string,
+    reason?: string
+  ) => {
+    const err = guardPerm('modules.registry.manage', 'change module lifecycle status');
+    if (err) return { success: false, error: err };
+    const res = platformStore.setModuleAvailabilityStatus(moduleId, status, actorName, reason);
+    if (res.success) {
+      addToast({
+        type: status === 'enabled' || status === 'available' ? 'success' : 'warning',
+        title: 'Module Status Updated',
+        message: `Lifecycle status changed to ${status.replace('_', ' ')}.`,
+      });
+    } else if (res.error) {
+      addToast({ type: 'error', title: 'Status Update Failed', message: res.error });
+    }
+    return res;
+  };
+
+  const updateModuleMetadata = (
+    moduleId: string,
+    updates: Parameters<typeof platformStore.updateModuleMetadata>[1],
+    actorName?: string
+  ) => {
+    const err = guardPerm('modules.registry.manage', 'edit module configuration');
+    if (err) return { success: false, error: err };
+    const res = platformStore.updateModuleMetadata(moduleId, updates, actorName);
+    if (res.success) {
+      addToast({ type: 'success', title: 'Module Configuration Saved', message: 'Updated canonical module metadata and plan rules.' });
+    } else if (res.error) {
+      addToast({ type: 'error', title: 'Module Update Failed', message: res.error });
+    }
+    return res;
+  };
+
+  const updateFeatureDefinition = (featureId: string, updates: Partial<PlatformFeatureItem>, actorName?: string) => {
+    const err = guardPerm('modules.registry.manage', 'update feature catalog');
+    if (err) return { success: false, error: err };
+    const res = platformStore.updateFeatureDefinition(featureId, updates, actorName);
+    if (res.success) {
+      addToast({ type: 'success', title: 'Feature Catalog Updated', message: 'Saved simulated feature configuration changes.' });
+    } else if (res.error) {
+      addToast({ type: 'error', title: 'Feature Update Failed', message: res.error });
+    }
+    return res;
+  };
+
+  const manageSubscriptionAddOn = (
+    subscriptionId: string,
+    action: 'grant' | 'revoke' | 'expire',
+    addOn: { moduleId?: string; featureId?: string; name: string; expiryDate?: string },
+    actorName?: string
+  ) => {
+    const err = guardPerm('billing.subscriptions.manage', 'manage subscription add-on');
+    if (err) return { success: false, error: err };
+    const res = platformStore.manageSubscriptionAddOn(subscriptionId, action, addOn, actorName);
+    if (res.success) {
+      addToast({
+        type: action === 'grant' ? 'success' : 'warning',
+        title: `Add-On ${action === 'grant' ? 'Activated' : action === 'expire' ? 'Expired' : 'Revoked'}`,
+        message: `${addOn.name} add-on updated on subscription.`,
+      });
+    } else if (res.error) {
+      addToast({ type: 'error', title: 'Add-On Update Failed', message: res.error });
+    }
+    return res;
+  };
+
+  const extendSubscriptionTrial = (subscriptionId: string, newTrialEndDate: string, reason: string, actorName?: string) => {
+    const err = guardPerm('billing.subscriptions.manage', 'adjust subscription trial');
+    if (err) return { success: false, error: err };
+    const res = platformStore.extendSubscriptionTrial(subscriptionId, newTrialEndDate, reason, actorName);
+    if (res.success) {
+      addToast({ type: 'success', title: 'Trial Period Updated', message: `Trial window updated through ${newTrialEndDate.slice(0, 10)}.` });
+    } else if (res.error) {
+      addToast({ type: 'error', title: 'Trial Update Failed', message: res.error });
+    }
+    return res;
+  };
+
   const createCampus = (input: CreateCampusInput) => {
+    const err = guardPerm('tenants.campuses.manage', 'create a campus');
+    if (err) return { success: false, error: err };
     const res = platformStore.createCampus(input);
     if (res.success && res.campus) {
       addToast({
@@ -804,6 +1014,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const updateCampus = (id: string, input: UpdateCampusInput) => {
+    const err = guardPerm('tenants.campuses.manage', 'update campus details');
+    if (err) return { success: false, error: err };
     const res = platformStore.updateCampus(id, input);
     if (res.success && res.campus) {
       addToast({
@@ -858,6 +1070,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const deleteCampus = (campusId: string) => {
+    const err = guardPerm('tenants.campuses.manage', 'delete campus record');
+    if (err) return { success: false, error: err };
     const res = platformStore.deleteCampus(campusId);
     if (res.success) {
       addToast({
@@ -906,6 +1120,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const createPlan = (input: CreatePlanInput) => {
+    const err = guardPerm('billing.subscriptions.manage', 'create subscription plan');
+    if (err) return { success: false, error: err };
     const res = platformStore.createPlan(input);
     if (res.success && res.plan) {
       addToast({
@@ -924,6 +1140,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const updatePlan = (id: string, input: UpdatePlanInput) => {
+    const err = guardPerm('billing.subscriptions.manage', 'update subscription plan');
+    if (err) return { success: false, error: err };
     const res = platformStore.updatePlan(id, input);
     if (res.success && res.plan) {
       addToast({
@@ -996,6 +1214,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const createDiscount = (input: CreateDiscountInput) => {
+    const err = guardPerm('billing.discounts.manage', 'create discount policy');
+    if (err) return { success: false, error: err };
     const res = platformStore.createDiscount(input);
     if (res.success && res.discount) {
       addToast({
@@ -1014,6 +1234,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const toggleDiscount = (id: string) => {
+    const err = guardPerm('billing.discounts.manage', 'toggle discount status');
+    if (err) return { success: false, error: err };
     const res = platformStore.toggleDiscount(id);
     if (res.success && res.discount) {
       addToast({
@@ -1221,6 +1443,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     reason?: string,
     actorName?: string
   ) => {
+    const err = guardPerm('platform.settings.update', 'save platform configuration');
+    if (err) return { success: false, error: err };
     const res = platformStore.updateExtendedSettings(input, reason, actorName);
     if (res.success) {
       addToast({
@@ -1239,6 +1463,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const createFeatureFlag = (input: Partial<FeatureFlag>, actorName?: string) => {
+    const err = guardPerm('system.features.toggle', 'create feature flag', ['system.features.toggle', 'modules.registry.manage']);
+    if (err) return { success: false, error: err };
     const res = platformStore.createFeatureFlag(input, actorName);
     if (res.success && res.flag) {
       addToast({
@@ -1293,6 +1519,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const toggleFeatureFlag = (key: string, actorName?: string) => {
+    const err = guardPerm('system.features.toggle', 'toggle feature flag', ['system.features.toggle', 'modules.registry.manage']);
+    if (err) return { success: false, error: err };
     const res = platformStore.toggleFeatureFlag(key, actorName);
     if (res.success && res.flag) {
       addToast({
@@ -1311,6 +1539,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const deleteFeatureFlag = (key: string, actorName?: string) => {
+    const err = guardPerm('system.features.toggle', 'delete feature flag', ['system.features.toggle', 'modules.registry.manage']);
+    if (err) return { success: false, error: err };
     const res = platformStore.deleteFeatureFlag(key, actorName);
     if (res.success) {
       addToast({
@@ -1329,6 +1559,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const setTenantFeatureOverride = (input: { organizationId: string; flagKey: string; overrideValue: boolean; reason: string; actorName?: string }) => {
+    const err = guardPerm('system.features.toggle', 'configure tenant feature override', ['system.features.toggle', 'modules.registry.manage']);
+    if (err) return { success: false, error: err };
     const res = platformStore.setTenantFeatureOverride(input);
     if (res.success) {
       addToast({
@@ -1583,8 +1815,13 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     setOrganizationModuleOverride,
     resetOrganizationModuleOverride,
     setModuleGlobalAvailability,
-    evaluateEntitlement: (moduleId: string, orgId?: string, planId?: string) =>
-      platformStore.evaluateEntitlement(moduleId, orgId, planId),
+    setModuleAvailabilityStatus,
+    updateModuleMetadata,
+    updateFeatureDefinition,
+    manageSubscriptionAddOn,
+    extendSubscriptionTrial,
+    evaluateEntitlement: (moduleId: string, orgId?: string, planId?: string, asOfDate?: string) =>
+      platformStore.evaluateEntitlement(moduleId, orgId, planId, asOfDate),
     validateRegistry: () => platformStore.validateRegistry(),
     logAuditEvent: (event) => platformStore.logAuditEvent(event),
     getSecurityEvents: (filters) => platformStore.getSecurityEvents(filters),

@@ -5,6 +5,13 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useTheme } from '../providers/ThemeContext';
 import { usePlatformStore } from '../providers/PlatformStoreContext';
+import { usePlatformAuth } from '../providers/PlatformAuthContext';
+import { isPlatformDevControlsEnabled } from '@/lib/auth/platformAuthConfig';
+import {
+  evaluatePlatformRouteAccess,
+  hasPlatformPermission,
+  hasAnyPlatformPermission,
+} from '@/lib/iam/rbac';
 import {
   Menu,
   Sun,
@@ -15,7 +22,6 @@ import {
   User,
   LogOut,
   Building2,
-  Info,
   Compass,
 } from 'lucide-react';
 import { getInitials } from '@/lib/utils/formatters';
@@ -54,12 +60,12 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
-  const { organizations, platformUsers, subscriptions, plans } = usePlatformStore();
+  const { organizations, subscriptions, plans } = usePlatformStore();
+  const { user, primaryRole, permissions, roleDetails, logout, simulateSessionExpiry } = usePlatformAuth();
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [signOutNotice, setSignOutNotice] = useState(false);
 
   // Global '/' keyboard shortcut to trigger Quick Find
   useEffect(() => {
@@ -76,11 +82,17 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Active super-admin user fixture
-  const currentUser = platformUsers[0] || {
-    name: 'Alexander Sterling',
-    email: 'alexander.s@saas-platform.internal',
-    role: 'super_admin',
+  // Authenticated platform administrator identity (never defaults silently when unauthenticated)
+  const currentUser = user;
+  const primaryRoleLabel =
+    roleDetails[0]?.name || currentUser?.role || 'Platform Administrator';
+  const devControlsEnabled =
+    process.env.NODE_ENV !== 'production' && isPlatformDevControlsEnabled();
+
+  const handleLogout = async () => {
+    setUserMenuOpen(false);
+    await logout();
+    router.replace('/login');
   };
 
   // Build breadcrumbs from pathname with complete module & parameter mappings
@@ -145,21 +157,23 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
 
   const breadcrumbs = generateBreadcrumbs();
 
-  const searchResultsOrgs = searchQuery.trim()
-    ? organizations.filter(
-        (o) =>
-          o.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          o.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          o.subdomain.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : [];
+  const searchResultsOrgs =
+    searchQuery.trim() && hasPlatformPermission(permissions, 'organizations.read')
+      ? organizations.filter(
+          (o) =>
+            o.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            o.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            o.subdomain.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+      : [];
 
   const searchResultsModules = searchQuery.trim()
     ? PLATFORM_MODULES.filter(
         (m) =>
-          m.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          m.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          m.href.toLowerCase().includes(searchQuery.toLowerCase())
+          evaluatePlatformRouteAccess({ user, primaryRole, permissions }, m.href).allowed &&
+          (m.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            m.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            m.href.toLowerCase().includes(searchQuery.toLowerCase()))
       )
     : [];
 
@@ -324,90 +338,90 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
         </button>
 
         {/* Super-admin Profile Menu */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setUserMenuOpen(!userMenuOpen)}
-            className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-muted transition-colors"
-          >
-            <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground font-bold text-xs flex items-center justify-center shadow-xs">
-              {getInitials(currentUser.name)}
-            </div>
-            <div className="hidden xl:flex flex-col text-left leading-tight">
-              <span className="text-xs font-semibold text-foreground">{currentUser.name}</span>
-              <span className="text-[10px] text-muted-foreground capitalize">Super-Admin</span>
-            </div>
-          </button>
-
-          {/* Profile Dropdown */}
-          {userMenuOpen && (
-            <>
-              <div
-                className="fixed inset-0 z-30"
-                onClick={() => setUserMenuOpen(false)}
-              />
-              <div className="absolute right-0 top-full mt-2 w-64 bg-card rounded-xl border border-border shadow-xl z-40 p-2 space-y-1 text-xs">
-                <div className="p-3 border-b border-border bg-muted/30 rounded-lg mb-1">
-                  <p className="font-semibold text-foreground">{currentUser.name}</p>
-                  <p className="text-[11px] text-muted-foreground truncate">{currentUser.email}</p>
-                  <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.2 rounded bg-primary/10 text-primary border border-primary/20">
-                    SaaS Platform Super-Admin
-                  </span>
-                </div>
-
-                <Link
-                  href="/platform-users"
-                  onClick={() => setUserMenuOpen(false)}
-                  className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted text-foreground transition-colors"
-                >
-                  <User className="w-4 h-4 text-muted-foreground" />
-                  Manage Platform Users
-                </Link>
-
-                <Link
-                  href="/settings"
-                  onClick={() => setUserMenuOpen(false)}
-                  className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted text-foreground transition-colors"
-                >
-                  <ShieldAlert className="w-4 h-4 text-muted-foreground" />
-                  Security & Settings
-                </Link>
-
-                <div className="pt-1 border-t border-border mt-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setUserMenuOpen(false);
-                      setSignOutNotice(true);
-                      setTimeout(() => setSignOutNotice(false), 4500);
-                    }}
-                    className="w-full flex items-center gap-2 p-2 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors text-left"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    Sign Out (Demo)
-                  </button>
-                </div>
+        {currentUser && (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setUserMenuOpen(!userMenuOpen)}
+              className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-muted transition-colors"
+            >
+              <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground font-bold text-xs flex items-center justify-center shadow-xs">
+                {getInitials(currentUser.name)}
               </div>
-            </>
-          )}
-        </div>
-      </div>
+              <div className="hidden xl:flex flex-col text-left leading-tight">
+                <span className="text-xs font-semibold text-foreground">{currentUser.name}</span>
+                <span className="text-[10px] text-muted-foreground">{primaryRoleLabel}</span>
+              </div>
+            </button>
 
-      {signOutNotice && (
-        <div className="fixed top-4 right-4 z-50 p-3 bg-card border border-border shadow-lg rounded-xl flex items-center gap-2.5 text-xs text-foreground max-w-sm">
-          <Info className="w-4 h-4 text-primary shrink-0" />
-          <p className="flex-1">
-            Simulated sign out. Full session invalidation will be implemented by the backend authentication service.
-          </p>
-          <button
-            type="button"
-            onClick={() => setSignOutNotice(false)}
-            className="text-muted-foreground hover:text-foreground ml-1 font-bold text-xs"
-          >
-            ✕
-          </button>
-        </div>
-      )}
+            {/* Profile Dropdown */}
+            {userMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-30"
+                  onClick={() => setUserMenuOpen(false)}
+                />
+                <div className="absolute right-0 top-full mt-2 w-64 bg-card rounded-xl border border-border shadow-xl z-40 p-2 space-y-1 text-xs">
+                  <div className="p-3 border-b border-border bg-muted/30 rounded-lg mb-1">
+                    <p className="font-semibold text-foreground">{currentUser.name}</p>
+                    <p className="text-[11px] text-muted-foreground truncate">{currentUser.email}</p>
+                    <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.2 rounded bg-primary/10 text-primary border border-primary/20">
+                      {primaryRoleLabel}
+                    </span>
+                  </div>
+
+                  {hasAnyPlatformPermission(permissions, ['iam.users.read', 'iam.roles.read', 'iam.permissions.view']) && (
+                    <Link
+                      href="/platform-users"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted text-foreground transition-colors"
+                    >
+                      <User className="w-4 h-4 text-muted-foreground" />
+                      Manage Platform Users
+                    </Link>
+                  )}
+
+                  {hasAnyPlatformPermission(permissions, ['platform.settings.read', 'platform.settings.update']) && (
+                    <Link
+                      href="/settings"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted text-foreground transition-colors"
+                    >
+                      <ShieldAlert className="w-4 h-4 text-muted-foreground" />
+                      Security & Settings
+                    </Link>
+                  )}
+
+                  {process.env.NODE_ENV !== 'production' && devControlsEnabled && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUserMenuOpen(false);
+                        simulateSessionExpiry();
+                      }}
+                      className="w-full flex items-center gap-2 p-2 rounded-lg text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors text-left"
+                    >
+                      <ShieldAlert className="w-4 h-4" />
+                      Simulate Session Expiry (Dev)
+                    </button>
+                  )}
+
+                  <div className="pt-1 border-t border-border mt-1">
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-2 p-2 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors text-left"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Sign Out
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
     </header>
   );
 }

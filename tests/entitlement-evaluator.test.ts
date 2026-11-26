@@ -225,19 +225,19 @@ describe('Deterministic Feature Entitlement Evaluator', () => {
     assert.strictEqual(cycles[0].includes('mod_cycle_c'), true);
   });
 
-  it('evaluates all 321 modules in bulk and provides consistent entitlement maps', () => {
+  it('evaluates all 398 modules in bulk and provides consistent entitlement maps', () => {
     const results = evaluateAllModules({
       planId: 'growth',
       registry: MASTER_MODULE_REGISTRY,
     });
 
-    assert.strictEqual(results.size, 321);
+    assert.strictEqual(results.size, 398);
 
     const available = Array.from(results.values()).filter((r) => r.effectiveStatus === 'available');
     const unavailable = Array.from(results.values()).filter((r) => r.effectiveStatus === 'unavailable');
 
     assert.ok(available.length > 0, 'Growth plan should allow substantial modules');
     assert.ok(unavailable.length > 0, 'Growth plan should exclude enterprise-only modules');
-    assert.strictEqual(available.length + unavailable.length, 321);
+    assert.strictEqual(available.length + unavailable.length, 398);
   });
 });

@@ -332,7 +332,7 @@ import {
   isReviewDue,
 } from '../data-governance/evaluator';
 
-const STORAGE_KEY = 'sms_superadmin_dev_store_v1';
+const STORAGE_KEY = 'sms_superadmin_dev_store_v2_p04';
 
 export interface ModuleRegistryMetrics {
   totalModules: number;
@@ -343,6 +343,13 @@ export interface ModuleRegistryMetrics {
   partialCount: number;
   plannedCount: number;
   missingCount: number;
+  deprecatedCount?: number;
+  comingSoonCount?: number;
+  unavailableCount?: number;
+  unassignedModulesCount?: number;
+  totalFeaturesCount?: number;
+  activeFeaturesCount?: number;
+  comingSoonFeaturesCount?: number;
   platformEnabledCount: number;
   platformDisabledCount: number;
   planStarterCount: number;
@@ -1396,21 +1403,32 @@ export class PlatformStore {
       id: planId,
       name: input.name.trim(),
       tier: input.tier,
+      normalizedTier: input.tier,
       status: input.status || 'published',
+      visibility: input.visibility || 'public',
       description: input.description.trim(),
+      billingIntervals: input.billingIntervals || ['monthly', 'annual'],
       priceMonthly: input.priceMonthly,
       priceAnnual: input.priceAnnual,
       priceQuarterly: input.priceQuarterly,
       currency: input.currency.toUpperCase(),
       trialDays: typeof input.trialDays === 'number' ? input.trialDays : 14,
+      targetSchoolTypes: input.targetSchoolTypes || ['nursery', 'primary', 'secondary', 'combined'],
       maxStudents: input.maxStudents,
       maxStaff: input.maxStaff,
       maxCampuses: input.maxCampuses,
       storageGb: input.storageGb,
       features: input.features || [],
       includedModuleIds: input.includedModuleIds || [],
+      includedFeatureIds: input.includedFeatureIds || [],
+      optionalAddOnModuleIds: input.optionalAddOnModuleIds || [],
+      optionalAddOnFeatureIds: input.optionalAddOnFeatureIds || [],
+      upgradeToPlanIds: input.upgradeToPlanIds || [],
+      downgradeToPlanIds: input.downgradeToPlanIds || [],
+      version: 1,
+      commercialPricingNote: input.commercialPricingNote,
       isPopular: Boolean(input.isPopular),
-      isActive: true,
+      isActive: (input.status || 'published') !== 'archived',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -1453,6 +1471,7 @@ export class PlatformStore {
     const merged: SubscriptionPlan = {
       ...plan,
       ...input,
+      version: input.version ?? (plan.version ? plan.version + 1 : 2),
       updatedAt: new Date().toISOString(),
     };
 
@@ -2783,6 +2802,7 @@ export class PlatformStore {
 
     const oldState = mod.isGloballyEnabled;
     mod.isGloballyEnabled = isGloballyEnabled;
+    mod.availabilityStatus = isGloballyEnabled ? 'enabled' : 'disabled';
 
     const now = new Date().toISOString();
     const actor = actorName || 'Super Admin';
@@ -2815,30 +2835,292 @@ export class PlatformStore {
     return { success: true };
   }
 
+  public setModuleAvailabilityStatus(
+    moduleId: string,
+    availabilityStatus: 'available' | 'enabled' | 'disabled' | 'coming_soon' | 'deprecated' | 'unavailable',
+    actorName?: string,
+    reason?: string
+  ): { success: boolean; error?: string } {
+    const mod = this.modules.find((m) => m.id === moduleId || m.navId === moduleId);
+    if (!mod) return { success: false, error: `Module "${moduleId}" not found in catalogue.` };
+
+    const previous = mod.availabilityStatus || (mod.isGloballyEnabled ? 'enabled' : 'disabled');
+    mod.availabilityStatus = availabilityStatus;
+    mod.isGloballyEnabled = availabilityStatus === 'enabled' || availabilityStatus === 'available';
+    if (availabilityStatus === 'deprecated') {
+      mod.status = 'deprecated';
+      if (reason) mod.deprecatedReason = reason;
+    } else if (availabilityStatus === 'coming_soon' && mod.status === 'deprecated') {
+      mod.status = 'planned';
+    } else if (mod.isGloballyEnabled && mod.status === 'deprecated') {
+      mod.status = 'implemented';
+    }
+
+    const now = new Date().toISOString();
+    const actor = actorName || 'Super Admin';
+    this.auditEvents.unshift({
+      id: `audit_${Date.now()}`,
+      timestamp: now,
+      category: 'feature_toggles',
+      action: 'MODULE_LIFECYCLE_STATUS_UPDATED',
+      severity: mod.isGloballyEnabled ? 'info' : 'warning',
+      actor: {
+        id: 'usr_super_01',
+        name: actor,
+        email: 'ops-admin@saas-platform.internal',
+        role: 'super_admin',
+      },
+      targetEntity: 'TenantModule',
+      targetId: mod.id,
+      targetName: mod.name,
+      status: 'succeeded',
+      details: `Module "${mod.name}" availability status updated from "${previous}" to "${availabilityStatus}".${reason ? ` Reason: ${reason}` : ''}`,
+      metadata: { moduleId: mod.id, previousStatus: previous, newStatus: availabilityStatus },
+    });
+    this.persist();
+    return { success: true };
+  }
+
+  public updateModuleMetadata(
+    moduleId: string,
+    updates: {
+      name?: string;
+      description?: string;
+      implementationMaturity?: 'implemented' | 'partial' | 'planned';
+      maturityNote?: string;
+      availabilityStatus?: 'available' | 'enabled' | 'disabled' | 'coming_soon' | 'deprecated' | 'unavailable';
+      includedInPlans?: SubscriptionPlan['tier'][];
+      requiresAddonLicense?: boolean;
+      dependencies?: TenantModuleDefinition['dependencies'];
+      supportedSchoolTypes?: TenantModuleDefinition['supportedSchoolTypes'];
+    },
+    actorName?: string
+  ): { success: boolean; error?: string } {
+    const mod = this.modules.find((m) => m.id === moduleId || m.navId === moduleId);
+    if (!mod) return { success: false, error: `Module "${moduleId}" not found.` };
+
+    if (updates.name !== undefined && updates.name.trim().length < 2) {
+      return { success: false, error: 'Module display name must be at least 2 characters.' };
+    }
+    if (updates.description !== undefined && updates.description.trim().length < 10) {
+      return { success: false, error: 'Module description must be at least 10 characters.' };
+    }
+    if (updates.dependencies) {
+      for (const dep of updates.dependencies) {
+        if (dep.moduleId === mod.id) {
+          return { success: false, error: 'A module cannot depend on itself.' };
+        }
+        if (!this.modules.some((m) => m.id === dep.moduleId)) {
+          return { success: false, error: `Unknown dependency module "${dep.moduleId}".` };
+        }
+      }
+    }
+
+    if (updates.name !== undefined) mod.name = updates.name.trim();
+    if (updates.description !== undefined) mod.description = updates.description.trim();
+    if (updates.implementationMaturity !== undefined) {
+      mod.implementationMaturity = updates.implementationMaturity;
+      if (mod.availabilityStatus !== 'deprecated') {
+        mod.status = updates.implementationMaturity;
+      }
+    }
+    if (updates.maturityNote !== undefined) mod.maturityNote = updates.maturityNote;
+    if (updates.requiresAddonLicense !== undefined) mod.requiresAddonLicense = updates.requiresAddonLicense;
+    if (updates.includedInPlans !== undefined) mod.includedInPlans = updates.includedInPlans;
+    if (updates.dependencies !== undefined) mod.dependencies = updates.dependencies;
+    if (updates.supportedSchoolTypes !== undefined) mod.supportedSchoolTypes = updates.supportedSchoolTypes;
+    if (updates.availabilityStatus !== undefined) {
+      mod.availabilityStatus = updates.availabilityStatus;
+      mod.isGloballyEnabled = updates.availabilityStatus === 'enabled' || updates.availabilityStatus === 'available';
+    }
+
+    this.auditEvents.unshift({
+      id: `audit_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      category: 'feature_toggles',
+      action: 'MODULE_METADATA_UPDATED',
+      severity: 'info',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName || 'Super Admin',
+        email: 'ops-admin@saas-platform.internal',
+        role: 'super_admin',
+      },
+      targetEntity: 'TenantModule',
+      targetId: mod.id,
+      targetName: mod.name,
+      status: 'succeeded',
+      details: `Updated module metadata/dependencies/plan configuration for "${mod.name}" (${mod.id}).`,
+    });
+    this.persist();
+    return { success: true };
+  }
+
+  public updateFeatureDefinition(
+    featureId: string,
+    updates: Partial<PlatformFeatureItem>,
+    actorName?: string
+  ): { success: boolean; error?: string } {
+    const feat = this.features.find((f) => f.id === featureId);
+    if (!feat) return { success: false, error: `Feature "${featureId}" not found.` };
+    if (updates.moduleId && !this.modules.some((m) => m.id === updates.moduleId)) {
+      return { success: false, error: `Linked module "${updates.moduleId}" does not exist.` };
+    }
+    Object.assign(feat, updates);
+    if (updates.availabilityStatus) {
+      feat.isGloballyEnabled = updates.availabilityStatus === 'enabled' || updates.availabilityStatus === 'available';
+    }
+    this.auditEvents.unshift({
+      id: `audit_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      category: 'feature_toggles',
+      action: 'PLATFORM_FEATURE_UPDATED',
+      severity: 'info',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName || 'Super Admin',
+        email: 'ops-admin@saas-platform.internal',
+        role: 'super_admin',
+      },
+      targetEntity: 'PlatformFeature',
+      targetId: feat.id,
+      targetName: feat.name,
+      status: 'succeeded',
+      details: `Updated feature definition "${feat.name}" (${feat.id}).`,
+    });
+    this.persist();
+    return { success: true };
+  }
+
+  public manageSubscriptionAddOn(
+    subscriptionId: string,
+    action: 'grant' | 'revoke' | 'expire',
+    addOn: { moduleId?: string; featureId?: string; name: string; expiryDate?: string },
+    actorName?: string
+  ): { success: boolean; subscription?: OrganizationSubscription; error?: string } {
+    const sub = this.subscriptions.find((s) => s.id === subscriptionId);
+    if (!sub) return { success: false, error: 'Subscription not found.' };
+    if (addOn.moduleId && !this.modules.some((m) => m.id === addOn.moduleId)) {
+      return { success: false, error: `Unknown module ID "${addOn.moduleId}" for add-on.` };
+    }
+    const existing = [...(sub.activeAddOns || [])];
+    const nowIso = new Date().toISOString();
+    if (action === 'grant') {
+      const filtered = existing.filter((a) => a.moduleId !== addOn.moduleId || a.featureId !== addOn.featureId);
+      filtered.push({
+        id: `addon_${Date.now()}`,
+        moduleId: addOn.moduleId,
+        featureId: addOn.featureId,
+        name: addOn.name,
+        status: 'active',
+        startDate: nowIso,
+        expiryDate: addOn.expiryDate,
+      });
+      sub.activeAddOns = filtered;
+    } else {
+      sub.activeAddOns = existing.map((a) => {
+        if ((addOn.moduleId && a.moduleId === addOn.moduleId) || (addOn.featureId && a.featureId === addOn.featureId)) {
+          return {
+            ...a,
+            status: action === 'expire' ? 'expired' : 'canceled',
+            expiryDate: action === 'expire' ? new Date(Date.now() - 86400000).toISOString() : a.expiryDate,
+          };
+        }
+        return a;
+      });
+    }
+    sub.updatedAt = nowIso;
+    this.auditEvents.unshift({
+      id: `audit_${Date.now()}`,
+      timestamp: nowIso,
+      category: 'subscription_billing',
+      action: `SUBSCRIPTION_ADDON_${action.toUpperCase()}`,
+      severity: 'info',
+      actor: {
+        id: 'usr_super_01',
+        name: actorName || 'Super Admin',
+        email: 'ops-admin@saas-platform.internal',
+        role: 'super_admin',
+      },
+      targetEntity: 'OrganizationSubscription',
+      targetId: sub.id,
+      targetName: addOn.name,
+      status: 'succeeded',
+      details: `${action.toUpperCase()} add-on "${addOn.name}" on subscription ${sub.id}.`,
+    });
+    this.persist();
+    return { success: true, subscription: sub };
+  }
+
+  public extendSubscriptionTrial(
+    subscriptionId: string,
+    newTrialEndDate: string,
+    reason: string,
+    actorName?: string
+  ): { success: boolean; subscription?: OrganizationSubscription; error?: string } {
+    const sub = this.subscriptions.find((s) => s.id === subscriptionId);
+    if (!sub) return { success: false, error: 'Subscription not found.' };
+    if (Number.isNaN(Date.parse(newTrialEndDate))) {
+      return { success: false, error: 'Valid ISO trial end date is required.' };
+    }
+    const nowIso = new Date().toISOString();
+    const prev = sub.status;
+    sub.status = 'trialing';
+    sub.trialEndDate = newTrialEndDate;
+    sub.currentPeriodEnd = newTrialEndDate;
+    sub.updatedAt = nowIso;
+    this.lifecycleEvents.unshift({
+      id: `evt_${Date.now()}`,
+      subscriptionId: sub.id,
+      organizationId: sub.organizationId,
+      fromStatus: prev,
+      toStatus: 'trialing',
+      reason: reason.trim() || 'Trial window adjusted by Super Admin.',
+      actor: actorName || 'Super Admin',
+      timestamp: nowIso,
+    });
+    this.persist();
+    return { success: true, subscription: sub };
+  }
+
   public evaluateEntitlement(
     moduleId: string,
     organizationId?: string,
-    planId?: string
+    planId?: string,
+    asOfDate?: string
   ): EffectiveEntitlementResult {
-    let effectivePlanId = planId;
-    if (organizationId && !effectivePlanId) {
-      const org = this.organizations.find((o) => o.id === organizationId);
-      if (org) effectivePlanId = org.planId;
-    }
+    const org = organizationId ? this.organizations.find((o) => o.id === organizationId) : undefined;
+    const sub = organizationId ? this.subscriptions.find((s) => s.organizationId === organizationId) : undefined;
+    const effectivePlanId = planId || sub?.planId || org?.planId;
+    const evalNow = asOfDate ? Date.parse(asOfDate) : Date.now();
+    const activeAddOnModuleIds = (sub?.activeAddOns || [])
+      .filter((a) => {
+        if (a.status !== 'active' || !a.moduleId) return false;
+        if (!a.expiryDate) return true;
+        const expMs = Date.parse(a.expiryDate);
+        return Number.isNaN(expMs) || expMs >= (Number.isNaN(evalNow) ? Date.now() : evalNow);
+      })
+      .map((a) => a.moduleId!);
 
     return evaluateModuleEntitlement({
       moduleId,
       organizationId,
+      organizationStatus: org?.status,
+      schoolType: org?.classification,
       planId: effectivePlanId,
       plans: this.plans,
+      subscription: sub,
       registry: this.modules,
       organizationOverrides: this.organizationOverrides,
+      activeAddOnModuleIds,
+      asOfDate,
     });
   }
 
   public validateRegistry(): RegistryValidationReport {
     return validateModuleRegistry({
       modules: this.modules,
+      plans: this.plans,
       organizationOverrides: this.organizationOverrides,
       knownOrganizationIds: this.organizations.map((o) => o.id),
     });
@@ -2852,17 +3134,33 @@ export class PlatformStore {
       totalMappedRoutes += m.routes.length;
     }
 
-    const implementedCount = this.modules.filter((m) => m.status === 'implemented').length;
-    const partialCount = this.modules.filter((m) => m.status === 'partial').length;
-    const plannedCount = this.modules.filter((m) => m.status === 'planned').length;
+    const implementedCount = this.modules.filter((m) => (m.implementationMaturity || m.status) === 'implemented').length;
+    const partialCount = this.modules.filter((m) => (m.implementationMaturity || m.status) === 'partial').length;
+    const plannedCount = this.modules.filter((m) => (m.implementationMaturity || m.status) === 'planned').length;
     const missingCount = this.modules.filter((m) => m.status === 'missing').length;
+    const deprecatedCount = this.modules.filter((m) => m.availabilityStatus === 'deprecated' || m.status === 'deprecated').length;
+    const comingSoonCount = this.modules.filter((m) => m.availabilityStatus === 'coming_soon').length;
+    const unavailableCount = this.modules.filter((m) => m.availabilityStatus === 'unavailable').length;
+
+    const assignedModuleIds = new Set(
+      this.plans
+        .filter((p) => p.status !== 'archived')
+        .flatMap((p) => p.includedModuleIds || [])
+    );
+    const unassignedModulesCount = this.modules.filter(
+      (m) => m.availabilityStatus !== 'deprecated' && !assignedModuleIds.has(m.id)
+    ).length;
 
     const platformEnabledCount = this.modules.filter((m) => m.isGloballyEnabled).length;
     const platformDisabledCount = this.modules.filter((m) => !m.isGloballyEnabled).length;
 
-    const planStarterCount = this.modules.filter((m) => m.includedInPlans.includes('starter')).length;
-    const planGrowthCount = this.modules.filter((m) => m.includedInPlans.includes('growth')).length;
-    const planEnterpriseCount = this.modules.filter((m) => m.includedInPlans.includes('enterprise')).length;
+    const planStarter = this.plans.find((p) => p.id === 'plan_starter');
+    const planGrowth = this.plans.find((p) => p.id === 'plan_growth');
+    const planEnterprise = this.plans.find((p) => p.id === 'plan_enterprise');
+
+    const planStarterCount = planStarter?.includedModuleIds?.length ?? this.modules.filter((m) => m.includedInPlans.includes('starter')).length;
+    const planGrowthCount = planGrowth?.includedModuleIds?.length ?? this.modules.filter((m) => m.includedInPlans.includes('growth')).length;
+    const planEnterpriseCount = planEnterprise?.includedModuleIds?.length ?? this.modules.filter((m) => m.includedInPlans.includes('enterprise')).length;
 
     return {
       totalModules: this.modules.length,
@@ -2873,6 +3171,13 @@ export class PlatformStore {
       partialCount,
       plannedCount,
       missingCount,
+      deprecatedCount,
+      comingSoonCount,
+      unavailableCount,
+      unassignedModulesCount,
+      totalFeaturesCount: this.features.length,
+      activeFeaturesCount: this.features.filter((f) => f.isGloballyEnabled && f.availabilityStatus !== 'coming_soon').length,
+      comingSoonFeaturesCount: this.features.filter((f) => f.availabilityStatus === 'coming_soon').length,
       platformEnabledCount,
       platformDisabledCount,
       planStarterCount,

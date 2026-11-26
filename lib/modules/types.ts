@@ -52,6 +52,7 @@ export type ImplementationStatus =
   | 'implemented'
   | 'partial'
   | 'planned'
+  | 'deprecated'
   | 'missing'
   | 'unknown';
 
@@ -72,10 +73,22 @@ export type EffectiveEntitlementStatus =
   | 'restricted'
   | 'unresolved';
 
+export type CanonicalEntitlementStatus =
+  | 'available'
+  | 'enabled'
+  | 'disabled'
+  | 'coming_soon'
+  | 'deprecated'
+  | 'unavailable'
+  | 'restricted_by_plan';
+
+import type { CanonicalSchoolType } from './canonical-contract';
+
 export type OrganizationOverrideAction =
   | 'inherit'
   | 'force_enable'
-  | 'force_disable';
+  | 'force_disable'
+  | 'trial_extension';
 
 export interface ModuleDependency {
   moduleId: string;
@@ -115,18 +128,30 @@ export interface TenantModuleDefinition {
   supportedWorkflows: string[];
   knownLimitations?: string[];
   futureBackendRequirements?: string[];
-  dataSensitivity: 'public' | 'internal' | 'confidential' | 'restricted_pii' | 'sensitive_health_dsl';
+  dataSensitivity: 'public' | 'internal' | 'confidential' | 'restricted_pii' | 'sensitive_health_dsl' | 'standard' | 'sensitive' | 'financial';
   displayOrder: number;
+  kind?: 'module' | 'submodule';
+  registryVersion?: string;
+  availabilityStatus?: 'available' | 'enabled' | 'disabled' | 'coming_soon' | 'deprecated' | 'unavailable';
+  implementationMaturity?: 'implemented' | 'partial' | 'planned';
+  maturityNote?: string;
+  supportedSchoolTypes?: CanonicalSchoolType[];
+  featureIds?: string[];
+  deprecatedReason?: string;
+  replacedByModuleId?: string;
 }
 
 export interface OrganizationModuleOverride {
+  id?: string;
   organizationId: string;
   moduleId: string;
+  featureId?: string;
   action: OrganizationOverrideAction;
   reason: string;
   appliedBy: string;
   appliedAt: string;
   updatedAt?: string;
+  expiresAt?: string;
 }
 
 export interface UnsatisfiedDependencyDetail {
@@ -145,6 +170,9 @@ export interface EffectiveEntitlementResult {
   isRegistered: boolean;
   implementationStatus: ImplementationStatus;
   platformAvailability: PlatformAvailabilityStatus;
+  canonicalStatus?: CanonicalEntitlementStatus;
+  implementationMaturity?: 'implemented' | 'partial' | 'planned';
+  reasonCode?: string;
   planInclusion: EntitlementStatus;
   overrideAction: OrganizationOverrideAction;
   overrideReason?: string;
@@ -152,13 +180,22 @@ export interface EffectiveEntitlementResult {
   unsatisfiedDependencies: UnsatisfiedDependencyDetail[];
   effectiveStatus: EffectiveEntitlementStatus;
   reason: string;
+  recommendedPlanIds?: string[];
+  requiresUpgrade?: boolean;
+  requiresAddon?: boolean;
+  inGracePeriod?: boolean;
+  isTrialing?: boolean;
   precedenceApplied:
     | 'UNREGISTERED_GUARD'
+    | 'TENANT_SUSPENDED'
+    | 'SUBSCRIPTION_INACTIVE'
     | 'PLATFORM_DISABLEMENT'
     | 'IMPLEMENTATION_GUARD'
+    | 'UNSUPPORTED_SCHOOL_TYPE'
     | 'ORGANIZATION_FORCE_DISABLE'
     | 'DEPENDENCY_FAILURE'
     | 'ORGANIZATION_FORCE_ENABLE'
+    | 'ADDON_ENTITLED'
     | 'PLAN_INCLUDED'
     | 'PLAN_EXCLUDED'
     | 'DEFAULT_INHERITED';
@@ -185,6 +222,11 @@ export interface RegistryValidationReport {
   errorCount: number;
   warningCount: number;
   infoCount: number;
+  totalFeaturesCount?: number;
+  totalPlansCount?: number;
+  deprecatedModulesCount?: number;
+  comingSoonModulesCount?: number;
+  unassignedModulesCount?: number;
   issues: RegistryValidationIssue[];
 }
 

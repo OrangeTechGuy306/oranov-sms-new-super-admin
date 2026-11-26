@@ -5,6 +5,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
 import { IntegrationRecord } from '@/lib/types/integrations';
 import { formatDate } from '@/lib/utils/formatters';
+import { isSafeExternalOrInternalUrl } from '@/lib/auth/urlSecurity';
 import {
   Building2,
   CheckCircle2,
@@ -284,16 +285,19 @@ export function IntegrationDetailModal({
           {integration.lastVerifiedAt && (
             <div>Last verified: {formatDate(integration.lastVerifiedAt)}</div>
           )}
-          {integration.documentationUrl && (
-            <a
-              href={integration.documentationUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-primary hover:underline"
-            >
-              Provider Documentation <ExternalLink className="h-3 w-3" />
-            </a>
-          )}
+          {integration.documentationUrl &&
+            isSafeExternalOrInternalUrl(integration.documentationUrl, {
+              allowExternalHttp: true,
+            }) && (
+              <a
+                href={integration.documentationUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-primary hover:underline"
+              >
+                Provider Documentation <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
         </div>
       </div>
     </Modal>

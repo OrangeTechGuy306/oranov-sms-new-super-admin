@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Tabs } from '@/components/ui/Tabs';
 import { DataTable, Column } from '@/components/ui/DataTable';
@@ -43,6 +44,12 @@ import {
 } from 'lucide-react';
 
 export default function PlatformUsersPage() {
+  const { user: authUser, can } = usePlatformAuth();
+  const canCreateUsers = can('iam.users.create');
+  const canAssignRoles = can('iam.users.roles.assign');
+  const canSuspendUsers = can('iam.users.suspend');
+  const canCreateRoles = can('iam.roles.create');
+
   const {
     platformUsers,
     platformRoles,
@@ -254,35 +261,39 @@ export default function PlatformUsersPage() {
             Inspect
           </button>
 
-          <select
-            value={u.role}
-            onChange={(e) => handleQuickRoleChange(u, e.target.value as PlatformRoleKey)}
-            className="text-xs bg-card border border-border rounded-lg px-2 py-1 text-foreground focus:outline-none cursor-pointer"
-            title="Reassign Primary Role"
-          >
-            {platformRoles.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </select>
+          {canAssignRoles && u.id !== authUser?.id && (
+            <select
+              value={u.role}
+              onChange={(e) => handleQuickRoleChange(u, e.target.value as PlatformRoleKey)}
+              className="text-xs bg-card border border-border rounded-lg px-2 py-1 text-foreground focus:outline-none cursor-pointer"
+              title="Reassign Primary Role"
+            >
+              {platformRoles.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          )}
 
-          {u.status === 'active' ? (
-            <button
-              type="button"
-              onClick={() => updatePlatformUserStatus(u.id, 'suspended')}
-              className="px-2 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded border border-rose-200 dark:border-rose-900 transition-colors cursor-pointer"
-            >
-              Suspend
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => updatePlatformUserStatus(u.id, 'active')}
-              className="px-2 py-1 text-[11px] font-semibold text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded border border-emerald-200 dark:border-emerald-900 transition-colors cursor-pointer"
-            >
-              Activate
-            </button>
+          {canSuspendUsers && u.id !== authUser?.id && (
+            u.status === 'active' ? (
+              <button
+                type="button"
+                onClick={() => updatePlatformUserStatus(u.id, 'suspended')}
+                className="px-2 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded border border-rose-200 dark:border-rose-900 transition-colors cursor-pointer"
+              >
+                Suspend
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => updatePlatformUserStatus(u.id, 'active')}
+                className="px-2 py-1 text-[11px] font-semibold text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded border border-emerald-200 dark:border-emerald-900 transition-colors cursor-pointer"
+              >
+                Activate
+              </button>
+            )
           )}
         </div>
       ),
@@ -513,22 +524,26 @@ export default function PlatformUsersPage() {
         description="Comprehensive governance control plane for SaaS platform administrators, role catalogues, granular capability assignments, and security boundaries."
         actions={
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setIsCreateRoleOpen(true)}
-              className="inline-flex items-center gap-2 px-3.5 py-2 bg-muted hover:bg-muted/80 text-foreground font-semibold text-xs rounded-lg border border-border transition-colors shadow-xs cursor-pointer"
-            >
-              <ShieldPlus className="w-4 h-4 text-primary" />
-              Author Custom Role
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsCreateUserOpen(true)}
-              className="inline-flex items-center gap-2 px-3.5 py-2 bg-primary text-primary-foreground font-semibold text-xs rounded-lg hover:bg-primary/90 transition-colors shadow-xs cursor-pointer"
-            >
-              <UserPlus className="w-4 h-4" />
-              Add Platform User
-            </button>
+            {canCreateRoles && (
+              <button
+                type="button"
+                onClick={() => setIsCreateRoleOpen(true)}
+                className="inline-flex items-center gap-2 px-3.5 py-2 bg-muted hover:bg-muted/80 text-foreground font-semibold text-xs rounded-lg border border-border transition-colors shadow-xs cursor-pointer"
+              >
+                <ShieldPlus className="w-4 h-4 text-primary" />
+                Author Custom Role
+              </button>
+            )}
+            {canCreateUsers && (
+              <button
+                type="button"
+                onClick={() => setIsCreateUserOpen(true)}
+                className="inline-flex items-center gap-2 px-3.5 py-2 bg-primary text-primary-foreground font-semibold text-xs rounded-lg hover:bg-primary/90 transition-colors shadow-xs cursor-pointer"
+              >
+                <UserPlus className="w-4 h-4" />
+                Add Platform User
+              </button>
+            )}
           </div>
         }
       />

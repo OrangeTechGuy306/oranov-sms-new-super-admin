@@ -17,7 +17,7 @@ describe('PlatformStore Development Data Layer', () => {
     const metrics = store.getMetrics();
 
     assert.ok(orgs.length >= 10, 'Should load at least 10 initial school organizations');
-    assert.equal(plans.length, 3, 'Should provide 3 standard subscription plans');
+    assert.equal(plans.length, 5, 'Should provide 5 consolidated canonical subscription plans');
     assert.ok(users.length >= 4, 'Should load platform admin users');
     assert.equal(metrics.totalOrganizations, orgs.length);
   });

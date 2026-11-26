@@ -396,7 +396,7 @@ describe('Phase E-09.9: Academics, Curriculum & Teaching Oversight Engine', () =
       const filtered = filterAcademicOversightData(INITIAL_ACADEMIC_OVERSIGHT_DATA, filter);
       assert.ok(filtered.length >= 2);
       assert.ok(filtered.some((r) => r.organizationCode === 'OAKHILL'));
-      assert.ok(filtered.some((r) => r.organizationCode === 'WESTBRIDGE'));
+      assert.ok(filtered.some((r) => r.organizationCode === 'CRESTWOOD'));
     });
 
     test('canonical aggregate metrics are strictly derived from filtered underlying records', () => {

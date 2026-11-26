@@ -214,7 +214,7 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
   // --------------------------------------------------------------------------
   {
     organizationId: 'org_002',
-    organizationName: "St. Jude's Premier College",
+    organizationName: 'St. Jude Catholic Grammar School',
     organizationCode: 'STJUDE',
     classification: 'k12',
     lifecycleStatus: 'active',
@@ -226,7 +226,7 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
     campuses: [
       {
         campusId: 'camp_002_1',
-        campusName: "St. Jude's Main Campus",
+        campusName: 'St. Jude Main Abbey Campus',
         campusCode: 'MAIN',
         isMainCampus: true,
         classesCount: 6,
@@ -236,7 +236,7 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
       },
       {
         campusId: 'camp_002_2',
-        campusName: "St. Jude's Junior Annex",
+        campusName: 'St. Jude Junior Grammar Annex',
         campusCode: 'JUNIOR',
         isMainCampus: false,
         classesCount: 4,
@@ -397,8 +397,8 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
   // --------------------------------------------------------------------------
   {
     organizationId: 'org_003',
-    organizationName: 'Beacon Heights STEM Academy',
-    organizationCode: 'BEACON',
+    organizationName: 'Apex Institute of Technical Sciences',
+    organizationCode: 'APEXTECH',
     classification: 'higher_education',
     lifecycleStatus: 'active',
     reportingStatus: 'active_reporting',
@@ -409,7 +409,7 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
     campuses: [
       {
         campusId: 'camp_003_1',
-        campusName: 'Beacon Heights Innovation Hub',
+        campusName: 'Apex Institute Main Campus',
         campusCode: 'TECH',
         isMainCampus: true,
         classesCount: 8,
@@ -419,7 +419,7 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
       },
       {
         campusId: 'camp_003_2',
-        campusName: 'Beacon Heights South Campus',
+        campusName: 'Apex Institute Technology Park',
         campusCode: 'SOUTH',
         isMainCampus: false,
         classesCount: 4,
@@ -549,8 +549,8 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
   // --------------------------------------------------------------------------
   {
     organizationId: 'org_004',
-    organizationName: 'Crestview Community High School',
-    organizationCode: 'CRESTVIEW',
+    organizationName: 'Valley View Community High School',
+    organizationCode: 'VALLEYVIEW',
     classification: 'secondary',
     lifecycleStatus: 'active',
     reportingStatus: 'active_reporting',
@@ -561,7 +561,7 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
     campuses: [
       {
         campusId: 'camp_004_1',
-        campusName: 'Crestview Main Campus',
+        campusName: 'Valley View Main Campus',
         campusCode: 'MAIN',
         isMainCampus: true,
         classesCount: 6,
@@ -720,8 +720,8 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
   // --------------------------------------------------------------------------
   {
     organizationId: 'org_005',
-    organizationName: 'Apex Bilingual Institute',
-    organizationCode: 'APEX',
+    organizationName: 'Kids Haven Montessori Elementary',
+    organizationCode: 'KIDSHAVEN',
     classification: 'primary',
     lifecycleStatus: 'active',
     reportingStatus: 'active_reporting',
@@ -732,7 +732,7 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
     campuses: [
       {
         campusId: 'camp_005_1',
-        campusName: 'Apex Primary & Secondary Campus',
+        campusName: 'Kids Haven Meadowvale Campus',
         campusCode: 'MAIN',
         isMainCampus: true,
         classesCount: 8,
@@ -864,8 +864,8 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
   // --------------------------------------------------------------------------
   {
     organizationId: 'org_006',
-    organizationName: 'Greenfield Montessori Academy',
-    organizationCode: 'GREENFIELD',
+    organizationName: 'Horizon Polytechnic & Vocational College',
+    organizationCode: 'HORIZONVOC',
     classification: 'vocational',
     lifecycleStatus: 'active',
     reportingStatus: 'active_reporting',
@@ -876,7 +876,7 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
     campuses: [
       {
         campusId: 'camp_006_1',
-        campusName: 'Greenfield Early Years Campus',
+        campusName: 'Horizon Poly Main Campus',
         campusCode: 'EARLY',
         isMainCampus: true,
         classesCount: 6,
@@ -886,7 +886,7 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
       },
       {
         campusId: 'camp_006_2',
-        campusName: 'Greenfield Elementary Campus',
+        campusName: 'Horizon Poly Technical Workshops Annex',
         campusCode: 'ELEM',
         isMainCampus: false,
         classesCount: 6,
@@ -1033,8 +1033,8 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
   // --------------------------------------------------------------------------
   {
     organizationId: 'org_007',
-    organizationName: 'Horizon Vocational & Technical College',
-    organizationCode: 'HORIZON',
+    organizationName: 'Beacon Hill Preparatory School',
+    organizationCode: 'BEACONHILL',
     classification: 'k12',
     lifecycleStatus: 'active',
     reportingStatus: 'active_reporting',
@@ -1045,7 +1045,7 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
     campuses: [
       {
         campusId: 'camp_007_1',
-        campusName: 'Horizon Industrial Arts Campus',
+        campusName: 'Beacon Hill Upper School',
         campusCode: 'TECH',
         isMainCampus: true,
         classesCount: 6,
@@ -1055,7 +1055,7 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
       },
       {
         campusId: 'camp_007_2',
-        campusName: 'Horizon Digital Media Annex',
+        campusName: 'Beacon Hill Lower Academy',
         campusCode: 'MEDIA',
         isMainCampus: false,
         classesCount: 4,
@@ -1193,8 +1193,8 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
   // --------------------------------------------------------------------------
   {
     organizationId: 'org_008',
-    organizationName: 'Westbridge Grammar School',
-    organizationCode: 'WESTBRIDGE',
+    organizationName: 'Crestwood Collegiate Institute',
+    organizationCode: 'CRESTWOOD',
     classification: 'secondary',
     lifecycleStatus: 'active',
     reportingStatus: 'active_reporting',
@@ -1205,7 +1205,7 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
     campuses: [
       {
         campusId: 'camp_008_1',
-        campusName: 'Westbridge Main Campus',
+        campusName: 'Crestwood Collegiate Main Campus',
         campusCode: 'MAIN',
         isMainCampus: true,
         classesCount: 8,
@@ -1347,8 +1347,8 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
   // --------------------------------------------------------------------------
   {
     organizationId: 'org_009',
-    organizationName: 'Prestige Hall Preparatory School',
-    organizationCode: 'PRESTIGE',
+    organizationName: 'Nordic International School',
+    organizationCode: 'NORDICINTL',
     classification: 'international',
     lifecycleStatus: 'suspended',
     reportingStatus: 'dormant',
@@ -1359,7 +1359,7 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
     campuses: [
       {
         campusId: 'camp_009_1',
-        campusName: 'Prestige Hall Main House',
+        campusName: 'Nordic International Stockholm Campus',
         campusCode: 'MAIN',
         isMainCampus: true,
         classesCount: 0,
@@ -1369,7 +1369,7 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
       },
       {
         campusId: 'camp_009_2',
-        campusName: 'Prestige Hall West Wing',
+        campusName: 'Nordic International Uppsala Secondary Branch',
         campusCode: 'WEST',
         isMainCampus: false,
         classesCount: 0,
@@ -1466,8 +1466,8 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
   // --------------------------------------------------------------------------
   {
     organizationId: 'org_010',
-    organizationName: 'Sunrise Islamic Academy',
-    organizationCode: 'SUNRISE',
+    organizationName: 'Solaris STEM Academy',
+    organizationCode: 'SOLARIS',
     classification: 'k12',
     lifecycleStatus: 'pending',
     reportingStatus: 'not_provisioned',
@@ -1478,7 +1478,7 @@ const rawAcademicOversightData: Omit<OrganizationAcademicOversight, 'readiness'>
     campuses: [
       {
         campusId: 'camp_010_1',
-        campusName: 'Sunrise Main Campus',
+        campusName: 'Solaris Science Campus',
         campusCode: 'MAIN',
         isMainCampus: true,
         classesCount: 4,

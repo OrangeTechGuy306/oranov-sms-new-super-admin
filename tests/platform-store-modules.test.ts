@@ -10,12 +10,12 @@ describe('PlatformStore Tenant Module & Feature Entitlement State', () => {
     store.resetToDefaults();
   });
 
-  it('initializes store with the canonical 321 tenant modules and 56 top-level modules', () => {
+  it('initializes store with the canonical 398 tenant modules and 57 top-level modules', () => {
     const modules = store.getModules();
-    assert.equal(modules.length, 321);
+    assert.equal(modules.length, 398);
 
     const topLevel = store.getTopLevelModules();
-    assert.equal(topLevel.length, 56);
+    assert.equal(topLevel.length, 57);
   });
 
   it('retrieves submodules by parent module ID correctly', () => {
@@ -26,11 +26,12 @@ describe('PlatformStore Tenant Module & Feature Entitlement State', () => {
 
   it('calculates comprehensive module metrics from current store state', () => {
     const metrics = store.getModuleMetrics();
-    assert.equal(metrics.totalModules, 321);
-    assert.equal(metrics.topLevelModules, 56);
-    assert.equal(metrics.submodules, 265);
-    assert.equal(metrics.implementedCount, 321);
-    assert.equal(metrics.platformEnabledCount, 321);
+    assert.equal(metrics.totalModules, 398);
+    assert.equal(metrics.topLevelModules, 57);
+    assert.equal(metrics.submodules, 341);
+    assert.equal(metrics.implementedCount + metrics.partialCount, 398);
+    assert.equal(metrics.deprecatedCount, 3);
+    assert.equal(metrics.platformEnabledCount, 395);
     assert.ok(metrics.planStarterCount > 0);
     assert.ok(metrics.planGrowthCount > 0);
     assert.ok(metrics.planEnterpriseCount > 0);
@@ -159,9 +160,9 @@ describe('PlatformStore Tenant Module & Feature Entitlement State', () => {
   it('validates the active module registry through the store', () => {
     const validation = store.validateRegistry();
     assert.equal(validation.isValid, true);
-    assert.equal(validation.totalModulesCount, 321);
-    assert.equal(validation.topLevelModulesCount, 56);
-    assert.equal(validation.submodulesCount, 265);
+    assert.equal(validation.totalModulesCount, 398);
+    assert.equal(validation.topLevelModulesCount, 57);
+    assert.equal(validation.submodulesCount, 341);
     assert.equal(validation.errorCount, 0);
   });
 });

@@ -512,7 +512,7 @@ describe('Phase E-09.11: SaaS Subscriptions, Billing and Monetization Engine', (
         maxCampuses: 1,
         storageGb: 40,
         features: ['Junior SIS', 'Basic Grading'],
-        includedModuleIds: ['mod_core_dashboard', 'mod_students_admissions'],
+        includedModuleIds: ['mod_dashboard', 'mod_students'],
       });
 
       assert.equal(res.success, true);

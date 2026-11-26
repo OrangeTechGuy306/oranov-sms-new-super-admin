@@ -3,6 +3,8 @@
  * Distinguishes conceptual boundaries: Plans, Subscriptions, Invoices, and Payments.
  */
 
+import type { CanonicalPlanTier, CanonicalSchoolType } from '../modules/canonical-contract';
+
 export type PlanTier = 'starter' | 'growth' | 'enterprise' | 'custom';
 
 export type SubscriptionStatus =
@@ -32,23 +34,46 @@ export interface SubscriptionPlan {
   id: string;
   name: string;
   tier: PlanTier;
-  status?: 'published' | 'draft' | 'archived';
+  normalizedTier?: CanonicalPlanTier;
+  status?: 'published' | 'draft' | 'deprecated' | 'archived';
+  visibility?: 'public' | 'private' | 'internal_only';
   description: string;
+  billingIntervals?: ('monthly' | 'quarterly' | 'annual')[];
   priceMonthly: number; // in USD or configured currency
   priceAnnual: number;  // in USD or configured currency
   priceQuarterly?: number;
   currency: string;
   trialDays?: number;
+  targetSchoolTypes?: CanonicalSchoolType[];
   maxStudents: number;
   maxStaff: number;
   maxCampuses: number;
   storageGb: number;
   features: string[];
   includedModuleIds?: string[];
+  includedFeatureIds?: string[];
+  optionalAddOnModuleIds?: string[];
+  optionalAddOnFeatureIds?: string[];
+  upgradeToPlanIds?: string[];
+  downgradeToPlanIds?: string[];
+  version?: number;
+  commercialPricingNote?: string;
   isPopular?: boolean;
   isActive: boolean;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface OrganizationAddOnRecord {
+  id: string;
+  moduleId?: string;
+  featureId?: string;
+  name: string;
+  status: 'active' | 'expired' | 'canceled' | 'pending';
+  startDate: string;
+  expiryDate?: string;
+  priceMonthly?: number;
+  currency?: string;
 }
 
 export interface OrganizationSubscription {
@@ -65,6 +90,7 @@ export interface OrganizationSubscription {
   trialStartDate?: string;
   trialEndDate?: string;
   gracePeriodEnd?: string;
+  activeAddOns?: OrganizationAddOnRecord[];
   assignedByUserId?: string;
   appliedDiscountCode?: string;
   notes?: string;

@@ -5,7 +5,9 @@
 
 import { PlanTier } from '../types/subscriptions';
 
-export type SubscriptionPlanStatus = 'published' | 'draft' | 'archived';
+import type { CanonicalSchoolType } from '../modules/canonical-contract';
+
+export type SubscriptionPlanStatus = 'published' | 'draft' | 'deprecated' | 'archived';
 
 export type BillingFrequency = 'monthly' | 'quarterly' | 'annual';
 
@@ -94,18 +96,27 @@ export interface CreatePlanInput {
   name: string;
   tier: PlanTier;
   status?: SubscriptionPlanStatus;
+  visibility?: 'public' | 'private' | 'internal_only';
   description: string;
+  billingIntervals?: ('monthly' | 'quarterly' | 'annual')[];
   priceMonthly: number;
   priceAnnual: number;
   priceQuarterly?: number;
   currency: string;
   trialDays?: number;
+  targetSchoolTypes?: CanonicalSchoolType[];
   maxStudents: number;
   maxStaff: number;
   maxCampuses: number;
   storageGb: number;
   features?: string[];
   includedModuleIds?: string[];
+  includedFeatureIds?: string[];
+  optionalAddOnModuleIds?: string[];
+  optionalAddOnFeatureIds?: string[];
+  upgradeToPlanIds?: string[];
+  downgradeToPlanIds?: string[];
+  commercialPricingNote?: string;
   isPopular?: boolean;
 }
 
@@ -113,18 +124,28 @@ export interface UpdatePlanInput {
   name?: string;
   tier?: PlanTier;
   status?: SubscriptionPlanStatus;
+  visibility?: 'public' | 'private' | 'internal_only';
   description?: string;
+  billingIntervals?: ('monthly' | 'quarterly' | 'annual')[];
   priceMonthly?: number;
   priceAnnual?: number;
   priceQuarterly?: number;
   currency?: string;
   trialDays?: number;
+  targetSchoolTypes?: CanonicalSchoolType[];
   maxStudents?: number;
   maxStaff?: number;
   maxCampuses?: number;
   storageGb?: number;
   features?: string[];
   includedModuleIds?: string[];
+  includedFeatureIds?: string[];
+  optionalAddOnModuleIds?: string[];
+  optionalAddOnFeatureIds?: string[];
+  upgradeToPlanIds?: string[];
+  downgradeToPlanIds?: string[];
+  version?: number;
+  commercialPricingNote?: string;
   isPopular?: boolean;
   isActive?: boolean;
 }
