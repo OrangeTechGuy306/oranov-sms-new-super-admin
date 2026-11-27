@@ -344,7 +344,14 @@ export function resolveCanonicalEntitlement(
   let isTrialing = false;
   if (context.subscription) {
     const subStatus = String(context.subscription.status || "").toLowerCase();
-    if (subStatus === "expired" || subStatus === "canceled" || subStatus === "cancelled") {
+    if (
+      subStatus === "expired" ||
+      subStatus === "canceled" ||
+      subStatus === "cancelled" ||
+      subStatus === "suspended" ||
+      subStatus === "pending_payment" ||
+      subStatus === "draft"
+    ) {
       return {
         allowed: false,
         targetType,
@@ -354,7 +361,7 @@ export function resolveCanonicalEntitlement(
         effectiveStatus: "unavailable",
         implementationMaturity: maturity,
         reasonCode: "SUBSCRIPTION_INACTIVE",
-        explanation: `Subscription is "${context.subscription.status}". Renew plan to restore module access.`,
+        explanation: `Subscription is "${context.subscription.status}". Activate or renew plan to restore module access.`,
         source: "restricted",
         requiresUpgrade: true,
         requiresAddon: false,

@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import { X, CheckCircle2, AlertTriangle } from 'lucide-react';
 import {
   GovernanceRetentionPolicy,
   RetentionPolicyStatus,
 } from '@/lib/types/data-governance';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 
 interface ReviewRetentionPolicyModalProps {
   policy: GovernanceRetentionPolicy | null;
@@ -23,6 +24,9 @@ export function ReviewRetentionPolicyModal({
   onClose,
   onSubmitReview,
 }: ReviewRetentionPolicyModalProps) {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogA11y(Boolean(policy), onClose, dialogRef);
   const [status, setStatus] = useState<RetentionPolicyStatus>(
     policy?.status === 'awaiting_review' ? 'approved_demo' : (policy?.status || 'active_config')
   );
@@ -50,23 +54,33 @@ export function ReviewRetentionPolicyModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-      <div className="relative w-full max-w-lg rounded-xl border border-border bg-card p-6 shadow-xl">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs overscroll-contain"
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="relative w-full max-w-lg rounded-xl border border-border bg-card p-6 shadow-xl focus:outline-none"
+      >
         <div className="flex items-start justify-between border-b border-border pb-3">
           <div>
             <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400">
               {policy.code}
             </span>
-            <h2 className="text-base font-bold text-foreground">
+            <h2 id={titleId} className="text-base font-bold text-foreground">
               Simulate Retention Policy Review
             </h2>
           </div>
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close retention policy review dialog"
             className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
 

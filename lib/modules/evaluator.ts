@@ -281,7 +281,14 @@ export function evaluateModuleEntitlement(
   let isTrialing = false;
   if (subscription) {
     const subStatus = String(subscription.status || "").toLowerCase();
-    if (subStatus === "expired" || subStatus === "canceled") {
+    if (
+      subStatus === "expired" ||
+      subStatus === "canceled" ||
+      subStatus === "cancelled" ||
+      subStatus === "suspended" ||
+      subStatus === "pending_payment" ||
+      subStatus === "draft"
+    ) {
       return {
         moduleId,
         moduleName: targetModule.name,
@@ -300,7 +307,7 @@ export function evaluateModuleEntitlement(
         dependenciesSatisfied: false,
         unsatisfiedDependencies: [],
         effectiveStatus: "unavailable",
-        reason: `Tenant subscription status is "${subscription.status}". Module access is unavailable until renewed.`,
+        reason: `Tenant subscription status is "${subscription.status}". Module access is unavailable until activated or renewed.`,
         recommendedPlanIds,
         requiresUpgrade: true,
         requiresAddon: false,

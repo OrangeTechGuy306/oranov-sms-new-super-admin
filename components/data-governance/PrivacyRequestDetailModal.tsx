@@ -1,12 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { useId, useRef } from 'react';
 import {
   X,
   FileCode,
 } from 'lucide-react';
 import { PrivacyRequestRecord } from '@/lib/types/data-governance';
 import { isOverdue } from '@/lib/data-governance/evaluator';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 
 interface PrivacyRequestDetailModalProps {
   request: PrivacyRequestRecord | null;
@@ -21,6 +22,10 @@ export function PrivacyRequestDetailModal({
   onAdvanceStatus,
   onSimulateProcessing,
 }: PrivacyRequestDetailModalProps) {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogA11y(Boolean(request), onClose, dialogRef);
+
   if (!request) return null;
 
   const overdue = isOverdue(request.dueAt);
@@ -47,8 +52,17 @@ export function PrivacyRequestDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card p-6 shadow-xl">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs overscroll-contain"
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card p-6 shadow-xl focus:outline-none"
+      >
         <div className="flex items-start justify-between border-b border-border pb-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
@@ -66,16 +80,17 @@ export function PrivacyRequestDetailModal({
                 {request.priority} Priority
               </span>
             </div>
-            <h2 className="text-lg font-bold text-foreground capitalize">
+            <h2 id={titleId} className="text-lg font-bold text-foreground capitalize">
               {request.category.replace(/_/g, ' ')} Request
             </h2>
           </div>
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close privacy request details"
             className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
 

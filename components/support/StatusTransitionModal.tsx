@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
 import { SupportTicket, SupportTicketStatus } from '@/lib/types/support-desk';
 import { getValidTicketTransitions } from '@/lib/support/evaluator';
 import { X, CheckCircle, AlertCircle, ArrowRight } from 'lucide-react';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 
 interface StatusTransitionModalProps {
   isOpen: boolean;
@@ -14,6 +15,9 @@ interface StatusTransitionModalProps {
 
 export function StatusTransitionModal({ isOpen, onClose, ticket }: StatusTransitionModalProps) {
   const { transitionSupportTicketStatus } = usePlatformStore();
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogA11y(isOpen, onClose, dialogRef);
   const allowedTransitions = getValidTicketTransitions(ticket.status);
 
   const [selectedStatus, setSelectedStatus] = useState<SupportTicketStatus | ''>(
@@ -50,12 +54,21 @@ export function StatusTransitionModal({ isOpen, onClose, ticket }: StatusTransit
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs overscroll-contain"
+    >
       <div className="fixed inset-0" onClick={onClose} aria-hidden="true" />
-      <div className="relative w-full max-w-lg rounded-xl border border-border bg-card shadow-2xl p-6 z-10 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="relative w-full max-w-lg rounded-xl border border-border bg-card shadow-2xl p-6 z-10 space-y-4 animate-in fade-in zoom-in-95 duration-150 focus:outline-none"
+      >
         <div className="flex items-center justify-between pb-3 border-b border-border">
           <div>
-            <h3 className="text-base font-semibold text-foreground">
+            <h3 id={titleId} className="text-base font-semibold text-foreground">
               Transition Ticket Status: {ticket.ticketNumber}
             </h3>
             <p className="text-xs text-muted-foreground">
@@ -65,9 +78,10 @@ export function StatusTransitionModal({ isOpen, onClose, ticket }: StatusTransit
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close ticket status transition dialog"
             className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted"
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
 

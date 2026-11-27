@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useId, useMemo, useRef, useState } from 'react';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 import {
   CustomerSuccessAccountSummary,
   CustomerSuccessTask,
@@ -71,6 +72,20 @@ export function CustomerSuccessAccountsPanel({
   // Create Ticket Modal state
   const [isCreateTicketOpen, setIsCreateTicketOpen] = useState(false);
   const [ticketOrgId, setTicketOrgId] = useState<string>('');
+  const drawerTitleId = useId();
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const taskModalTitleId = useId();
+  const taskModalRef = useRef<HTMLDivElement>(null);
+  useDialogA11y(
+    Boolean(selectedAccount) && !isCreateTicketOpen && !isTaskModalOpen,
+    () => setSelectedAccount(null),
+    drawerRef
+  );
+  useDialogA11y(
+    Boolean(isTaskModalOpen && selectedAccount),
+    () => setIsTaskModalOpen(false),
+    taskModalRef
+  );
 
   // Compute all account summaries
   const accountSummaries = useMemo(() => {
@@ -381,14 +396,23 @@ export function CustomerSuccessAccountsPanel({
 
       {/* Account Detail & Health Score Breakdown Drawer */}
       {selectedAccount && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-xl h-full border-l border-border bg-card shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-300">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={drawerTitleId}
+          className="fixed inset-0 z-50 flex justify-end bg-background/80 backdrop-blur-sm animate-in fade-in duration-200 overscroll-contain"
+        >
+          <div
+            ref={drawerRef}
+            tabIndex={-1}
+            className="w-full max-w-xl h-full border-l border-border bg-card shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-300 focus:outline-none"
+          >
             {/* Drawer Header */}
             <div className="p-4 border-b border-border flex items-start justify-between gap-3 bg-muted/20">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <Building2 className="w-4 h-4 text-primary" />
-                  <h3 className="font-bold text-sm text-foreground">{selectedAccount.organizationName}</h3>
+                  <Building2 className="w-4 h-4 text-primary" aria-hidden="true" />
+                  <h3 id={drawerTitleId} className="font-bold text-sm text-foreground">{selectedAccount.organizationName}</h3>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span className="font-mono bg-muted px-1.5 py-0.5 rounded text-[11px]">
@@ -400,10 +424,12 @@ export function CustomerSuccessAccountsPanel({
               </div>
 
               <button
+                type="button"
+                aria-label="Close customer account details drawer"
                 onClick={() => setSelectedAccount(null)}
                 className="p-1.5 rounded-lg border border-border hover:bg-muted text-muted-foreground hover:text-foreground"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
 
@@ -512,11 +538,25 @@ export function CustomerSuccessAccountsPanel({
 
       {/* Schedule Follow-up Task Modal */}
       {isTaskModalOpen && selectedAccount && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-2xl space-y-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm overscroll-contain"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsTaskModalOpen(false);
+          }}
+        >
+          <div
+            ref={taskModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={taskModalTitleId}
+            tabIndex={-1}
+            className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-2xl space-y-4 focus:outline-none"
+          >
             <div className="flex items-center justify-between pb-2 border-b border-border">
-              <h3 className="text-sm font-bold text-foreground">Schedule Customer Success Task</h3>
+              <h3 id={taskModalTitleId} className="text-sm font-bold text-foreground">Schedule Customer Success Task</h3>
               <button
+                type="button"
+                aria-label="Close schedule follow-up task modal"
                 onClick={() => setIsTaskModalOpen(false)}
                 className="text-muted-foreground hover:text-foreground text-xs"
               >

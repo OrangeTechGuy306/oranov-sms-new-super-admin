@@ -55,11 +55,17 @@ export default function PlatformSubscriptionsPage() {
   const pastDueCount = subscriptions.filter((s) => s.status === 'past_due').length;
   const failedPaymentsCount = payments.filter((p) => p.status === 'failed').length;
 
-  const totalOutstandingBalance = useMemo(() => {
-    return invoices.reduce((acc, inv) => {
+  const outstandingByCurrency = useMemo(() => {
+    const totals: Record<string, number> = {};
+    invoices.forEach((inv) => {
+      if (inv.status === 'void' || inv.status === 'uncollectible') return;
       const balance = Math.max(0, inv.amountDue - (inv.amountPaid || 0));
-      return acc + balance;
-    }, 0);
+      if (balance > 0) {
+        const curr = inv.currency || 'USD';
+        totals[curr] = (totals[curr] || 0) + balance;
+      }
+    });
+    return totals;
   }, [invoices]);
 
   // Filtered subscriptions
@@ -327,7 +333,13 @@ export default function PlatformSubscriptionsPage() {
         <StatCard
           title="Past Due Accounts"
           value={pastDueCount}
-          subtitle={totalOutstandingBalance > 0 ? `Unsettled: ${formatCurrency(totalOutstandingBalance, 'USD')}` : 'All accounts settled'}
+          subtitle={
+            Object.keys(outstandingByCurrency).length > 0
+              ? `Unsettled: ${Object.entries(outstandingByCurrency)
+                  .map(([curr, amt]) => formatCurrency(amt, curr))
+                  .join(' • ')}`
+              : 'All accounts settled'
+          }
           icon={<AlertTriangle className="w-5 h-5 text-amber-500" />}
         />
         <StatCard

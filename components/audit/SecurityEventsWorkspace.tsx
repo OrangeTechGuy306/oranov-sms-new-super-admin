@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { SecurityEvent, SecurityTriageStatus } from '@/lib/types/compliance';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { formatDate } from '@/lib/utils/formatters';
 import {
   Filter,
@@ -27,6 +28,8 @@ export function SecurityEventsWorkspace({
   events,
   onUpdateTriage,
 }: SecurityEventsWorkspaceProps) {
+  const { user, can } = usePlatformAuth();
+  const canManageGovernance = can('audit.governance.manage');
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [severityFilter, setSeverityFilter] = useState('all');
@@ -36,7 +39,6 @@ export function SecurityEventsWorkspace({
   const [triageEvent, setTriageEvent] = useState<SecurityEvent | null>(null);
   const [targetStatus, setTargetStatus] = useState<SecurityTriageStatus>('acknowledged');
   const [triageNotes, setTriageNotes] = useState('');
-  const [reviewerName, setReviewerName] = useState('Alexander Sterling (Super Admin)');
   const [triageError, setTriageError] = useState<string | null>(null);
 
   const filteredSecurityEvents = useMemo(() => {
@@ -66,8 +68,8 @@ export function SecurityEventsWorkspace({
   };
 
   const handleSaveTriage = () => {
-    if (!triageEvent) return;
-    const res = onUpdateTriage(triageEvent.id, targetStatus, triageNotes, reviewerName);
+    if (!triageEvent || !canManageGovernance) return;
+    const res = onUpdateTriage(triageEvent.id, targetStatus, triageNotes, user?.name);
     if (!res.success) {
       setTriageError(res.error || 'Failed to update triage status');
       return;
@@ -131,6 +133,7 @@ export function SecurityEventsWorkspace({
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <Filter className="w-4 h-4 text-muted-foreground" />
           <select
+            aria-label="Filter security events by category"
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
             className="rounded-lg border border-border bg-muted px-2.5 py-1 text-foreground focus:outline-none"
@@ -145,6 +148,7 @@ export function SecurityEventsWorkspace({
           </select>
 
           <select
+            aria-label="Filter security events by severity"
             value={severityFilter}
             onChange={(e) => setSeverityFilter(e.target.value)}
             className="rounded-lg border border-border bg-muted px-2.5 py-1 text-foreground focus:outline-none"
@@ -158,6 +162,7 @@ export function SecurityEventsWorkspace({
           </select>
 
           <select
+            aria-label="Filter security events by triage status"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             className="rounded-lg border border-border bg-muted px-2.5 py-1 text-foreground focus:outline-none"
@@ -174,6 +179,7 @@ export function SecurityEventsWorkspace({
         <div className="flex items-center gap-2">
           <input
             type="text"
+            aria-label="Search security incidents"
             placeholder="Search security incidents..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -213,14 +219,16 @@ export function SecurityEventsWorkspace({
                   <Badge variant={getStatusBadgeVariant(evt.triageStatus)} size="sm">
                     {evt.triageStatus.replace(/_/g, ' ').toUpperCase()}
                   </Badge>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenTriage(evt)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary text-primary-foreground font-semibold text-xs rounded-lg hover:bg-primary/90 transition-colors shadow-2xs"
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>Triage</span>
-                  </button>
+                  {canManageGovernance && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenTriage(evt)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary text-primary-foreground font-semibold text-xs rounded-lg hover:bg-primary/90 transition-colors shadow-2xs"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>Triage</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -296,16 +304,17 @@ export function SecurityEventsWorkspace({
             </div>
 
             {triageError && (
-              <div className="p-2.5 rounded-lg bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 text-xs">
+              <div role="alert" className="p-2.5 rounded-lg bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 text-xs">
                 {triageError}
               </div>
             )}
 
             <div className="space-y-1.5">
-              <label className="font-bold text-foreground block">
+              <label htmlFor="triage-status-select" className="font-bold text-foreground block">
                 Triage Status Decision *
               </label>
               <select
+                id="triage-status-select"
                 value={targetStatus}
                 onChange={(e) => setTargetStatus(e.target.value as SecurityTriageStatus)}
                 className="w-full rounded-lg border border-border bg-card p-2 text-xs text-foreground focus:outline-none"
@@ -319,22 +328,20 @@ export function SecurityEventsWorkspace({
             </div>
 
             <div className="space-y-1.5">
-              <label className="font-bold text-foreground block">
-                Reviewer Operator Identity
-              </label>
-              <input
-                type="text"
-                value={reviewerName}
-                onChange={(e) => setReviewerName(e.target.value)}
-                className="w-full rounded-lg border border-border bg-card p-2 text-xs text-foreground focus:outline-none"
-              />
+              <span className="font-bold text-foreground block">
+                Authenticated Reviewing Operator
+              </span>
+              <div className="w-full rounded-lg border border-border bg-muted/50 px-3 py-2 text-xs text-foreground font-medium">
+                {user ? `${user.name} (${user.role})` : 'Unauthenticated'}
+              </div>
             </div>
 
             <div className="space-y-1.5">
-              <label className="font-bold text-foreground block">
+              <label htmlFor="triage-notes-input" className="font-bold text-foreground block">
                 Triage Notes & Remediation Evidence *
               </label>
               <textarea
+                id="triage-notes-input"
                 value={triageNotes}
                 onChange={(e) => setTriageNotes(e.target.value)}
                 placeholder="Document ticket references, firewall adjustment confirmations, or verification evidence..."

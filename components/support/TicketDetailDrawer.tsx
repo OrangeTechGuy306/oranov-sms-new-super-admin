@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
 import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { SupportTicket } from '@/lib/types/support-desk';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 import { computeTicketNeutralAgeSummary } from '@/lib/operations/canonical-operations';
 import { formatMinutesDuration } from '@/lib/support/evaluator';
 import { StatusTransitionModal } from './StatusTransitionModal';
@@ -61,6 +62,10 @@ export function TicketDetailDrawer({ isOpen, onClose, ticketId }: TicketDetailDr
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [isEscalateModalOpen, setIsEscalateModalOpen] = useState(false);
+  const titleId = useId();
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const hasNestedModalOpen = isStatusModalOpen || isAssignModalOpen || isEscalateModalOpen;
+  useDialogA11y(isOpen && Boolean(ticketId) && !hasNestedModalOpen, onClose, drawerRef);
 
   if (!isOpen || !ticketId) return null;
 
@@ -109,15 +114,24 @@ export function TicketDetailDrawer({ isOpen, onClose, ticketId }: TicketDetailDr
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-background/80 backdrop-blur-xs flex justify-end">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="fixed inset-0 z-40 bg-background/80 backdrop-blur-xs flex justify-end overscroll-contain"
+      >
         <div className="fixed inset-0" onClick={onClose} aria-hidden="true" />
-        <div className="relative w-full max-w-2xl bg-card border-l border-border h-full flex flex-col shadow-2xl z-50 animate-in slide-in-from-right duration-200">
+        <div
+          ref={drawerRef}
+          tabIndex={-1}
+          className="relative w-full max-w-2xl bg-card border-l border-border h-full flex flex-col shadow-2xl z-50 animate-in slide-in-from-right duration-200 focus:outline-none"
+        >
           {/* Header */}
           <div className="p-5 border-b border-border shrink-0 space-y-3 bg-muted/20">
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-muted text-foreground border border-border">
+                  <span id={titleId} className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-muted text-foreground border border-border">
                     {ticket.ticketNumber}
                   </span>
                   <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${priorityColor}`}>

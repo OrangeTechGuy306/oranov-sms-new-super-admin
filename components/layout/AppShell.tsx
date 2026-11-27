@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
@@ -21,6 +21,31 @@ function AppShellInner({ children }: AppShellInnerProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showSandboxBanner, setShowSandboxBanner] = useState(true);
+  const mobileDrawerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const prevFocused = document.activeElement as HTMLElement | null;
+    const timer = setTimeout(() => {
+      const firstFocusable = mobileDrawerRef.current?.querySelector<HTMLElement>(
+        'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      firstFocusable?.focus();
+    }, 20);
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMobileMenuOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('keydown', handleEscape);
+      if (prevFocused && document.contains(prevFocused) && typeof prevFocused.focus === 'function') {
+        prevFocused.focus();
+      }
+    };
+  }, [mobileMenuOpen]);
 
   // Authentication pages (/login, /forgot-password, /reset-password, /accept-invitation, /2fa, /403)
   // render cleanly without protected Sidebar or TopBar chrome.
@@ -43,6 +68,13 @@ function AppShellInner({ children }: AppShellInnerProps) {
   return (
     <PlatformProtectedRoute>
       <div className="min-h-screen flex bg-background text-foreground">
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-primary focus:text-primary-foreground focus:text-xs focus:font-semibold focus:shadow-lg"
+        >
+          Skip to main content
+        </a>
+
         {/* Desktop Sidebar */}
         <div className="hidden md:block">
           <React.Suspense fallback={<aside className="w-64 h-screen bg-sidebar border-r border-sidebar-border" />}>
@@ -55,8 +87,16 @@ function AppShellInner({ children }: AppShellInnerProps) {
 
         {/* Mobile Sidebar Overlay Drawer */}
         {mobileMenuOpen && (
-          <div className="fixed inset-0 z-50 md:hidden flex">
+          <div
+            id="platform-mobile-navigation"
+            ref={mobileDrawerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Platform navigation"
+            className="fixed inset-0 z-50 md:hidden flex overscroll-contain"
+          >
             <div
+              aria-hidden="true"
               className="fixed inset-0 bg-black/60 backdrop-blur-xs"
               onClick={() => setMobileMenuOpen(false)}
             />
@@ -98,11 +138,18 @@ function AppShellInner({ children }: AppShellInnerProps) {
 
           {/* TopBar Header */}
           <React.Suspense fallback={<header className="h-16 border-b border-border bg-background" />}>
-            <TopBar onOpenMobileMenu={() => setMobileMenuOpen(true)} />
+            <TopBar
+              onOpenMobileMenu={() => setMobileMenuOpen(true)}
+              mobileMenuOpen={mobileMenuOpen}
+            />
           </React.Suspense>
 
           {/* Page Content */}
-          <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto space-y-6">
+          <main
+            id="main-content"
+            tabIndex={-1}
+            className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto space-y-6 focus:outline-none"
+          >
             <React.Suspense fallback={<div className="p-8 text-center text-muted-foreground text-sm">Loading workspace...</div>}>
               {children}
             </React.Suspense>

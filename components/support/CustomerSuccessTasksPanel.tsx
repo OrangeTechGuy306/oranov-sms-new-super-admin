@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useId, useMemo, useRef, useState } from 'react';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 import {
   CustomerSuccessTask,
   SupportTicketPriority,
@@ -31,6 +33,13 @@ interface CustomerSuccessTasksPanelProps {
 }
 
 export function CustomerSuccessTasksPanel({ currentActorId }: CustomerSuccessTasksPanelProps) {
+  const { can } = usePlatformAuth();
+  const canManageTasks = can('operations.tasks.manage');
+  const createTitleId = useId();
+  const completeTitleId = useId();
+  const createModalRef = useRef<HTMLDivElement>(null);
+  const completeModalRef = useRef<HTMLDivElement>(null);
+
   const {
     csTasks,
     organizations,
@@ -425,11 +434,22 @@ export function CustomerSuccessTasksPanel({ currentActorId }: CustomerSuccessTas
 
       {/* Create Task Modal */}
       {isCreateOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-2xl space-y-4">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={createTitleId}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200 overscroll-contain"
+        >
+          <div
+            ref={createModalRef}
+            tabIndex={-1}
+            className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-2xl space-y-4 focus:outline-none"
+          >
             <div className="flex items-center justify-between pb-2 border-b border-border">
-              <h3 className="text-sm font-bold text-foreground">Create Customer Success Task</h3>
+              <h3 id={createTitleId} className="text-sm font-bold text-foreground">Create Customer Success Task</h3>
               <button
+                type="button"
+                aria-label="Close create task dialog"
                 onClick={() => setIsCreateOpen(false)}
                 className="text-muted-foreground hover:text-foreground text-xs"
               >
@@ -534,7 +554,8 @@ export function CustomerSuccessTasksPanel({ currentActorId }: CustomerSuccessTas
                 </button>
                 <button
                   type="submit"
-                  className="px-3.5 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90"
+                  disabled={!canManageTasks}
+                  className="px-3.5 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90 disabled:opacity-50"
                 >
                   Create Task
                 </button>
@@ -546,11 +567,22 @@ export function CustomerSuccessTasksPanel({ currentActorId }: CustomerSuccessTas
 
       {/* Complete Task Modal */}
       {completeModalTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-2xl space-y-4">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={completeTitleId}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200 overscroll-contain"
+        >
+          <div
+            ref={completeModalRef}
+            tabIndex={-1}
+            className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-2xl space-y-4 focus:outline-none"
+          >
             <div className="flex items-center justify-between pb-2 border-b border-border">
-              <h3 className="text-sm font-bold text-foreground">Record Task Completion</h3>
+              <h3 id={completeTitleId} className="text-sm font-bold text-foreground">Record Task Completion</h3>
               <button
+                type="button"
+                aria-label="Close task completion dialog"
                 onClick={() => setCompleteModalTask(null)}
                 className="text-muted-foreground hover:text-foreground text-xs"
               >

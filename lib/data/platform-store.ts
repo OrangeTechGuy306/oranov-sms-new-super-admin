@@ -1446,7 +1446,7 @@ export class PlatformStore {
   }
 
 
-  public updateOrganizationPlan(id: string, planId: string, billingCycle?: 'monthly' | 'annual'): { success: boolean; error?: string } {
+  public updateOrganizationPlan(id: string, planId: string, billingCycle?: 'monthly' | 'quarterly' | 'annual'): { success: boolean; error?: string } {
     const org = this.organizations.find((o) => o.id === id);
     if (!org) return { success: false, error: 'Organization not found.' };
 
@@ -4970,8 +4970,9 @@ export class PlatformStore {
 
   public applyRolloutPlan(
     input: RolloutPlanInput,
-    actorName = 'Alexander Sterling'
+    actorOrName: string | Partial<AuditActor> = 'Alexander Sterling'
   ): { success: boolean; summary?: RolloutPreviewSummary; error?: string } {
+    const actor = this.resolveAuditActor(actorOrName);
     const validation = validateRolloutPlan(input, this.featureFlags, this.organizations);
     if (!validation.isValid) {
       return { success: false, error: validation.errors[0] };
@@ -4999,10 +5000,10 @@ export class PlatformStore {
       id: `ver_roll_${Date.now().toString(36)}`,
       timestamp: new Date().toISOString(),
       actor: {
-        id: 'usr_super_01',
-        name: actorName,
-        email: 'alexander.s@saas-platform.internal',
-        role: 'super_admin',
+        id: actor.id,
+        name: actor.name,
+        email: actor.email,
+        role: actor.role,
       },
       entityType: 'FeatureFlag',
       entityId: flag.key,
@@ -5023,13 +5024,7 @@ export class PlatformStore {
       category: 'feature_toggles',
       action: 'ROLLOUT_PLAN_APPLIED',
       severity: 'info',
-      actor: {
-        id: 'usr_super_01',
-        name: actorName,
-        email: 'alexander.s@saas-platform.internal',
-        role: 'super_admin',
-        actorType: 'super_admin',
-      },
+      actor,
       targetEntity: 'FeatureFlag',
       targetId: flag.key,
       targetName: flag.name,
@@ -5049,12 +5044,24 @@ export class PlatformStore {
   }
 
   public createChangeProposal(
-    input: Partial<ConfigurationChangeProposal>
+    input: Partial<ConfigurationChangeProposal>,
+    actorOrName?: string | Partial<AuditActor>
   ): { success: boolean; proposal?: ConfigurationChangeProposal; error?: string } {
     const validation = validateChangeProposal(input);
     if (!validation.isValid) {
       return { success: false, error: validation.errors[0] };
     }
+
+    const resolvedActor = this.resolveAuditActor(
+      actorOrName || (input.author ? { id: input.author.id, name: input.author.name, role: input.author.role as PlatformRoleKey } : 'Alexander Sterling')
+    );
+    const authorRecord = actorOrName
+      ? { id: resolvedActor.id, name: resolvedActor.name, role: resolvedActor.role }
+      : input.author || {
+          id: resolvedActor.id,
+          name: resolvedActor.name,
+          role: resolvedActor.role,
+        };
 
     const now = new Date().toISOString();
     const proposal: ConfigurationChangeProposal = {
@@ -5066,11 +5073,7 @@ export class PlatformStore {
       targetEntity: input.targetEntity || 'PlatformSettings',
       targetId: input.targetId || 'global_settings',
       status: input.status || 'draft',
-      author: input.author || {
-        id: 'usr_super_01',
-        name: 'Alexander Sterling',
-        role: 'super_admin',
-      },
+      author: authorRecord,
       diff: input.diff || [],
       createdAt: now,
       updatedAt: now,
@@ -5087,9 +5090,9 @@ export class PlatformStore {
       actor: {
         id: proposal.author.id,
         name: proposal.author.name,
-        email: 'alexander.s@saas-platform.internal',
+        email: resolvedActor.email,
         role: proposal.author.role,
-        actorType: 'super_admin',
+        actorType: resolvedActor.actorType,
       },
       targetEntity: 'ConfigurationChangeProposal',
       targetId: proposal.id,
@@ -5109,20 +5112,41 @@ export class PlatformStore {
     proposalId: string,
     targetStatus: ProposalStatus,
     reviewerNotes?: string,
-    actorName = 'Alexander Sterling'
+    actorOrName: string | Partial<AuditActor> = 'Alexander Sterling'
   ): { success: boolean; proposal?: ConfigurationChangeProposal; error?: string } {
     const prop = this.changeProposals.find((p) => p.id === proposalId);
     if (!prop) return { success: false, error: `Proposal "${proposalId}" not found.` };
 
+    const reviewerActor = this.resolveAuditActor(actorOrName);
     const previousStatus = prop.status;
+
+    if (targetStatus === 'approved') {
+      if (previousStatus === 'rejected' || previousStatus === 'applied_locally') {
+        return { success: false, error: `Cannot approve proposal in "${previousStatus}" status.` };
+      }
+      const isSameAuthor =
+        (Boolean(prop.author.id) && Boolean(reviewerActor.id) && prop.author.id === reviewerActor.id) ||
+        prop.author.name.trim().toLowerCase() === reviewerActor.name.trim().toLowerCase();
+      if (isSameAuthor) {
+        return {
+          success: false,
+          error: 'Self-approval is prohibited by dual-control governance policy. Another authorized administrator must approve this proposal.',
+        };
+      }
+    }
+
+    if (targetStatus === 'applied_locally' && previousStatus !== 'approved') {
+      return { success: false, error: 'Only approved configuration proposals can be applied.' };
+    }
+
     prop.status = targetStatus;
     prop.updatedAt = new Date().toISOString();
 
     if (reviewerNotes || targetStatus === 'approved' || targetStatus === 'rejected') {
       prop.reviewer = {
-        id: 'usr_super_01',
-        name: actorName,
-        role: 'super_admin',
+        id: reviewerActor.id,
+        name: reviewerActor.name,
+        role: reviewerActor.role,
         notes: reviewerNotes,
         reviewedAt: new Date().toISOString(),
       };
@@ -5148,7 +5172,7 @@ export class PlatformStore {
             flagKey: String(flagKeyDiff.proposedValue),
             overrideValue: Boolean(valDiff.proposedValue),
             reason: prop.reason,
-            actorName,
+            actorName: reviewerActor.name,
           });
         }
       }
@@ -5160,13 +5184,7 @@ export class PlatformStore {
       category: 'system_configuration',
       action: 'CONFIG_PROPOSAL_STATUS_CHANGED',
       severity: targetStatus === 'rejected' ? 'warning' : 'info',
-      actor: {
-        id: 'usr_super_01',
-        name: actorName,
-        email: 'alexander.s@saas-platform.internal',
-        role: 'super_admin',
-        actorType: 'super_admin',
-      },
+      actor: reviewerActor,
       targetEntity: 'ConfigurationChangeProposal',
       targetId: prop.id,
       targetName: prop.title,
@@ -5187,10 +5205,11 @@ export class PlatformStore {
 
   public restoreConfigVersion(
     versionId: string,
-    actorName = 'Alexander Sterling'
+    actorOrName: string | Partial<AuditActor> = 'Alexander Sterling'
   ): { success: boolean; error?: string } {
     const version = this.configVersions.find((v) => v.id === versionId);
     if (!version) return { success: false, error: `Version entry "${versionId}" not found.` };
+    const actor = this.resolveAuditActor(actorOrName);
 
     // Apply restore based on entity type
     if (version.entityType === 'FeatureFlag') {
@@ -5222,10 +5241,10 @@ export class PlatformStore {
       id: `ver_rst_${Date.now().toString(36)}`,
       timestamp: new Date().toISOString(),
       actor: {
-        id: 'usr_super_01',
-        name: actorName,
-        email: 'alexander.s@saas-platform.internal',
-        role: 'super_admin',
+        id: actor.id,
+        name: actor.name,
+        email: actor.email,
+        role: actor.role,
       },
       entityType: version.entityType,
       entityId: version.entityId,
@@ -5251,13 +5270,7 @@ export class PlatformStore {
       category: 'system_configuration',
       action: 'CONFIG_VERSION_RESTORED',
       severity: 'warning',
-      actor: {
-        id: 'usr_super_01',
-        name: actorName,
-        email: 'alexander.s@saas-platform.internal',
-        role: 'super_admin',
-        actorType: 'super_admin',
-      },
+      actor,
       targetEntity: version.entityType,
       targetId: version.entityId,
       targetName: version.entityName,
@@ -5273,20 +5286,23 @@ export class PlatformStore {
   }
 
   public exportConfiguration(
-    scope: 'all' | 'settings_only' | 'flags_only' | 'overrides_only' = 'all'
+    scope: 'all' | 'settings_only' | 'flags_only' | 'overrides_only' = 'all',
+    actorName?: string
   ): ConfigExportPackage {
     return exportConfigurationPackage({
       settings: this.extendedSettings,
       flags: this.featureFlags,
       overrides: this.tenantOverrides,
       scope,
+      exportedBy: actorName,
     });
   }
 
   public importConfiguration(
     pkg: ConfigExportPackage | string,
-    actorName = 'Alexander Sterling'
+    actorOrName: string | Partial<AuditActor> = 'Alexander Sterling'
   ): { success: boolean; result: ConfigImportValidationResult; error?: string } {
+    const actor = this.resolveAuditActor(actorOrName);
     const result = validateImportPackage(pkg, this.featureFlags);
     if (!result.isValid) {
       return { success: false, result, error: result.errors[0] };
@@ -5355,7 +5371,7 @@ export class PlatformStore {
             flagKey: ov.flagKey,
             overrideValue: ov.overrideValue ?? true,
             reason: ov.reason || 'Imported tenant override',
-            actor: ov.actor || actorName,
+            actor: ov.actor || actor.name,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           });
@@ -5369,13 +5385,7 @@ export class PlatformStore {
       category: 'system_configuration',
       action: 'CONFIG_PACKAGE_IMPORTED',
       severity: 'warning',
-      actor: {
-        id: 'usr_super_01',
-        name: actorName,
-        email: 'alexander.s@saas-platform.internal',
-        role: 'super_admin',
-        actorType: 'super_admin',
-      },
+      actor,
       targetEntity: 'ConfigurationPackage',
       targetId: 'config_import',
       status: 'succeeded',
@@ -8816,10 +8826,17 @@ export class PlatformStore {
             : 'platform_operator',
       };
     }
+    const normalizedSlug = nameStr
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_|_$/g, '');
     return {
-      id: 'usr_super_01',
+      id: normalizedSlug ? `usr_actor_${normalizedSlug}` : 'usr_super_01',
       name: nameStr,
-      email: 'alexander.s@saas-platform.internal',
+      email:
+        normalizedSlug === 'alexander_sterling'
+          ? 'alexander.s@saas-platform.internal'
+          : `${normalizedSlug || 'operator'}@saas-platform.internal`,
       role: 'super_admin',
       actorType: 'super_admin',
     };

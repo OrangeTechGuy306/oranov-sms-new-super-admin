@@ -54,37 +54,30 @@ export default function InvoicesLedgerPage() {
   // Print Invoice Modal State
   const [printInvoice, setPrintInvoice] = useState<Invoice | null>(null);
 
-  // Financial aggregates by currency
+  // Financial aggregates strictly isolated per currency
   const financialTotals = useMemo(() => {
-    let usdInvoiced = 0;
-    let usdPaid = 0;
-    let usdBalance = 0;
-    let gbpInvoiced = 0;
-    let gbpPaid = 0;
-    let gbpBalance = 0;
+    const byCurrency: Record<string, { invoiced: number; paid: number; balance: number }> = {};
 
     invoices.forEach((inv) => {
-      const bal = Math.max(0, inv.amountDue - (inv.amountPaid || 0));
-      if (inv.currency === 'GBP') {
-        gbpInvoiced += inv.amountDue;
-        gbpPaid += inv.amountPaid || 0;
-        gbpBalance += bal;
-      } else {
-        usdInvoiced += inv.amountDue;
-        usdPaid += inv.amountPaid || 0;
-        usdBalance += bal;
+      if (inv.status === 'void' || inv.status === 'uncollectible') return;
+      const curr = inv.currency || 'USD';
+      if (!byCurrency[curr]) {
+        byCurrency[curr] = { invoiced: 0, paid: 0, balance: 0 };
       }
+      const bal = Math.max(0, inv.amountDue - (inv.amountPaid || 0));
+      byCurrency[curr].invoiced += inv.amountDue;
+      byCurrency[curr].paid += inv.amountPaid || 0;
+      byCurrency[curr].balance += bal;
     });
 
     const overdueCount = invoices.filter((i) => i.status === 'overdue').length;
+    const currencies = Object.keys(byCurrency);
 
     return {
-      usdInvoiced,
-      usdPaid,
-      usdBalance,
-      gbpInvoiced,
-      gbpPaid,
-      gbpBalance,
+      byCurrency,
+      currencies,
+      usd: byCurrency['USD'] || { invoiced: 0, paid: 0, balance: 0 },
+      gbp: byCurrency['GBP'] || { invoiced: 0, paid: 0, balance: 0 },
       overdueCount,
     };
   }, [invoices]);
@@ -343,24 +336,24 @@ export default function InvoicesLedgerPage() {
       <SubscriptionNavTabs />
       <MonetizationSimulationBanner />
 
-      {/* Financial StatCards */}
+      {/* Financial StatCards (Currency-Isolated) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="USD Invoiced Volume"
-          value={formatCurrency(financialTotals.usdInvoiced, 'USD')}
-          subtitle={`Collected: ${formatCurrency(financialTotals.usdPaid, 'USD')}`}
+          value={formatCurrency(financialTotals.usd.invoiced, 'USD')}
+          subtitle={`Collected: ${formatCurrency(financialTotals.usd.paid, 'USD')}`}
           icon={<FileText className="w-5 h-5 text-primary" />}
         />
         <StatCard
           title="USD Receivables Balance"
-          value={formatCurrency(financialTotals.usdBalance, 'USD')}
+          value={formatCurrency(financialTotals.usd.balance, 'USD')}
           subtitle="Outstanding balances in USD"
           icon={<DollarSign className="w-5 h-5 text-amber-500" />}
         />
         <StatCard
           title="GBP Invoiced Volume"
-          value={formatCurrency(financialTotals.gbpInvoiced, 'GBP')}
-          subtitle={`Collected: ${formatCurrency(financialTotals.gbpPaid, 'GBP')}`}
+          value={formatCurrency(financialTotals.gbp.invoiced, 'GBP')}
+          subtitle={`Collected: ${formatCurrency(financialTotals.gbp.paid, 'GBP')} • Due: ${formatCurrency(financialTotals.gbp.balance, 'GBP')}`}
           icon={<FileText className="w-5 h-5 text-primary" />}
         />
         <StatCard
@@ -403,11 +396,15 @@ export default function InvoicesLedgerPage() {
             <select
               value={currencyFilter}
               onChange={(e) => setCurrencyFilter(e.target.value)}
+              aria-label="Filter by currency"
               className="px-2.5 py-1.5 bg-muted/50 border border-border rounded-lg text-foreground text-xs focus:outline-none"
             >
               <option value="all">All Currencies</option>
-              <option value="USD">USD ($)</option>
-              <option value="GBP">GBP (£)</option>
+              {financialTotals.currencies.map((curr) => (
+                <option key={curr} value={curr}>
+                  {curr}
+                </option>
+              ))}
             </select>
           </div>
         </div>

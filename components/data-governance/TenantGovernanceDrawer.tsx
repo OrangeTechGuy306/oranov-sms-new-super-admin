@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useId, useRef } from 'react';
 import Link from 'next/link';
 import {
   X,
@@ -9,6 +9,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { TenantGovernanceSummary } from '@/lib/types/data-governance';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 
 interface TenantGovernanceDrawerProps {
   tenant: TenantGovernanceSummary | null;
@@ -21,6 +22,10 @@ export function TenantGovernanceDrawer({
   onClose,
   onNavigateTab,
 }: TenantGovernanceDrawerProps) {
+  const titleId = useId();
+  const drawerRef = useRef<HTMLDivElement>(null);
+  useDialogA11y(Boolean(tenant), onClose, drawerRef);
+
   if (!tenant) return null;
 
   const getCompletenessBadge = (badge: string) => {
@@ -37,8 +42,17 @@ export function TenantGovernanceDrawer({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-xs">
-      <div className="relative w-full max-w-md h-full overflow-y-auto border-l border-border bg-card p-6 shadow-2xl flex flex-col justify-between">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-xs overscroll-contain"
+    >
+      <div
+        ref={drawerRef}
+        tabIndex={-1}
+        className="relative w-full max-w-md h-full overflow-y-auto border-l border-border bg-card p-6 shadow-2xl flex flex-col justify-between focus:outline-none"
+      >
         <div>
           <div className="flex items-start justify-between border-b border-border pb-4">
             <div className="space-y-1">
@@ -54,23 +68,24 @@ export function TenantGovernanceDrawer({
                   {tenant.governanceCompleteness.replace(/_/g, ' ')}
                 </span>
               </div>
-              <h2 className="text-base font-bold text-foreground">{tenant.tenantName}</h2>
+              <h2 id={titleId} className="text-base font-bold text-foreground">{tenant.tenantName}</h2>
               <div className="text-xs text-muted-foreground flex items-center justify-between gap-2 mt-0.5">
                 <span>Tier: <span className="font-semibold capitalize text-foreground">{tenant.tier}</span> • Code: <span className="font-mono">{tenant.tenantCode}</span></span>
                 <Link
                   href={`/organizations/${tenant.tenantId}`}
                   className="text-primary hover:underline text-[11px] font-medium flex items-center gap-1 shrink-0"
                 >
-                  View School <ExternalLink className="w-3 h-3" />
+                  View School <ExternalLink className="w-3 h-3" aria-hidden="true" />
                 </Link>
               </div>
             </div>
             <button
               type="button"
               onClick={onClose}
+              aria-label="Close tenant governance drawer"
               className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
             >
-              <X className="h-4 w-4" />
+              <X className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
 

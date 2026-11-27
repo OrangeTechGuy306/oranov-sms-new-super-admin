@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { validateImportCommunicationPackage } from '@/lib/communications/exporter';
 import { Download, Upload, ShieldCheck, AlertCircle, CheckCircle2, FileText, Copy, Check } from 'lucide-react';
 
@@ -14,17 +15,26 @@ interface CommunicationExportModalProps {
 
 export function CommunicationExportModal({ isOpen, onClose }: CommunicationExportModalProps) {
   const { exportCommunicationGovernancePackage, createCommunicationTemplate, createNotificationPolicy, addToast } = usePlatformStore();
+  const { user, can } = usePlatformAuth();
+  const canManageComms = can('communications.notices.manage');
 
   const [activeTab, setActiveTab] = useState<'export' | 'import'>('export');
   const [importJsonText, setImportJsonText] = useState('');
   const [copied, setCopied] = useState(false);
 
-  // Generate safe export package
-  const exportPackage = exportCommunicationGovernancePackage('Alexander Sterling');
-  const exportJsonString = JSON.stringify(exportPackage, null, 2);
+  // Generate safe export package only when modal is open to avoid side-effects during closed renders
+  const exportPackage = useMemo(
+    () => (isOpen ? exportCommunicationGovernancePackage(user?.name) : null),
+    [isOpen, exportCommunicationGovernancePackage, user?.name]
+  );
+  const exportJsonString = useMemo(
+    () => (exportPackage ? JSON.stringify(exportPackage, null, 2) : ''),
+    [exportPackage]
+  );
 
   // Download JSON Handler
   const handleDownload = () => {
+    if (!exportJsonString) return;
     const blob = new Blob([exportJsonString], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -33,10 +43,12 @@ export function CommunicationExportModal({ isOpen, onClose }: CommunicationExpor
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
     addToast({ type: 'success', title: 'Export Package Downloaded', message: 'Saved clean JSON package.' });
   };
 
   const handleCopy = () => {
+    if (!exportJsonString) return;
     navigator.clipboard.writeText(exportJsonString);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
@@ -62,24 +74,38 @@ export function CommunicationExportModal({ isOpen, onClose }: CommunicationExpor
   }
 
   const handleApplyImport = () => {
+    if (!canManageComms) {
+      addToast({ type: 'error', title: 'Authorization Required', message: 'Missing permission to import communication governance packages.' });
+      return;
+    }
     if (!importValidation || !importValidation.isValid) return;
 
     try {
       const parsed = JSON.parse(importJsonText);
+      let importedTemplates = 0;
+      let importedPolicies = 0;
       if (Array.isArray(parsed.templates)) {
-        parsed.templates.forEach((t: any) => {
-          createCommunicationTemplate(t, 'Imported via Super-Admin');
-        });
+        for (const t of parsed.templates) {
+          const res = createCommunicationTemplate(t, user?.name);
+          if (!res.success) {
+            throw new Error(res.error || 'Template import blocked by policy.');
+          }
+          importedTemplates += 1;
+        }
       }
       if (Array.isArray(parsed.policies)) {
-        parsed.policies.forEach((p: any) => {
-          createNotificationPolicy(p, 'Imported via Super-Admin');
-        });
+        for (const p of parsed.policies) {
+          const res = createNotificationPolicy(p, user?.name);
+          if (!res.success) {
+            throw new Error(res.error || 'Policy import blocked by policy.');
+          }
+          importedPolicies += 1;
+        }
       }
       addToast({
         type: 'success',
         title: 'Configuration Imported',
-        message: `Successfully imported ${importValidation.templatesToImport} templates and ${importValidation.policiesToImport} policies into local demo store.`,
+        message: `Successfully imported ${importedTemplates} templates and ${importedPolicies} policies into local demo store.`,
       });
       onClose();
     } catch (err: any) {
@@ -138,25 +164,25 @@ export function CommunicationExportModal({ isOpen, onClose }: CommunicationExpor
             <div className="grid grid-cols-4 gap-2 text-center text-xs">
               <div className="p-2 rounded bg-muted/30 border border-border">
                 <span className="font-bold text-foreground block font-mono text-sm">
-                  {exportPackage.summaryMetrics.totalTemplates}
+                  {exportPackage?.summaryMetrics.totalTemplates ?? 0}
                 </span>
                 <span className="text-[10.5px] text-muted-foreground">Templates</span>
               </div>
               <div className="p-2 rounded bg-muted/30 border border-border">
                 <span className="font-bold text-foreground block font-mono text-sm">
-                  {exportPackage.summaryMetrics.totalPolicies}
+                  {exportPackage?.summaryMetrics.totalPolicies ?? 0}
                 </span>
                 <span className="text-[10.5px] text-muted-foreground">Policies</span>
               </div>
               <div className="p-2 rounded bg-muted/30 border border-border">
                 <span className="font-bold text-foreground block font-mono text-sm">
-                  {exportPackage.summaryMetrics.totalProviders}
+                  {exportPackage?.summaryMetrics.totalProviders ?? 0}
                 </span>
                 <span className="text-[10.5px] text-muted-foreground">Providers</span>
               </div>
               <div className="p-2 rounded bg-muted/30 border border-border">
                 <span className="font-bold text-foreground block font-mono text-sm">
-                  {exportPackage.summaryMetrics.totalCampaigns}
+                  {exportPackage?.summaryMetrics.totalCampaigns ?? 0}
                 </span>
                 <span className="text-[10.5px] text-muted-foreground">Campaigns</span>
               </div>
@@ -166,7 +192,7 @@ export function CommunicationExportModal({ isOpen, onClose }: CommunicationExpor
             <div>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[11px] font-semibold text-muted-foreground">
-                  JSON Package Preview (v{exportPackage.formatVersion})
+                  JSON Package Preview (v{exportPackage?.formatVersion ?? '1.0.0'})
                 </span>
                 <button
                   type="button"

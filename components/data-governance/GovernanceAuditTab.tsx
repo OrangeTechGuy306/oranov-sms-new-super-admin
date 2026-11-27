@@ -1,22 +1,27 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import {
   Search,
   Shield,
   CheckCircle2,
 } from 'lucide-react';
 import { GovernanceAuditRecord } from '@/lib/types/data-governance';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 
 interface GovernanceAuditTabProps {
   auditLogs: GovernanceAuditRecord[];
 }
 
 export function GovernanceAuditTab({ auditLogs }: GovernanceAuditTabProps) {
+  const modalTitleId = useId();
+  const modalRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedAction, setSelectedAction] = useState<string>('all');
   const [selectedSeverity, setSelectedSeverity] = useState<string>('all');
   const [selectedLog, setSelectedLog] = useState<GovernanceAuditRecord | null>(null);
+
+  useDialogA11y(Boolean(selectedLog), () => setSelectedLog(null), modalRef);
 
   // Filter logs
   const filteredLogs = auditLogs.filter((l) => {
@@ -210,18 +215,28 @@ export function GovernanceAuditTab({ auditLogs }: GovernanceAuditTabProps) {
 
       {/* Detail Modal for Selected Event */}
       {selectedLog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-          <div className="relative w-full max-w-lg rounded-xl border border-border bg-card p-6 shadow-xl">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={modalTitleId}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs overscroll-contain"
+        >
+          <div
+            ref={modalRef}
+            tabIndex={-1}
+            className="relative w-full max-w-lg rounded-xl border border-border bg-card p-6 shadow-xl focus:outline-none"
+          >
             <div className="flex items-start justify-between border-b border-border pb-3">
               <div>
                 <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400">
                   {selectedLog.action}
                 </span>
-                <h2 className="text-base font-bold text-foreground">Governance Audit Event</h2>
+                <h2 id={modalTitleId} className="text-base font-bold text-foreground">Governance Audit Event</h2>
               </div>
               <button
                 type="button"
                 onClick={() => setSelectedLog(null)}
+                aria-label="Close governance audit event details"
                 className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
               >
                 ✕

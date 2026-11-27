@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import { X, AlertTriangle, ArrowRight } from 'lucide-react';
 import {
   PrivacyRequestRecord,
@@ -8,6 +8,7 @@ import {
   PrivacyResolutionCategory,
 } from '@/lib/types/data-governance';
 import { isValidPrivacyTransition } from '@/lib/data-governance/evaluator';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 
 interface UpdatePrivacyStatusModalProps {
   request: PrivacyRequestRecord | null;
@@ -25,6 +26,10 @@ export function UpdatePrivacyStatusModal({
   onClose,
   onUpdateStatus,
 }: UpdatePrivacyStatusModalProps) {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogA11y(Boolean(request), onClose, dialogRef);
+
   const [newStatus, setNewStatus] = useState<PrivacyWorkflowStatus>(() => {
     switch (request?.workflowStatus) {
       case 'received':
@@ -68,23 +73,33 @@ export function UpdatePrivacyStatusModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-      <div className="relative w-full max-w-lg rounded-xl border border-border bg-card p-6 shadow-xl">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs overscroll-contain"
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="relative w-full max-w-lg rounded-xl border border-border bg-card p-6 shadow-xl focus:outline-none"
+      >
         <div className="flex items-start justify-between border-b border-border pb-3">
           <div>
             <span className="font-mono text-xs font-bold text-sky-600 dark:text-sky-400">
               {request.code}
             </span>
-            <h2 className="text-base font-bold text-foreground">
+            <h2 id={titleId} className="text-base font-bold text-foreground">
               Advance Privacy Request Workflow
             </h2>
           </div>
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close privacy status update dialog"
             className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
 

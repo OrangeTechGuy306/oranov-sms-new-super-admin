@@ -9,6 +9,7 @@ import {
   Layers,
   Server,
 } from 'lucide-react';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { exportGovernancePackage } from '@/lib/data-governance/exporter';
 import {
   DataCategoryRecord,
@@ -28,7 +29,7 @@ interface GovernanceDocsTabProps {
   tenants: TenantGovernanceSummary[];
   exceptions: GovernanceExceptionRecord[];
   auditLogs: GovernanceAuditRecord[];
-  onResetDefaults: () => void;
+  onResetDefaults?: () => void;
   addToast?: (toast: { title: string; message?: string; type: 'info' | 'success' | 'warning' | 'error' }) => void;
 }
 
@@ -45,6 +46,7 @@ export function GovernanceDocsTab({
 }: GovernanceDocsTabProps) {
   const [activeSection, setActiveSection] = useState<'architecture' | 'regulations' | 'matrix' | 'readiness'>('architecture');
   const [isExporting, setIsExporting] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const handleExport = (format: 'json' | 'csv') => {
     setIsExporting(true);
@@ -119,16 +121,33 @@ export function GovernanceDocsTab({
             <Download className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
             Export Safe CSV
           </button>
-          <button
-            type="button"
-            onClick={onResetDefaults}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300 transition-colors"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            Reset Demo Baseline
-          </button>
+          {onResetDefaults && (
+            <button
+              type="button"
+              onClick={() => setShowResetConfirm(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300 transition-colors"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Reset Demo Baseline
+            </button>
+          )}
         </div>
       </div>
+
+      {onResetDefaults && (
+        <ConfirmDialog
+          isOpen={showResetConfirm}
+          onClose={() => setShowResetConfirm(false)}
+          onConfirm={() => {
+            onResetDefaults();
+            setShowResetConfirm(false);
+          }}
+          title="Reset Governance Demo Baseline"
+          variant="danger"
+          confirmLabel="Reset Baseline"
+          description="Restore default data governance policies, privacy requests, and lifecycle fixtures in this development browser store?"
+        />
+      )}
 
       {/* Segmented Documentation Navigation */}
       <div className="flex border-b border-border text-xs font-medium">

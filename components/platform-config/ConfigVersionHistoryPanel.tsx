@@ -2,6 +2,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
+import { Modal } from '@/components/ui/Modal';
 import {
   ConfigVersionEntry,
   ConfigExportPackage,
@@ -37,6 +39,8 @@ export function ConfigVersionHistoryPanel() {
     restoreConfigVersion,
     addToast
   } = usePlatformStore();
+  const { user, can } = usePlatformAuth();
+  const canModifyConfig = can('platform.settings.update') || can('system.features.toggle');
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -163,6 +167,7 @@ export function ConfigVersionHistoryPanel() {
 
   // Apply Import Confirmation
   const handleApplyImport = () => {
+    if (!canModifyConfig) return;
     if (!importValidationResult?.isValid) {
       addToast({
         type: 'error',
@@ -172,44 +177,23 @@ export function ConfigVersionHistoryPanel() {
       return;
     }
 
-    const res = importConfiguration(importJsonText, 'Super-Admin Lead (Current)');
+    const res = importConfiguration(importJsonText, user?.name);
     if (res.success) {
-      addToast({
-        type: 'success',
-        title: 'Configuration Imported (Local Store)',
-        message: `Imported ${res.result.createCount} created, ${res.result.updateCount} updated items.`
-      });
       setIsImportModalOpen(false);
       setImportJsonText('');
       setImportValidationResult(null);
-    } else {
-      addToast({
-        type: 'error',
-        title: 'Import Failed',
-        message: res.error
-      });
     }
   };
 
   // Restore action handler
   const handleRestore = (versionId: string) => {
-    const res = restoreConfigVersion(versionId, 'Super-Admin Lead (Current)');
+    if (!canModifyConfig) return;
+    const res = restoreConfigVersion(versionId, user?.name);
     if (res.success) {
-      addToast({
-        type: 'success',
-        title: 'Configuration Restored',
-        message: `Version ${versionId} restored to active demonstration state.`
-      });
       setRestoringVersionId(null);
       if (inspectingVersion?.id === versionId) {
         setInspectingVersion(null);
       }
-    } else {
-      addToast({
-        type: 'error',
-        title: 'Restore Failed',
-        message: res.error
-      });
     }
   };
 
@@ -294,14 +278,16 @@ export function ConfigVersionHistoryPanel() {
           </div>
 
           {/* Import Button */}
-          <button
-            type="button"
-            onClick={() => setIsImportModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-750 shadow-xs transition-colors"
-          >
-            <Upload className="w-3.5 h-3.5 text-slate-500" />
-            Import Package...
-          </button>
+          {canModifyConfig && (
+            <button
+              type="button"
+              onClick={() => setIsImportModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-750 shadow-xs transition-colors"
+            >
+              <Upload className="w-3.5 h-3.5 text-slate-500" />
+              Import Package...
+            </button>
+          )}
         </div>
       </div>
 
@@ -365,16 +351,16 @@ export function ConfigVersionHistoryPanel() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Configuration version history table">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 font-semibold border-b border-slate-200 dark:border-slate-800">
                 <tr>
-                  <th className="px-4 py-3">Timestamp & ID</th>
-                  <th className="px-4 py-3">Action</th>
-                  <th className="px-4 py-3">Target Entity</th>
-                  <th className="px-4 py-3">Operator</th>
-                  <th className="px-4 py-3">Reason / Context</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th scope="col" className="px-4 py-3">Timestamp & ID</th>
+                  <th scope="col" className="px-4 py-3">Action</th>
+                  <th scope="col" className="px-4 py-3">Target Entity</th>
+                  <th scope="col" className="px-4 py-3">Operator</th>
+                  <th scope="col" className="px-4 py-3">Reason / Context</th>
+                  <th scope="col" className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
@@ -435,7 +421,7 @@ export function ConfigVersionHistoryPanel() {
                           Diff
                         </button>
 
-                        {version.canRestore && (
+                        {canModifyConfig && version.canRestore && (
                           <button
                             type="button"
                             onClick={() => setRestoringVersionId(version.id)}
@@ -457,26 +443,14 @@ export function ConfigVersionHistoryPanel() {
 
       {/* Diff Inspection Modal */}
       {inspectingVersion && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-xl w-full shadow-2xl p-6 space-y-4">
-            <div className="flex items-start justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <div>
-                <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                  <History className="w-4 h-4 text-indigo-500" />
-                  Version Snapshot Diff
-                </h3>
-                <p className="text-xs text-slate-500 font-mono mt-0.5">
-                  ID: {inspectingVersion.id} • {new Date(inspectingVersion.timestamp).toLocaleString()}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setInspectingVersion(null)}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+        <Modal
+          isOpen={true}
+          onClose={() => setInspectingVersion(null)}
+          title="Version Snapshot Diff"
+          description={`ID: ${inspectingVersion.id} • ${new Date(inspectingVersion.timestamp).toLocaleString()}`}
+          size="lg"
+        >
+          <div className="space-y-4">
 
             <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg text-xs space-y-1.5">
               <div className="flex items-center justify-between">
@@ -508,9 +482,9 @@ export function ConfigVersionHistoryPanel() {
                 <table className="w-full text-left text-xs font-mono">
                   <thead className="bg-slate-50 dark:bg-slate-800 font-sans text-slate-600 dark:text-slate-300 font-semibold border-b border-slate-200 dark:border-slate-800">
                     <tr>
-                      <th className="px-3 py-2">Field</th>
-                      <th className="px-3 py-2">Before</th>
-                      <th className="px-3 py-2">After</th>
+                      <th scope="col" className="px-3 py-2">Field</th>
+                      <th scope="col" className="px-3 py-2">Before</th>
+                      <th scope="col" className="px-3 py-2">After</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-[11px]">
@@ -533,7 +507,7 @@ export function ConfigVersionHistoryPanel() {
             </div>
 
             <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-              {inspectingVersion.canRestore && (
+              {canModifyConfig && inspectingVersion.canRestore && (
                 <button
                   type="button"
                   onClick={() => {
@@ -554,30 +528,27 @@ export function ConfigVersionHistoryPanel() {
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Restore Confirmation Dialog */}
       {restoringVersionId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-md w-full shadow-2xl p-6 space-y-4">
+        <Modal
+          isOpen={true}
+          onClose={() => setRestoringVersionId(null)}
+          title="Confirm Snapshot Restoration"
+          description={`Target Version: ${restoringVersionId}`}
+          size="sm"
+        >
+          <div className="space-y-4">
             <div className="flex items-center gap-3">
               <div className="p-3 bg-amber-500/10 text-amber-500 rounded-xl">
                 <RotateCcw className="w-6 h-6" />
               </div>
-              <div>
-                <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-                  Confirm Snapshot Restoration
-                </h3>
-                <p className="text-xs text-slate-500 font-mono">
-                  Target Version: {restoringVersionId}
-                </p>
-              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                Restoring this snapshot will apply its prior field values to the active local demonstration store. An audit event and new restoration version record will be created.
+              </p>
             </div>
-
-            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-              Restoring this snapshot will apply its prior field values to the active local demonstration store. An audit event and new restoration version record will be created.
-            </p>
 
             <div className="pt-2 flex items-center justify-end gap-2">
               <button
@@ -596,31 +567,19 @@ export function ConfigVersionHistoryPanel() {
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Safe Import Modal */}
       {isImportModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl p-6 space-y-5">
-            <div className="flex items-start justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <div>
-                <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                  <Upload className="w-4 h-4 text-indigo-500" />
-                  Import Configuration Package (Pre-Validation Preview)
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Select a JSON configuration package or paste content below. Strict schema and zero-secret rules apply.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsImportModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+        <Modal
+          isOpen={true}
+          onClose={() => setIsImportModalOpen(false)}
+          title="Import Configuration Package (Pre-Validation Preview)"
+          description="Select a JSON configuration package or paste content below. Strict schema and zero-secret rules apply."
+          size="lg"
+        >
+          <div className="space-y-5">
 
             {/* File Upload & Paste Controls */}
             <div className="space-y-3">
@@ -758,7 +717,7 @@ export function ConfigVersionHistoryPanel() {
               </div>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

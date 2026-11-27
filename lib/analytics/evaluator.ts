@@ -38,6 +38,7 @@ import {
 import { TenantModuleDefinition, OrganizationModuleOverride } from '@/lib/modules/types';
 import { MASTER_MODULE_REGISTRY } from '@/lib/modules/registry-data';
 import { evaluateModuleEntitlement } from '@/lib/modules/evaluator';
+import { normalizeTenantLifecycleStatus } from '@/lib/lifecycle/canonical-lifecycle';
 
 import {
   ReportingDateRange,
@@ -195,7 +196,13 @@ export function computeTenantGrowthMetrics(
   const scopedOrgs = organizations.filter((o) => {
     if (filters.organizationId !== 'all' && o.id !== filters.organizationId) return false;
     if (filters.planId !== 'all' && o.planId !== filters.planId) return false;
-    if (filters.status !== 'all' && o.status !== filters.status) return false;
+    if (filters.status !== 'all') {
+      const normalizedOrgStatus = normalizeTenantLifecycleStatus(o.status);
+      const normalizedFilter = normalizeTenantLifecycleStatus(filters.status);
+      if (o.status !== filters.status && normalizedOrgStatus !== normalizedFilter) {
+        return false;
+      }
+    }
     return true;
   });
 
@@ -368,6 +375,11 @@ export function computeMonetizationMetrics(
       activeAccounts++;
       if (s.billingCycle === 'annual') {
         mrr += (plan.priceAnnual || plan.priceMonthly * 12) / 12;
+      } else if (s.billingCycle === 'quarterly') {
+        mrr +=
+          typeof plan.priceQuarterly === 'number' && plan.priceQuarterly > 0
+            ? plan.priceQuarterly / 3
+            : plan.priceMonthly;
       } else {
         mrr += plan.priceMonthly;
       }
@@ -482,7 +494,13 @@ export function computeModuleAdoptionMetrics(
   const scopedOrgs = organizations.filter((o) => {
     if (filters.organizationId !== 'all' && o.id !== filters.organizationId) return false;
     if (filters.planId !== 'all' && o.planId !== filters.planId) return false;
-    if (filters.status !== 'all' && o.status !== filters.status) return false;
+    if (filters.status !== 'all') {
+      const normalizedOrgStatus = normalizeTenantLifecycleStatus(o.status);
+      const normalizedFilter = normalizeTenantLifecycleStatus(filters.status);
+      if (o.status !== filters.status && normalizedOrgStatus !== normalizedFilter) {
+        return false;
+      }
+    }
     return true;
   });
 

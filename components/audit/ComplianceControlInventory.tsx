@@ -8,6 +8,7 @@ import {
 } from '@/lib/types/compliance';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { formatDate } from '@/lib/utils/formatters';
 import {
   FileText,
@@ -31,6 +32,8 @@ export function ComplianceControlInventory({
   evidenceList,
   onUpdateRemediation,
 }: ComplianceControlInventoryProps) {
+  const { can } = usePlatformAuth();
+  const canManageGovernance = can('audit.governance.manage');
   const [searchQuery, setSearchQuery] = useState('');
   const [domainFilter, setDomainFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -346,7 +349,7 @@ export function ComplianceControlInventory({
                 <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                   Remediation & Compliance Action Plan
                 </span>
-                {!isEditingRemediation && (
+                {!isEditingRemediation && canManageGovernance && (
                   <button
                     type="button"
                     onClick={() => setIsEditingRemediation(true)}

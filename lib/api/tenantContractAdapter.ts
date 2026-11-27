@@ -45,7 +45,7 @@ export interface TenantContractProjection {
   /** Legacy P0-3 coarse summary status (`ACTIVE | INACTIVE | SUSPENDED | ARCHIVED`) */
   status: TenantStatusCompat;
   /** Canonical P0-5 lifecycle state (explicitly decoupled from subscription & payment states) */
-  lifecycleStatus: CanonicalTenantLifecycleStatus;
+  lifecycleStatus: CanonicalTenantLifecycleStatus | "unknown";
   onboardingStatus: Organization["onboardingStatus"];
   provisioningStatus: Organization["provisioningStatus"];
   subscriptionStatus?: SubscriptionStatus;
@@ -157,8 +157,11 @@ export function projectOrganizationToTenantContract(
       ...(explicitModuleOverrides ?? []),
     ])
   );
-  // Fail closed when tenant lifecycle does not permit active modules
-  const moduleIds = projectedStatus === "ACTIVE" ? rawModuleIds : [];
+  // Fail closed for suspended/cancelled/archived/unknown states while keeping staged modules inspectable during onboarding
+  const canRetainStagedModules =
+    projectedStatus === "ACTIVE" ||
+    (canonical !== "unknown" && TENANT_LIFECYCLE_STATE_META[canonical].isOnboardingAccessAllowed);
+  const moduleIds = canRetainStagedModules ? rawModuleIds : [];
   const record = org as unknown as Record<string, unknown>;
   const slug =
     typeof record.slug === "string" && record.slug
@@ -180,7 +183,7 @@ export function projectOrganizationToTenantContract(
     classification: org.classification,
     institutionCategories: normalizeSchoolCategories(org.classification, org.institutionCategories),
     status: projectedStatus,
-    lifecycleStatus: canonical === "unknown" ? "awaiting_configuration" : canonical,
+    lifecycleStatus: canonical,
     onboardingStatus: org.onboardingStatus,
     provisioningStatus: org.provisioningStatus,
     subscriptionStatus: org.subscriptionStatus,

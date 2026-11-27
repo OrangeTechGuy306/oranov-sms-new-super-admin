@@ -9,6 +9,11 @@ import {
 import { resolveDateRange } from '@/lib/analytics/evaluator';
 import { Organization, SubscriptionPlan } from '@/lib/types';
 import {
+  CANONICAL_TENANT_LIFECYCLE_STATUSES,
+  TENANT_LIFECYCLE_STATE_META,
+} from '@/lib/lifecycle/canonical-lifecycle';
+import { Modal } from '@/components/ui/Modal';
+import {
   Calendar,
   Filter,
   RotateCcw,
@@ -178,12 +183,12 @@ export function AnalyticsReportingToolbar({
             className="bg-transparent border-none text-foreground font-medium text-xs focus:ring-0 focus:outline-hidden cursor-pointer"
             aria-label="Filter by Lifecycle Status"
           >
-            <option value="all">All Lifecycle States</option>
-            <option value="active">Active Only</option>
-            <option value="pending">Pending Onboarding</option>
-            <option value="suspended">Suspended</option>
-            <option value="inactive">Inactive</option>
-            <option value="archived">Archived</option>
+            <option value="all">All 12 Lifecycle States</option>
+            {CANONICAL_TENANT_LIFECYCLE_STATUSES.map((statusKey) => (
+              <option key={statusKey} value={statusKey}>
+                {TENANT_LIFECYCLE_STATE_META[statusKey].label}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -205,75 +210,70 @@ export function AnalyticsReportingToolbar({
       </div>
 
       {/* Custom Date Range Modal */}
-      {showCustomModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-card border border-border rounded-xl shadow-xl max-w-sm w-full p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm text-foreground flex items-center gap-1.5">
-                <Calendar className="w-4 h-4 text-primary" />
-                Select Custom Date Range
-              </h3>
-              <button
-                type="button"
-                onClick={() => setShowCustomModal(false)}
-                className="p-1 rounded-md text-muted-foreground hover:text-foreground"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="font-semibold text-muted-foreground block mb-1">
-                  Start Date (Inclusive UTC)
-                </label>
-                <input
-                  type="date"
-                  value={customStart}
-                  onChange={(e) => setCustomStart(e.target.value)}
-                  className="w-full px-3 py-1.5 bg-muted/40 border border-border rounded-lg text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary"
-                />
-              </div>
-
-              <div>
-                <label className="font-semibold text-muted-foreground block mb-1">
-                  End Date (Inclusive UTC)
-                </label>
-                <input
-                  type="date"
-                  value={customEnd}
-                  onChange={(e) => setCustomEnd(e.target.value)}
-                  className="w-full px-3 py-1.5 bg-muted/40 border border-border rounded-lg text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary"
-                />
-              </div>
-
-              {dateError && (
-                <div className="p-2 bg-rose-500/10 border border-rose-500/20 rounded text-rose-600 dark:text-rose-400 font-medium text-[11px]">
-                  {dateError}
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
-              <button
-                type="button"
-                onClick={() => setShowCustomModal(false)}
-                className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground font-semibold rounded-lg"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleApplyCustomDates}
-                className="px-4 py-1.5 text-xs bg-primary text-primary-foreground font-semibold rounded-lg hover:bg-primary/90 flex items-center gap-1 shadow-2xs"
-              >
-                <Check className="w-3.5 h-3.5" />
-                Apply Range
-              </button>
-            </div>
+      <Modal
+        isOpen={showCustomModal}
+        onClose={() => setShowCustomModal(false)}
+        title={
+          <span className="flex items-center gap-1.5 text-sm">
+            <Calendar className="w-4 h-4 text-primary" />
+            Select Custom Date Range
+          </span>
+        }
+        size="sm"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setShowCustomModal(false)}
+              className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground font-semibold rounded-lg"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleApplyCustomDates}
+              className="px-4 py-1.5 text-xs bg-primary text-primary-foreground font-semibold rounded-lg hover:bg-primary/90 flex items-center gap-1 shadow-2xs"
+            >
+              <Check className="w-3.5 h-3.5" />
+              Apply Range
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3 text-xs">
+          <div>
+            <label htmlFor="analytics-custom-start" className="font-semibold text-muted-foreground block mb-1">
+              Start Date (Inclusive UTC)
+            </label>
+            <input
+              id="analytics-custom-start"
+              type="date"
+              value={customStart}
+              onChange={(e) => setCustomStart(e.target.value)}
+              className="w-full px-3 py-1.5 bg-muted/40 border border-border rounded-lg text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary"
+            />
           </div>
+
+          <div>
+            <label htmlFor="analytics-custom-end" className="font-semibold text-muted-foreground block mb-1">
+              End Date (Inclusive UTC)
+            </label>
+            <input
+              id="analytics-custom-end"
+              type="date"
+              value={customEnd}
+              onChange={(e) => setCustomEnd(e.target.value)}
+              className="w-full px-3 py-1.5 bg-muted/40 border border-border rounded-lg text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary"
+            />
+          </div>
+
+          {dateError && (
+            <div className="p-2 bg-rose-500/10 border border-rose-500/20 rounded text-rose-600 dark:text-rose-400 font-medium text-[11px]">
+              {dateError}
+            </div>
+          )}
         </div>
-      )}
+      </Modal>
     </div>
   );
 }

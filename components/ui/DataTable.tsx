@@ -51,13 +51,14 @@ export function DataTable<T>({
 
   return (
     <div className={cn('bg-card text-card-foreground rounded-xl border border-border overflow-hidden shadow-xs', className)}>
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Scrollable data table">
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="border-b border-border bg-muted/40 text-muted-foreground font-medium text-xs">
               {columns.map((col) => (
                 <th
                   key={col.key}
+                  scope="col"
                   className={cn(
                     'px-4 py-3 font-semibold uppercase tracking-wider',
                     alignStyles[col.align || 'left'],
@@ -92,10 +93,17 @@ export function DataTable<T>({
                 <tr
                   key={keyExtractor(item)}
                   tabIndex={onRowClick ? 0 : undefined}
-                  role={onRowClick ? 'button' : undefined}
-                  onClick={() => onRowClick && onRowClick(item)}
+                  onClick={(e) => {
+                    if (!onRowClick) return;
+                    const target = e.target as HTMLElement | null;
+                    if (target?.closest('button, a, input, select, textarea')) return;
+                    onRowClick(item);
+                  }}
                   onKeyDown={(e) => {
-                    if (onRowClick && (e.key === 'Enter' || e.key === ' ')) {
+                    if (!onRowClick) return;
+                    const target = e.target as HTMLElement | null;
+                    if (target !== e.currentTarget && target?.closest('button, a, input, select, textarea')) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
                       onRowClick(item);
                     }

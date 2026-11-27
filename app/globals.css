@@ -137,3 +137,32 @@ body {
 .dark ::-webkit-scrollbar-thumb {
   background: #334155;
 }
+
+/* Native <dialog> modal scroll containment (modern baseline) */
+dialog:modal,
+dialog::backdrop {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+}
+
+/* Reduced motion & keyboard focus accessibility baseline */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto !important;
+  }
+
+  .animate-pulse,
+  .animate-bounce,
+  .animate-ping,
+  .animate-spin {
+    animation: none !important;
+  }
+}

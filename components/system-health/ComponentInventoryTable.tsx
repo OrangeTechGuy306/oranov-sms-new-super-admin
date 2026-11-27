@@ -97,9 +97,13 @@ export function ComponentInventoryTable({
               <span className="p-1 rounded bg-muted/60 text-muted-foreground shrink-0">
                 {getCategoryIcon(comp.category)}
               </span>
-              <span className="font-semibold text-xs text-foreground hover:text-primary transition-colors cursor-pointer" onClick={() => onInspectComponent(comp)}>
+              <button
+                type="button"
+                onClick={() => onInspectComponent(comp)}
+                className="font-semibold text-xs text-foreground hover:text-primary hover:underline text-left transition-colors cursor-pointer"
+              >
                 {comp.name}
-              </span>
+              </button>
               {comp.version && (
                 <span className="px-1.5 py-0.2 rounded bg-muted text-[10px] font-mono text-muted-foreground">
                   {comp.version}
@@ -208,9 +212,10 @@ export function ComponentInventoryTable({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {/* Search Input */}
           <div className="relative">
-            <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search aria-hidden="true" className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
+              aria-label="Search architecture components"
               placeholder="Search components, dependencies, descriptions..."
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
@@ -220,6 +225,7 @@ export function ComponentInventoryTable({
 
           {/* Category Filter */}
           <select
+            aria-label="Filter components by category"
             value={categoryFilter}
             onChange={(e) => onCategoryChange(e.target.value)}
             className="px-3 py-1.5 text-xs bg-background border border-border rounded-lg text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
@@ -240,6 +246,7 @@ export function ComponentInventoryTable({
 
           {/* Status Filter */}
           <select
+            aria-label="Filter components by operational status"
             value={statusFilter}
             onChange={(e) => onStatusChange(e.target.value)}
             className="px-3 py-1.5 text-xs bg-background border border-border rounded-lg text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
@@ -255,6 +262,7 @@ export function ComponentInventoryTable({
           {/* Environment Filter */}
           <div className="flex items-center gap-2">
             <select
+              aria-label="Filter components by environment"
               value={envFilter}
               onChange={(e) => onEnvChange(e.target.value)}
               className="w-full px-3 py-1.5 text-xs bg-background border border-border rounded-lg text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
@@ -270,6 +278,7 @@ export function ComponentInventoryTable({
                 type="button"
                 onClick={onResetFilters}
                 title="Reset active filters"
+                aria-label="Reset component filters"
                 className="p-1.5 rounded-lg border border-border hover:bg-muted text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />

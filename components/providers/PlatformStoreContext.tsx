@@ -1,9 +1,10 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { platformStore, PlatformMetrics } from '@/lib/data/platform-store';
 import { useOptionalPlatformAuth } from './PlatformAuthContext';
 import { hasAnyPlatformPermission, hasPlatformPermission } from '@/lib/iam/rbac';
+import { isPlatformDevControlsEnabled } from '@/lib/auth/platformAuthConfig';
 import type {
   PlatformApprovalRequest,
   PlatformApprovalType,
@@ -222,7 +223,7 @@ interface PlatformStoreContextType {
     reason?: string,
     options?: { confirmationCode?: string; cancellationEffectiveAt?: string }
   ) => { success: boolean; error?: string };
-  updateOrganizationPlan: (id: string, planId: string, billingCycle?: 'monthly' | 'annual') => { success: boolean; error?: string };
+  updateOrganizationPlan: (id: string, planId: string, billingCycle?: 'monthly' | 'quarterly' | 'annual') => { success: boolean; error?: string };
   createPlan: (input: CreatePlanInput) => { success: boolean; plan?: SubscriptionPlan; error?: string };
   updatePlan: (id: string, input: UpdatePlanInput) => { success: boolean; plan?: SubscriptionPlan; error?: string };
   transitionSubscriptionStatus: (subId: string, status: SubscriptionStatus, reason: string) => { success: boolean; subscription?: OrganizationSubscription; error?: string };
@@ -541,6 +542,16 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     return unsubscribe;
   }, []);
 
+  const toastTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+
+  useEffect(() => {
+    const timers = toastTimersRef.current;
+    return () => {
+      timers.forEach((t) => clearTimeout(t));
+      timers.clear();
+    };
+  }, []);
+
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
@@ -549,9 +560,11 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     toastCounter += 1;
     const id = `toast_${toastCounter}`;
     setToasts((prev) => [...prev, { ...toast, id }]);
-    setTimeout(() => {
+    const timer = setTimeout(() => {
+      toastTimersRef.current.delete(timer);
       removeToast(id);
     }, 4500);
+    toastTimersRef.current.add(timer);
   }, [removeToast]);
 
   const guardPerm = useCallback(
@@ -598,6 +611,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
           role: actorUser.role,
         }
       : undefined;
+
+  const authenticatedActorName = (fallback?: string) => actorProfile?.name || fallback;
+  const authenticatedActorIdentity = (fallback?: string) => actorProfile || fallback;
 
   const createOrganization = (input: CreateOrganizationInput) => {
     const err = guardPerm('organizations.create', 'create an organization');
@@ -668,7 +684,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     return res;
   };
 
-  const updateOrganizationPlan = (id: string, planId: string, billingCycle?: 'monthly' | 'annual') => {
+  const updateOrganizationPlan = (id: string, planId: string, billingCycle?: 'monthly' | 'quarterly' | 'annual') => {
     const err = guardPerm('billing.subscriptions.manage', 'modify subscription plan');
     if (err) return { success: false, error: err };
     const res = platformStore.updateOrganizationPlan(id, planId, billingCycle);
@@ -949,6 +965,14 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const resetToDefaults = () => {
+    if (!isPlatformDevControlsEnabled()) {
+      addToast({
+        type: 'error',
+        title: 'Development Control Disabled',
+        message: 'Fixture resets are disabled outside development mode.',
+      });
+      return;
+    }
     const err = guardPerm('system.maintenance.manage', 'reset platform store fixtures', ['system.maintenance.manage', 'platform.settings.update']);
     if (err) return;
     platformStore.resetToDefaults();
@@ -968,7 +992,10 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   }) => {
     const err = guardPerm('modules.registry.manage', 'override organization module entitlement');
     if (err) return { success: false, error: err };
-    const res = platformStore.setOrganizationModuleOverride(input);
+    const res = platformStore.setOrganizationModuleOverride({
+      ...input,
+      actorName: authenticatedActorName(input.actorName),
+    });
     if (res.success) {
       addToast({
         type: 'success',
@@ -988,7 +1015,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   const resetOrganizationModuleOverride = (organizationId: string, moduleId: string, actorName?: string) => {
     const err = guardPerm('modules.registry.manage', 'reset organization module entitlement');
     if (err) return { success: false, error: err };
-    const res = platformStore.resetOrganizationModuleOverride(organizationId, moduleId, actorName);
+    const res = platformStore.resetOrganizationModuleOverride(organizationId, moduleId, authenticatedActorName(actorName));
     if (res.success) {
       addToast({
         type: 'info',
@@ -1008,7 +1035,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   const setModuleGlobalAvailability = (moduleId: string, isGloballyEnabled: boolean, actorName?: string) => {
     const err = guardPerm('modules.registry.manage', 'change module availability');
     if (err) return { success: false, error: err };
-    const res = platformStore.setModuleGlobalAvailability(moduleId, isGloballyEnabled, actorName);
+    const res = platformStore.setModuleGlobalAvailability(moduleId, isGloballyEnabled, authenticatedActorName(actorName));
     if (res.success) {
       addToast({
         type: isGloballyEnabled ? 'success' : 'warning',
@@ -1033,7 +1060,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   ) => {
     const err = guardPerm('modules.registry.manage', 'change module lifecycle status');
     if (err) return { success: false, error: err };
-    const res = platformStore.setModuleAvailabilityStatus(moduleId, status, actorName, reason);
+    const res = platformStore.setModuleAvailabilityStatus(moduleId, status, authenticatedActorName(actorName), reason);
     if (res.success) {
       addToast({
         type: status === 'enabled' || status === 'available' ? 'success' : 'warning',
@@ -1053,7 +1080,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   ) => {
     const err = guardPerm('modules.registry.manage', 'edit module configuration');
     if (err) return { success: false, error: err };
-    const res = platformStore.updateModuleMetadata(moduleId, updates, actorName);
+    const res = platformStore.updateModuleMetadata(moduleId, updates, authenticatedActorName(actorName));
     if (res.success) {
       addToast({ type: 'success', title: 'Module Configuration Saved', message: 'Updated canonical module metadata and plan rules.' });
     } else if (res.error) {
@@ -1065,7 +1092,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   const updateFeatureDefinition = (featureId: string, updates: Partial<PlatformFeatureItem>, actorName?: string) => {
     const err = guardPerm('modules.registry.manage', 'update feature catalog');
     if (err) return { success: false, error: err };
-    const res = platformStore.updateFeatureDefinition(featureId, updates, actorName);
+    const res = platformStore.updateFeatureDefinition(featureId, updates, authenticatedActorName(actorName));
     if (res.success) {
       addToast({ type: 'success', title: 'Feature Catalog Updated', message: 'Saved simulated feature configuration changes.' });
     } else if (res.error) {
@@ -1082,7 +1109,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   ) => {
     const err = guardPerm('billing.subscriptions.manage', 'manage subscription add-on');
     if (err) return { success: false, error: err };
-    const res = platformStore.manageSubscriptionAddOn(subscriptionId, action, addOn, actorName);
+    const res = platformStore.manageSubscriptionAddOn(subscriptionId, action, addOn, authenticatedActorName(actorName));
     if (res.success) {
       addToast({
         type: action === 'grant' ? 'success' : 'warning',
@@ -1098,7 +1125,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   const extendSubscriptionTrial = (subscriptionId: string, newTrialEndDate: string, reason: string, actorName?: string) => {
     const err = guardPerm('billing.subscriptions.manage', 'adjust subscription trial');
     if (err) return { success: false, error: err };
-    const res = platformStore.extendSubscriptionTrial(subscriptionId, newTrialEndDate, reason, actorName);
+    const res = platformStore.extendSubscriptionTrial(subscriptionId, newTrialEndDate, reason, authenticatedActorName(actorName));
     if (res.success) {
       addToast({ type: 'success', title: 'Trial Period Updated', message: `Trial window updated through ${newTrialEndDate.slice(0, 10)}.` });
     } else if (res.error) {
@@ -1412,7 +1439,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   const acknowledgeIncident = (incidentId: string, actorName?: string) => {
     const err = guardPerm('system.maintenance.manage', 'acknowledge platform incident');
     if (err) return { success: false, error: err };
-    const res = platformStore.acknowledgeIncident(incidentId, actorName || actorProfile?.name);
+    const res = platformStore.acknowledgeIncident(incidentId, authenticatedActorName(actorName));
     if (res.success) {
       addToast({
         type: 'info',
@@ -1437,7 +1464,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   ) => {
     const err = guardPerm('system.maintenance.manage', 'transition platform incident');
     if (err) return { success: false, error: err };
-    const res = platformStore.transitionIncidentStatus(incidentId, newStatus, context, actorName || actorProfile?.name);
+    const res = platformStore.transitionIncidentStatus(incidentId, newStatus, context, authenticatedActorName(actorName));
     if (res.success) {
       addToast({
         type: newStatus === 'resolved' ? 'success' : 'info',
@@ -1457,7 +1484,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   const addIncidentNote = (incidentId: string, message: string, author?: string) => {
     const err = guardPerm('system.maintenance.manage', 'append incident note');
     if (err) return { success: false, error: err };
-    const res = platformStore.addIncidentNote(incidentId, message, author || actorProfile?.name);
+    const res = platformStore.addIncidentNote(incidentId, message, authenticatedActorName(author));
     if (res.success) {
       addToast({
         type: 'success',
@@ -1477,7 +1504,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   const createMaintenanceWindow = (input: CreateMaintenanceInput, actorName?: string) => {
     const err = guardPerm('system.maintenance.manage', 'schedule maintenance window');
     if (err) return { success: false, error: err };
-    const res = platformStore.createMaintenanceWindow(input, actorName || actorProfile?.name);
+    const res = platformStore.createMaintenanceWindow(input, authenticatedActorName(actorName));
     if (res.success && res.maintenanceWindow) {
       addToast({
         type: 'success',
@@ -1495,7 +1522,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const updateMaintenanceWindow = (id: string, input: Partial<CreateMaintenanceInput>, actorName?: string) => {
-    const res = platformStore.updateMaintenanceWindow(id, input, actorName);
+    const err = guardPerm('system.maintenance.manage', 'update maintenance window');
+    if (err) return { success: false, error: err };
+    const res = platformStore.updateMaintenanceWindow(id, input, authenticatedActorName(actorName));
     if (res.success) {
       addToast({
         type: 'info',
@@ -1513,7 +1542,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const cancelMaintenanceWindow = (id: string, reason: string, actorName?: string) => {
-    const res = platformStore.cancelMaintenanceWindow(id, reason, actorName);
+    const err = guardPerm('system.maintenance.manage', 'cancel maintenance window');
+    if (err) return { success: false, error: err };
+    const res = platformStore.cancelMaintenanceWindow(id, reason, authenticatedActorName(actorName));
     if (res.success) {
       addToast({
         type: 'warning',
@@ -1531,7 +1562,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const createAlertRule = (input: CreateAlertRuleInput, actorName?: string) => {
-    const res = platformStore.createAlertRule(input, actorName);
+    const err = guardPerm('system.maintenance.manage', 'create monitoring alert rule');
+    if (err) return { success: false, error: err };
+    const res = platformStore.createAlertRule(input, authenticatedActorName(actorName));
     if (res.success && res.alertRule) {
       addToast({
         type: 'success',
@@ -1549,7 +1582,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const updateAlertRule = (id: string, input: Partial<CreateAlertRuleInput>, actorName?: string) => {
-    const res = platformStore.updateAlertRule(id, input, actorName);
+    const err = guardPerm('system.maintenance.manage', 'update monitoring alert rule');
+    if (err) return { success: false, error: err };
+    const res = platformStore.updateAlertRule(id, input, authenticatedActorName(actorName));
     if (res.success) {
       addToast({
         type: 'info',
@@ -1567,7 +1602,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const toggleAlertRule = (id: string, actorName?: string) => {
-    const res = platformStore.toggleAlertRule(id, actorName);
+    const err = guardPerm('system.maintenance.manage', 'toggle monitoring alert rule');
+    if (err) return { success: false, error: err };
+    const res = platformStore.toggleAlertRule(id, authenticatedActorName(actorName));
     if (res.success && res.alertRule) {
       addToast({
         type: res.alertRule.isEnabled ? 'success' : 'info',
@@ -1585,7 +1622,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const deleteAlertRule = (id: string, actorName?: string) => {
-    const res = platformStore.deleteAlertRule(id, actorName);
+    const err = guardPerm('system.maintenance.manage', 'delete monitoring alert rule');
+    if (err) return { success: false, error: err };
+    const res = platformStore.deleteAlertRule(id, authenticatedActorName(actorName));
     if (res.success) {
       addToast({
         type: 'warning',
@@ -1609,7 +1648,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   ) => {
     const err = guardPerm('platform.settings.update', 'save platform configuration');
     if (err) return { success: false, error: err };
-    const res = platformStore.updateExtendedSettings(input, reason, actorName);
+    const res = platformStore.updateExtendedSettings(input, reason, authenticatedActorName(actorName));
     if (res.success) {
       addToast({
         type: 'success',
@@ -1629,7 +1668,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   const createFeatureFlag = (input: Partial<FeatureFlag>, actorName?: string) => {
     const err = guardPerm('system.features.toggle', 'create feature flag', ['system.features.toggle', 'modules.registry.manage']);
     if (err) return { success: false, error: err };
-    const res = platformStore.createFeatureFlag(input, actorName);
+    const res = platformStore.createFeatureFlag(input, authenticatedActorName(actorName));
     if (res.success && res.flag) {
       addToast({
         type: 'success',
@@ -1647,7 +1686,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const updateFeatureFlag = (key: string, input: Partial<FeatureFlag>, reason?: string, actorName?: string) => {
-    const res = platformStore.updateFeatureFlag(key, input, reason, actorName);
+    const err = guardPerm('system.features.toggle', 'update feature flag', ['system.features.toggle', 'modules.registry.manage']);
+    if (err) return { success: false, error: err };
+    const res = platformStore.updateFeatureFlag(key, input, reason, authenticatedActorName(actorName));
     if (res.success) {
       addToast({
         type: 'info',
@@ -1665,7 +1706,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const transitionFeatureFlagLifecycle = (key: string, targetLifecycle: FeatureFlagLifecycle, reason: string, actorName?: string) => {
-    const res = platformStore.transitionFeatureFlagLifecycle(key, targetLifecycle, reason, actorName);
+    const err = guardPerm('system.features.toggle', 'change feature flag lifecycle', ['system.features.toggle', 'modules.registry.manage']);
+    if (err) return { success: false, error: err };
+    const res = platformStore.transitionFeatureFlagLifecycle(key, targetLifecycle, reason, authenticatedActorName(actorName));
     if (res.success) {
       addToast({
         type: targetLifecycle === 'archived' ? 'warning' : 'success',
@@ -1685,7 +1728,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   const toggleFeatureFlag = (key: string, actorName?: string) => {
     const err = guardPerm('system.features.toggle', 'toggle feature flag', ['system.features.toggle', 'modules.registry.manage']);
     if (err) return { success: false, error: err };
-    const res = platformStore.toggleFeatureFlag(key, actorName);
+    const res = platformStore.toggleFeatureFlag(key, authenticatedActorName(actorName));
     if (res.success && res.flag) {
       addToast({
         type: res.flag.enabled ? 'success' : 'info',
@@ -1705,7 +1748,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   const deleteFeatureFlag = (key: string, actorName?: string) => {
     const err = guardPerm('system.features.toggle', 'delete feature flag', ['system.features.toggle', 'modules.registry.manage']);
     if (err) return { success: false, error: err };
-    const res = platformStore.deleteFeatureFlag(key, actorName);
+    const res = platformStore.deleteFeatureFlag(key, authenticatedActorName(actorName));
     if (res.success) {
       addToast({
         type: 'warning',
@@ -1725,7 +1768,10 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   const setTenantFeatureOverride = (input: { organizationId: string; flagKey: string; overrideValue: boolean; reason: string; actorName?: string }) => {
     const err = guardPerm('system.features.toggle', 'configure tenant feature override', ['system.features.toggle', 'modules.registry.manage']);
     if (err) return { success: false, error: err };
-    const res = platformStore.setTenantFeatureOverride(input);
+    const res = platformStore.setTenantFeatureOverride({
+      ...input,
+      actorName: authenticatedActorName(input.actorName),
+    });
     if (res.success) {
       addToast({
         type: 'success',
@@ -1743,7 +1789,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const removeTenantFeatureOverride = (organizationId: string, flagKey: string, reason?: string, actorName?: string) => {
-    const res = platformStore.removeTenantFeatureOverride(organizationId, flagKey, reason, actorName);
+    const err = guardPerm('system.features.toggle', 'remove tenant feature override', ['system.features.toggle', 'modules.registry.manage']);
+    if (err) return { success: false, error: err };
+    const res = platformStore.removeTenantFeatureOverride(organizationId, flagKey, reason, authenticatedActorName(actorName));
     if (res.success) {
       addToast({
         type: 'info',
@@ -1761,7 +1809,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const applyRolloutPlan = (input: RolloutPlanInput, actorName?: string) => {
-    const res = platformStore.applyRolloutPlan(input, actorName);
+    const err = guardPerm('platform.settings.update', 'apply rollout plan', ['platform.settings.update', 'system.features.toggle', 'modules.registry.manage']);
+    if (err) return { success: false, error: err };
+    const res = platformStore.applyRolloutPlan(input, authenticatedActorIdentity(actorName));
     if (res.success) {
       addToast({
         type: 'success',
@@ -1779,7 +1829,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const createChangeProposal = (input: Partial<ConfigurationChangeProposal>) => {
-    const res = platformStore.createChangeProposal(input);
+    const err = guardPerm('platform.settings.update', 'create configuration change proposal', ['platform.settings.update', 'system.features.toggle', 'modules.registry.manage']);
+    if (err) return { success: false, error: err };
+    const res = platformStore.createChangeProposal(input, actorProfile);
     if (res.success) {
       addToast({
         type: 'success',
@@ -1797,7 +1849,14 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const transitionProposalStatus = (proposalId: string, targetStatus: ProposalStatus, reviewerNotes?: string, actorName?: string) => {
-    const res = platformStore.transitionProposalStatus(proposalId, targetStatus, reviewerNotes, actorName);
+    const isDecision = targetStatus === 'approved' || targetStatus === 'rejected';
+    const err = guardPerm(
+      isDecision ? 'operations.approvals.manage' : 'platform.settings.update',
+      isDecision ? `${targetStatus} configuration proposal` : `transition proposal to ${targetStatus}`,
+      isDecision ? ['operations.approvals.manage', 'platform.settings.update'] : ['platform.settings.update', 'operations.approvals.manage']
+    );
+    if (err) return { success: false, error: err };
+    const res = platformStore.transitionProposalStatus(proposalId, targetStatus, reviewerNotes, authenticatedActorIdentity(actorName));
     if (res.success) {
       addToast({
         type: targetStatus === 'approved' ? 'success' : targetStatus === 'rejected' ? 'warning' : 'info',
@@ -1815,7 +1874,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const restoreConfigVersion = (versionId: string, actorName?: string) => {
-    const res = platformStore.restoreConfigVersion(versionId, actorName);
+    const err = guardPerm('platform.settings.update', 'restore configuration version', ['platform.settings.update', 'system.features.toggle']);
+    if (err) return { success: false, error: err };
+    const res = platformStore.restoreConfigVersion(versionId, authenticatedActorIdentity(actorName));
     if (res.success) {
       addToast({
         type: 'warning',
@@ -1833,7 +1894,15 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
   };
 
   const importConfiguration = (pkg: ConfigExportPackage | string, actorName?: string) => {
-    const res = platformStore.importConfiguration(pkg, actorName);
+    const err = guardPerm('platform.settings.update', 'import configuration package', ['platform.settings.update', 'system.features.toggle']);
+    if (err) {
+      return {
+        success: false,
+        result: { isValid: false, errors: [err], warnings: [], createCount: 0, updateCount: 0, skipCount: 0, rejectCount: 0, schemaVersion: '1.0.0', previewItems: [] } as ConfigImportValidationResult,
+        error: err,
+      };
+    }
+    const res = platformStore.importConfiguration(pkg, authenticatedActorIdentity(actorName));
     if (res.success) {
       addToast({
         type: 'success',
@@ -1969,7 +2038,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     transitionProposalStatus,
     restoreConfigVersion,
     exportConfiguration: (scope?: 'all' | 'settings_only' | 'flags_only' | 'overrides_only') =>
-      platformStore.exportConfiguration(scope),
+      platformStore.exportConfiguration(scope, actorProfile?.name),
     importConfiguration,
     getModules: () => platformStore.getModules(),
     getModuleById: (id: string) => platformStore.getModuleById(id),
@@ -1987,30 +2056,56 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     evaluateEntitlement: (moduleId: string, orgId?: string, planId?: string, asOfDate?: string) =>
       platformStore.evaluateEntitlement(moduleId, orgId, planId, asOfDate),
     validateRegistry: () => platformStore.validateRegistry(),
-    logAuditEvent: (event) => platformStore.logAuditEvent(event),
+    logAuditEvent: (event) => {
+      const err = guardPerm('audit.governance.manage', 'record audit event', [
+        'audit.logs.export',
+        'audit.governance.manage',
+        'system.maintenance.manage',
+      ]);
+      if (err || !actorProfile) {
+        throw new Error(err || 'Authentication required to append audit log event.');
+      }
+      return platformStore.logAuditEvent({
+        ...event,
+        actor: {
+          id: actorProfile.id,
+          name: actorProfile.name,
+          email: actorProfile.email,
+          role: actorProfile.role,
+          actorType:
+            actorProfile.role === 'super_admin'
+              ? 'super_admin'
+              : actorProfile.role === 'compliance_auditor'
+              ? 'compliance_auditor'
+              : actorProfile.role === 'support_lead'
+              ? 'support_lead'
+              : 'platform_operator',
+        },
+      });
+    },
     getSecurityEvents: (filters) => platformStore.getSecurityEvents(filters),
     updateSecurityEventTriage: (id, status, notes, reviewer) => {
       const err = guardPerm('audit.governance.manage', 'triage security event');
       if (err) return { success: false, error: err };
-      return platformStore.updateSecurityEventTriage(id, status, notes, reviewer || actorProfile?.name);
+      return platformStore.updateSecurityEventTriage(id, status, notes, authenticatedActorName(reviewer));
     },
     getComplianceControls: (filters) => platformStore.getComplianceControls(filters),
     updateComplianceControlRemediation: (id, notes, targetDate, reviewer) => {
       const err = guardPerm('audit.governance.manage', 'update compliance remediation');
       if (err) return { success: false, error: err };
-      return platformStore.updateComplianceControlRemediation(id, notes, targetDate, reviewer || actorProfile?.name);
+      return platformStore.updateComplianceControlRemediation(id, notes, targetDate, authenticatedActorName(reviewer));
     },
     getGovernanceEvidence: (filters) => platformStore.getGovernanceEvidence(filters),
     updateGovernanceEvidenceStatus: (id, status, notes, reviewer) => {
       const err = guardPerm('audit.governance.manage', 'update governance evidence status');
       if (err) return { success: false, error: err };
-      return platformStore.updateGovernanceEvidenceStatus(id, status, notes, reviewer || actorProfile?.name);
+      return platformStore.updateGovernanceEvidenceStatus(id, status, notes, authenticatedActorName(reviewer));
     },
     getRetentionPolicies: (filters) => platformStore.getRetentionPolicies(filters),
     updateRetentionPolicy: (id, newDays, reason, isEnabled, actorName) => {
       const err = guardPerm('audit.governance.manage', 'update data retention policy');
       if (err) return { success: false, error: err };
-      return platformStore.updateRetentionPolicy(id, newDays, reason, isEnabled, actorName || actorProfile?.name);
+      return platformStore.updateRetentionPolicy(id, newDays, reason, isEnabled, authenticatedActorName(actorName));
     },
     acknowledgeIncident,
     transitionIncidentStatus,
@@ -2034,8 +2129,10 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     getCommunicationTemplates: (filters) => platformStore.getCommunicationTemplates(filters),
     getCommunicationTemplateById: (id: string) => platformStore.getCommunicationTemplateById(id),
     createCommunicationTemplate: (input, actorName) => {
+      const err = guardPerm('communications.notices.manage', 'create communication template');
+      if (err) return { success: false, error: err };
       try {
-        const res = platformStore.createCommunicationTemplate(input, actorName);
+        const res = platformStore.createCommunicationTemplate(input, authenticatedActorName(actorName));
         addToast({ type: 'success', title: 'Template Created', message: `Saved '${res.name}' (${res.key}) to local store.` });
         return { success: true, template: res };
       } catch (err: any) {
@@ -2044,8 +2141,10 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       }
     },
     updateCommunicationTemplate: (id, updates, changeSummary, actorName) => {
+      const err = guardPerm('communications.notices.manage', 'update communication template');
+      if (err) return { success: false, error: err };
       try {
-        const res = platformStore.updateCommunicationTemplate(id, updates, changeSummary, actorName);
+        const res = platformStore.updateCommunicationTemplate(id, updates, changeSummary, authenticatedActorName(actorName));
         addToast({ type: 'success', title: 'Template Updated', message: `Updated '${res.name}' (${res.key}).` });
         return { success: true, template: res };
       } catch (err: any) {
@@ -2054,8 +2153,10 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       }
     },
     transitionTemplateStatus: (id, newStatus, reviewNotes, actorName) => {
+      const err = guardPerm('communications.notices.manage', 'transition template status');
+      if (err) return { success: false, error: err };
       try {
-        const res = platformStore.transitionTemplateStatus(id, newStatus, reviewNotes, actorName);
+        const res = platformStore.transitionTemplateStatus(id, newStatus, reviewNotes, authenticatedActorName(actorName));
         addToast({ type: 'info', title: 'Status Changed', message: `'${res.name}' is now ${newStatus}.` });
         return { success: true, template: res };
       } catch (err: any) {
@@ -2064,8 +2165,10 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       }
     },
     duplicateCommunicationTemplate: (sourceId, newKey, newName, actorName) => {
+      const err = guardPerm('communications.notices.manage', 'duplicate communication template');
+      if (err) return { success: false, error: err };
       try {
-        const res = platformStore.duplicateCommunicationTemplate(sourceId, newKey, newName, actorName);
+        const res = platformStore.duplicateCommunicationTemplate(sourceId, newKey, newName, authenticatedActorName(actorName));
         addToast({ type: 'success', title: 'Template Duplicated', message: `Created copy '${res.name}'.` });
         return { success: true, template: res };
       } catch (err: any) {
@@ -2074,8 +2177,10 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       }
     },
     archiveCommunicationTemplate: (id, actorName) => {
+      const err = guardPerm('communications.notices.manage', 'archive communication template');
+      if (err) return { success: false, error: err };
       try {
-        const res = platformStore.archiveCommunicationTemplate(id, actorName);
+        const res = platformStore.archiveCommunicationTemplate(id, authenticatedActorName(actorName));
         addToast({ type: 'warning', title: 'Template Archived', message: `'${res.name}' moved to archive.` });
         return { success: true, template: res };
       } catch (err: any) {
@@ -2084,8 +2189,10 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       }
     },
     restoreCommunicationTemplate: (id, actorName) => {
+      const err = guardPerm('communications.notices.manage', 'restore communication template');
+      if (err) return { success: false, error: err };
       try {
-        const res = platformStore.restoreCommunicationTemplate(id, actorName);
+        const res = platformStore.restoreCommunicationTemplate(id, authenticatedActorName(actorName));
         addToast({ type: 'success', title: 'Template Restored', message: `'${res.name}' restored to draft status.` });
         return { success: true, template: res };
       } catch (err: any) {
@@ -2095,8 +2202,10 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     },
     getTemplateVersionHistory: (templateId: string) => platformStore.getTemplateVersionHistory(templateId),
     restoreTemplateVersion: (versionId: string, actorName) => {
+      const err = guardPerm('communications.notices.manage', 'restore template version');
+      if (err) return { success: false, error: err };
       try {
-        const res = platformStore.restoreTemplateVersion(versionId, actorName);
+        const res = platformStore.restoreTemplateVersion(versionId, authenticatedActorName(actorName));
         addToast({ type: 'success', title: 'Version Restored', message: `Template '${res.name}' restored to draft from history.` });
         return { success: true, template: res };
       } catch (err: any) {
@@ -2107,8 +2216,10 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     getNotificationPolicies: (filters) => platformStore.getNotificationPolicies(filters),
     getNotificationPolicyById: (id: string) => platformStore.getNotificationPolicyById(id),
     createNotificationPolicy: (input, actorName) => {
+      const err = guardPerm('communications.notices.manage', 'create notification policy');
+      if (err) return { success: false, error: err };
       try {
-        const res = platformStore.createNotificationPolicy(input, actorName);
+        const res = platformStore.createNotificationPolicy(input, authenticatedActorName(actorName));
         addToast({ type: 'success', title: 'Policy Created', message: `Registered policy '${res.name}'.` });
         return { success: true, policy: res };
       } catch (err: any) {
@@ -2117,8 +2228,10 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       }
     },
     updateNotificationPolicy: (id, updates, actorName) => {
+      const err = guardPerm('communications.notices.manage', 'update notification policy');
+      if (err) return { success: false, error: err };
       try {
-        const res = platformStore.updateNotificationPolicy(id, updates, actorName);
+        const res = platformStore.updateNotificationPolicy(id, updates, authenticatedActorName(actorName));
         addToast({ type: 'success', title: 'Policy Updated', message: `Updated policy '${res.name}'.` });
         return { success: true, policy: res };
       } catch (err: any) {
@@ -2127,8 +2240,10 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       }
     },
     toggleNotificationPolicy: (id, enabled, actorName) => {
+      const err = guardPerm('communications.notices.manage', 'toggle notification policy');
+      if (err) return { success: false, error: err };
       try {
-        const res = platformStore.toggleNotificationPolicy(id, enabled, actorName);
+        const res = platformStore.toggleNotificationPolicy(id, enabled, authenticatedActorName(actorName));
         addToast({ type: 'info', title: 'Policy Toggled', message: `'${res.name}' is now ${enabled ? 'enabled' : 'disabled'}.` });
         return { success: true, policy: res };
       } catch (err: any) {
@@ -2138,7 +2253,11 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     },
     getCommunicationProviders: () => platformStore.getCommunicationProviders(),
     simulateProviderHealthCheck: (providerId, actorName) => {
-      const res = platformStore.simulateProviderHealthCheck(providerId, actorName);
+      const err = guardPerm('communications.notices.manage', 'run provider health check', ['communications.notices.manage', 'system.maintenance.manage']);
+      if (err) {
+        return { success: false, latencyMs: 0, simulatedOutput: err, checkedAt: new Date().toISOString() };
+      }
+      const res = platformStore.simulateProviderHealthCheck(providerId, authenticatedActorName(actorName));
       addToast({
         type: res.success ? 'success' : 'error',
         title: 'Provider Health Check Simulated',
@@ -2148,8 +2267,10 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     },
     getNotificationRecords: (filters) => platformStore.getNotificationRecords(filters),
     simulateTestNotification: (templateId, testRecipient, customVariables, actorName) => {
+      const err = guardPerm('communications.notices.manage', 'dispatch test notification');
+      if (err) return { success: false, error: err };
       try {
-        const res = platformStore.simulateTestNotification(templateId, testRecipient, customVariables, actorName);
+        const res = platformStore.simulateTestNotification(templateId, testRecipient, customVariables, authenticatedActorName(actorName));
         addToast({ type: 'success', title: 'Test Dispatched (Simulated)', message: `Mock message enqueued to '${testRecipient}'. No live network calls.` });
         return { success: true, record: res };
       } catch (err: any) {
@@ -2158,7 +2279,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       }
     },
     simulateNotificationRetry: (notificationId, actorName) => {
-      const res = platformStore.simulateNotificationRetry(notificationId, actorName);
+      const err = guardPerm('communications.notices.manage', 'retry notification delivery');
+      if (err) return { success: false, message: err };
+      const res = platformStore.simulateNotificationRetry(notificationId, authenticatedActorName(actorName));
       addToast({
         type: res.success ? 'success' : 'warning',
         title: res.success ? 'Retry Simulated' : 'Retry Ineligible',
@@ -2167,8 +2290,10 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     addNotificationReviewNote: (notificationId, reviewNote, actorName) => {
+      const err = guardPerm('communications.notices.manage', 'attach notification review note');
+      if (err) return { success: false, error: err };
       try {
-        const res = platformStore.addNotificationReviewNote(notificationId, reviewNote, actorName);
+        const res = platformStore.addNotificationReviewNote(notificationId, reviewNote, authenticatedActorName(actorName));
         addToast({ type: 'info', title: 'Note Attached', message: `Added review note to '${notificationId}'.` });
         return { success: true, record: res };
       } catch (err: any) {
@@ -2181,7 +2306,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       const err = guardPerm('communications.notices.manage', 'create campaign draft');
       if (err) return { success: false, error: err };
       try {
-        const res = platformStore.createCampaignDraft(input, actorName || actorProfile?.name);
+        const res = platformStore.createCampaignDraft(input, authenticatedActorName(actorName));
         addToast({ type: 'success', title: 'Campaign Drafted', message: `Created plan '${res.name}'.` });
         return { success: true, campaign: res };
       } catch (err: any) {
@@ -2193,7 +2318,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       const err = guardPerm('communications.notices.manage', 'update campaign draft');
       if (err) return { success: false, error: err };
       try {
-        const res = platformStore.updateCampaignDraft(id, updates, actorName || actorProfile?.name);
+        const res = platformStore.updateCampaignDraft(id, updates, authenticatedActorName(actorName));
         addToast({ type: 'success', title: 'Campaign Updated', message: `Saved changes to '${res.name}'.` });
         return { success: true, campaign: res };
       } catch (err: any) {
@@ -2205,7 +2330,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       const err = guardPerm('communications.notices.manage', 'transition campaign status');
       if (err) return { success: false, error: err };
       try {
-        const res = platformStore.transitionCampaignStatus(id, status as 'draft' | 'pending_approval' | 'approved' | 'cancelled', actorName || actorProfile?.name);
+        const res = platformStore.transitionCampaignStatus(id, status as 'draft' | 'pending_approval' | 'approved' | 'cancelled', authenticatedActorName(actorName));
         addToast({ type: 'info', title: 'Campaign Status Changed', message: `'${res.name}' is now ${status}.` });
         return { success: true, campaign: res };
       } catch (err: any) {
@@ -2215,8 +2340,10 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     },
     getTenantCommunicationConfigs: () => platformStore.getTenantCommunicationConfigs(),
     updateTenantCommunicationConfig: (tenantId, updates, actorName) => {
+      const err = guardPerm('communications.notices.manage', 'update tenant communication policy');
+      if (err) return { success: false, error: err };
       try {
-        const res = platformStore.updateTenantCommunicationConfig(tenantId, updates, actorName);
+        const res = platformStore.updateTenantCommunicationConfig(tenantId, updates, authenticatedActorName(actorName));
         addToast({ type: 'success', title: 'Tenant Settings Updated', message: `Updated communication config for '${res.tenantName}'.` });
         return { success: true, config: res };
       } catch (err: any) {
@@ -2225,11 +2352,8 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       }
     },
     getNotificationPreferenceGovernance: () => platformStore.getNotificationPreferenceGovernance(),
-    exportCommunicationGovernancePackage: (actorName) => {
-      const res = platformStore.exportCommunicationGovernancePackage(actorName);
-      addToast({ type: 'success', title: 'Package Exported', message: `Exported ${res.summaryMetrics.totalTemplates} templates and ${res.summaryMetrics.totalPolicies} policies.` });
-      return res;
-    },
+    exportCommunicationGovernancePackage: (actorName) =>
+      platformStore.exportCommunicationGovernancePackage(authenticatedActorName(actorName)),
     // E-09.17: Support Desk & Customer Success
     supportTickets: platformStore.getSupportTickets(),
     supportTeams: platformStore.getSupportTeams(),
@@ -2371,7 +2495,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     getSlaPolicies: () => platformStore.getSlaPolicies(),
     getSlaPolicyById: (id) => platformStore.getSlaPolicyById(id),
     createSlaPolicy: (input, actorName) => {
-      const res = platformStore.createSlaPolicy(input, actorName);
+      const err = guardPerm('support.tickets.manage', 'create SLA policy');
+      if (err) return { success: false, error: err };
+      const res = platformStore.createSlaPolicy(input, authenticatedActorName(actorName));
       if (res.success && res.policy) {
         addToast({
           type: 'success',
@@ -2384,7 +2510,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     updateSlaPolicy: (id, updates, actorName) => {
-      const res = platformStore.updateSlaPolicy(id, updates, actorName);
+      const err = guardPerm('support.tickets.manage', 'update SLA policy');
+      if (err) return { success: false, error: err };
+      const res = platformStore.updateSlaPolicy(id, updates, authenticatedActorName(actorName));
       if (res.success && res.policy) {
         addToast({
           type: 'success',
@@ -2397,7 +2525,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     toggleSlaPolicy: (id, isEnabled, actorName) => {
-      const res = platformStore.toggleSlaPolicy(id, isEnabled, actorName);
+      const err = guardPerm('support.tickets.manage', 'toggle SLA policy');
+      if (err) return { success: false, error: err };
+      const res = platformStore.toggleSlaPolicy(id, isEnabled, authenticatedActorName(actorName));
       if (res.success && res.policy) {
         addToast({
           type: isEnabled ? 'success' : 'warning',
@@ -2412,7 +2542,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     getKbArticles: (filters) => platformStore.getKbArticles(filters),
     getKbArticleById: (id) => platformStore.getKbArticleById(id),
     createKbArticle: (input, actorName) => {
-      const res = platformStore.createKbArticle(input, actorName);
+      const err = guardPerm('support.tickets.manage', 'create knowledge base article');
+      if (err) return { success: false, error: err };
+      const res = platformStore.createKbArticle(input, authenticatedActorName(actorName));
       if (res.success && res.article) {
         addToast({
           type: 'success',
@@ -2425,7 +2557,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     updateKbArticle: (id, updates, actorName) => {
-      const res = platformStore.updateKbArticle(id, updates, actorName);
+      const err = guardPerm('support.tickets.manage', 'update knowledge base article');
+      if (err) return { success: false, error: err };
+      const res = platformStore.updateKbArticle(id, updates, authenticatedActorName(actorName));
       if (res.success && res.article) {
         addToast({
           type: 'success',
@@ -2438,7 +2572,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     setKbArticleStatus: (id, status, actorName) => {
-      const res = platformStore.setKbArticleStatus(id, status, actorName);
+      const err = guardPerm('support.tickets.manage', 'change knowledge base article status');
+      if (err) return { success: false, error: err };
+      const res = platformStore.setKbArticleStatus(id, status, authenticatedActorName(actorName));
       if (res.success && res.article) {
         addToast({
           type: 'info',
@@ -2451,7 +2587,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     deleteKbArticle: (id, actorName) => {
-      const res = platformStore.deleteKbArticle(id, actorName);
+      const err = guardPerm('support.tickets.manage', 'delete knowledge base article');
+      if (err) return { success: false, error: err };
+      const res = platformStore.deleteKbArticle(id, authenticatedActorName(actorName));
       if (res.success) {
         addToast({
           type: 'info',
@@ -2465,7 +2603,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     },
     getCsatRecords: (filters) => platformStore.getCsatRecords(filters),
     submitCustomerFeedback: (input, actorName) => {
-      const res = platformStore.submitCustomerFeedback(input, actorName);
+      const err = guardPerm('support.tickets.manage', 'record customer satisfaction feedback');
+      if (err) return { success: false, error: err };
+      const res = platformStore.submitCustomerFeedback(input, authenticatedActorName(actorName));
       if (res.success && res.record) {
         addToast({
           type: 'success',
@@ -2478,7 +2618,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     reviewCsatRecord: (id, notes, actorName) => {
-      const res = platformStore.reviewCsatRecord(id, notes, actorName);
+      const err = guardPerm('support.tickets.manage', 'review customer feedback record');
+      if (err) return { success: false, error: err };
+      const res = platformStore.reviewCsatRecord(id, notes, authenticatedActorName(actorName));
       if (res.success && res.record) {
         addToast({
           type: 'success',
@@ -2564,7 +2706,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     getIntegrationMetrics: () => platformStore.getIntegrationMetrics(),
     getIntegrationHealthIndicators: () => platformStore.getIntegrationHealthIndicators(),
     updateIntegrationConfig: (id, updates, actorName) => {
-      const res = platformStore.updateIntegrationConfig(id, updates, actorName);
+      const err = guardPerm('system.maintenance.manage', 'update integration configuration', ['system.maintenance.manage', 'modules.registry.manage', 'platform.settings.update']);
+      if (err) return { success: false, error: err };
+      const res = platformStore.updateIntegrationConfig(id, updates, authenticatedActorName(actorName));
       if (res.success && res.integration) {
         addToast({
           type: 'success',
@@ -2577,7 +2721,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     toggleIntegration: (id, actorName) => {
-      const res = platformStore.toggleIntegration(id, actorName);
+      const err = guardPerm('system.maintenance.manage', 'toggle integration state', ['system.maintenance.manage', 'modules.registry.manage', 'platform.settings.update']);
+      if (err) return { success: false, error: err };
+      const res = platformStore.toggleIntegration(id, authenticatedActorName(actorName));
       if (res.success && res.integration) {
         addToast({
           type: res.integration.isEnabled ? 'success' : 'warning',
@@ -2590,7 +2736,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     simulateVerifyIntegration: (id, actorName) => {
-      const res = platformStore.simulateVerifyIntegration(id, actorName);
+      const err = guardPerm('system.maintenance.manage', 'verify integration connectivity', ['system.maintenance.manage', 'modules.registry.manage', 'platform.settings.update']);
+      if (err) return { success: false, verificationStatus: 'failed' as const, message: err };
+      const res = platformStore.simulateVerifyIntegration(id, authenticatedActorName(actorName));
       if (res.success) {
         addToast({
           type: 'success',
@@ -2607,7 +2755,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     createApiClient: (input, actorName) => {
-      const res = platformStore.createApiClient(input, actorName);
+      const err = guardPerm('system.maintenance.manage', 'register API client', ['system.maintenance.manage', 'modules.registry.manage', 'platform.settings.update']);
+      if (err) return { success: false, error: err };
+      const res = platformStore.createApiClient(input, authenticatedActorName(actorName));
       if (res.success && res.client) {
         addToast({
           type: 'success',
@@ -2620,7 +2770,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     updateApiClient: (id, updates, actorName) => {
-      const res = platformStore.updateApiClient(id, updates, actorName);
+      const err = guardPerm('system.maintenance.manage', 'update API client', ['system.maintenance.manage', 'modules.registry.manage', 'platform.settings.update']);
+      if (err) return { success: false, error: err };
+      const res = platformStore.updateApiClient(id, updates, authenticatedActorName(actorName));
       if (res.success && res.client) {
         addToast({
           type: 'success',
@@ -2633,7 +2785,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     revokeApiClient: (id, reason, actorName) => {
-      const res = platformStore.revokeApiClient(id, reason, actorName);
+      const err = guardPerm('system.maintenance.manage', 'revoke API client credentials', ['system.maintenance.manage', 'modules.registry.manage', 'platform.settings.update']);
+      if (err) return { success: false, error: err };
+      const res = platformStore.revokeApiClient(id, reason, authenticatedActorName(actorName));
       if (res.success && res.client) {
         addToast({
           type: 'warning',
@@ -2646,7 +2800,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     createWebhookEndpoint: (input, actorName) => {
-      const res = platformStore.createWebhookEndpoint(input, actorName);
+      const err = guardPerm('system.maintenance.manage', 'create webhook endpoint', ['system.maintenance.manage', 'modules.registry.manage', 'platform.settings.update']);
+      if (err) return { success: false, error: err };
+      const res = platformStore.createWebhookEndpoint(input, authenticatedActorName(actorName));
       if (res.success && res.endpoint) {
         addToast({
           type: 'success',
@@ -2659,7 +2815,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     updateWebhookEndpoint: (id, updates, actorName) => {
-      const res = platformStore.updateWebhookEndpoint(id, updates, actorName);
+      const err = guardPerm('system.maintenance.manage', 'update webhook endpoint', ['system.maintenance.manage', 'modules.registry.manage', 'platform.settings.update']);
+      if (err) return { success: false, error: err };
+      const res = platformStore.updateWebhookEndpoint(id, updates, authenticatedActorName(actorName));
       if (res.success && res.endpoint) {
         addToast({
           type: 'success',
@@ -2672,7 +2830,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     toggleWebhookEndpoint: (id, actorName) => {
-      const res = platformStore.toggleWebhookEndpoint(id, actorName);
+      const err = guardPerm('system.maintenance.manage', 'toggle webhook endpoint', ['system.maintenance.manage', 'modules.registry.manage', 'platform.settings.update']);
+      if (err) return { success: false, error: err };
+      const res = platformStore.toggleWebhookEndpoint(id, authenticatedActorName(actorName));
       if (res.success && res.endpoint) {
         addToast({
           type: res.endpoint.isEnabled ? 'success' : 'warning',
@@ -2685,7 +2845,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     simulateTestWebhookDelivery: (endpointId, eventTypeId, simulateSuccess, actorName) => {
-      const res = platformStore.simulateTestWebhookDelivery(endpointId, eventTypeId, simulateSuccess, actorName);
+      const err = guardPerm('system.maintenance.manage', 'simulate webhook test dispatch', ['system.maintenance.manage', 'modules.registry.manage', 'platform.settings.update']);
+      if (err) return { success: false, error: err };
+      const res = platformStore.simulateTestWebhookDelivery(endpointId, eventTypeId, simulateSuccess, authenticatedActorName(actorName));
       if (res.success && res.delivery) {
         addToast({
           type: res.delivery.outcome === 'simulated_success' ? 'success' : 'warning',
@@ -2698,7 +2860,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     simulateRetryWebhookDelivery: (deliveryId, simulateSuccess, actorName) => {
-      const res = platformStore.simulateRetryWebhookDelivery(deliveryId, simulateSuccess, actorName);
+      const err = guardPerm('system.maintenance.manage', 'simulate webhook retry', ['system.maintenance.manage', 'modules.registry.manage', 'platform.settings.update']);
+      if (err) return { success: false, error: err };
+      const res = platformStore.simulateRetryWebhookDelivery(deliveryId, simulateSuccess, authenticatedActorName(actorName));
       if (res.success && res.delivery) {
         addToast({
           type: res.delivery.outcome === 'simulated_success' ? 'success' : 'warning',
@@ -2713,7 +2877,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     getDataCategories: (filters) => platformStore.getDataCategories(filters),
     getDataCategoryById: (id) => platformStore.getDataCategoryById(id),
     updateDataCategory: (id, updates, actorName) => {
-      const res = platformStore.updateDataCategory(id, updates, actorName);
+      const err = guardPerm('audit.governance.manage', 'update data classification category');
+      if (err) return { success: false, error: err };
+      const res = platformStore.updateDataCategory(id, updates, authenticatedActorName(actorName));
       if (res.success && res.category) {
         addToast({
           type: 'success',
@@ -2728,7 +2894,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     getGovernanceRetentionPolicies: (filters) => platformStore.getGovernanceRetentionPolicies(filters),
     getGovernanceRetentionPolicyById: (id) => platformStore.getGovernanceRetentionPolicyById(id),
     createGovernanceRetentionPolicy: (input, actorName) => {
-      const res = platformStore.createGovernanceRetentionPolicy(input, actorName);
+      const err = guardPerm('audit.governance.manage', 'create governance retention policy');
+      if (err) return { success: false, error: err };
+      const res = platformStore.createGovernanceRetentionPolicy(input, authenticatedActorName(actorName));
       if (res.success && res.policy) {
         addToast({
           type: 'success',
@@ -2741,7 +2909,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     updateGovernanceRetentionPolicy: (id, updates, actorName) => {
-      const res = platformStore.updateGovernanceRetentionPolicy(id, updates, actorName);
+      const err = guardPerm('audit.governance.manage', 'update governance retention policy');
+      if (err) return { success: false, error: err };
+      const res = platformStore.updateGovernanceRetentionPolicy(id, updates, authenticatedActorName(actorName));
       if (res.success && res.policy) {
         addToast({
           type: 'success',
@@ -2754,7 +2924,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     reviewGovernanceRetentionPolicy: (id, reviewOutcome, nextReviewDueAt, actorName) => {
-      const res = platformStore.reviewGovernanceRetentionPolicy(id, reviewOutcome, nextReviewDueAt, actorName);
+      const err = guardPerm('audit.governance.manage', 'review governance retention policy');
+      if (err) return { success: false, error: err };
+      const res = platformStore.reviewGovernanceRetentionPolicy(id, reviewOutcome, nextReviewDueAt, authenticatedActorName(actorName));
       if (res.success && res.policy) {
         addToast({
           type: 'success',
@@ -2769,7 +2941,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     getPrivacyRequests: (filters) => platformStore.getPrivacyRequests(filters),
     getPrivacyRequestById: (id) => platformStore.getPrivacyRequestById(id),
     createPrivacyRequest: (input, actorName) => {
-      const res = platformStore.createPrivacyRequest(input, actorName);
+      const err = guardPerm('audit.governance.manage', 'register privacy compliance request');
+      if (err) return { success: false, error: err };
+      const res = platformStore.createPrivacyRequest(input, authenticatedActorName(actorName));
       if (res.success && res.request) {
         addToast({
           type: 'success',
@@ -2784,7 +2958,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     updatePrivacyRequestStatus: (id, targetStatus, reviewNotes, resolutionCategory, actorName) => {
       const err = guardPerm('audit.governance.manage', 'update privacy request workflow');
       if (err) return { success: false, error: err };
-      const res = platformStore.updatePrivacyRequestStatus(id, targetStatus, reviewNotes, resolutionCategory, actorName || actorProfile?.name);
+      const res = platformStore.updatePrivacyRequestStatus(id, targetStatus, reviewNotes, resolutionCategory, authenticatedActorName(actorName));
       if (res.success && res.request) {
         addToast({
           type: targetStatus === 'rejected_with_grounds' ? 'warning' : 'info',
@@ -2797,7 +2971,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     simulatePrivacyRequestProcessing: (id, actorName) => {
-      const res = platformStore.simulatePrivacyRequestProcessing(id, actorName);
+      const err = guardPerm('audit.governance.manage', 'simulate privacy request execution');
+      if (err) return { success: false, error: err };
+      const res = platformStore.simulatePrivacyRequestProcessing(id, authenticatedActorName(actorName));
       if (res.success && res.request) {
         addToast({
           type: 'success',
@@ -2812,7 +2988,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     getDataLifecycleRules: (filters) => platformStore.getDataLifecycleRules(filters),
     getDataLifecycleRuleById: (id) => platformStore.getDataLifecycleRuleById(id),
     createDataLifecycleRule: (input, actorName) => {
-      const res = platformStore.createDataLifecycleRule(input, actorName);
+      const err = guardPerm('audit.governance.manage', 'create data lifecycle rule');
+      if (err) return { success: false, error: err };
+      const res = platformStore.createDataLifecycleRule(input, authenticatedActorName(actorName));
       if (res.success && res.rule) {
         addToast({
           type: 'success',
@@ -2825,7 +3003,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     updateDataLifecycleRule: (id, updates, actorName) => {
-      const res = platformStore.updateDataLifecycleRule(id, updates, actorName);
+      const err = guardPerm('audit.governance.manage', 'update data lifecycle rule');
+      if (err) return { success: false, error: err };
+      const res = platformStore.updateDataLifecycleRule(id, updates, authenticatedActorName(actorName));
       if (res.success && res.rule) {
         addToast({
           type: 'success',
@@ -2838,7 +3018,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
       return res;
     },
     toggleDataLifecycleRule: (id, actorName) => {
-      const res = platformStore.toggleDataLifecycleRule(id, actorName);
+      const err = guardPerm('audit.governance.manage', 'toggle data lifecycle rule');
+      if (err) return { success: false, error: err };
+      const res = platformStore.toggleDataLifecycleRule(id, authenticatedActorName(actorName));
       if (res.success && res.rule) {
         addToast({
           type: res.rule.status === 'enabled' ? 'success' : 'warning',
@@ -2853,7 +3035,9 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     getGovernanceExceptions: (filters) => platformStore.getGovernanceExceptions(filters),
     getGovernanceExceptionById: (id) => platformStore.getGovernanceExceptionById(id),
     createGovernanceException: (input, actorName) => {
-      const res = platformStore.createGovernanceException(input, actorName);
+      const err = guardPerm('audit.governance.manage', 'register governance exception');
+      if (err) return { success: false, error: err };
+      const res = platformStore.createGovernanceException(input, authenticatedActorName(actorName));
       if (res.success && res.exception) {
         addToast({
           type: 'warning',
@@ -2868,7 +3052,7 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     reviewGovernanceException: (id, reviewStatus, resolutionSummary, actorName) => {
       const err = guardPerm('audit.governance.manage', 'review governance exception');
       if (err) return { success: false, error: err };
-      const res = platformStore.reviewGovernanceException(id, reviewStatus, resolutionSummary, actorName || actorProfile?.name);
+      const res = platformStore.reviewGovernanceException(id, reviewStatus, resolutionSummary, authenticatedActorName(actorName));
       if (res.success && res.exception) {
         addToast({
           type: reviewStatus === 'approved_demo' ? 'success' : 'warning',
@@ -2992,10 +3176,16 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     <PlatformStoreContext.Provider value={value}>
       {children}
       {/* Toast notifications container */}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-md pointer-events-none">
+      <div
+        role="region"
+        aria-label="Platform notifications"
+        className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-md pointer-events-none"
+      >
         {toasts.map((toast) => (
           <div
             key={toast.id}
+            role={toast.type === 'error' ? 'alert' : 'status'}
+            aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
             className={`pointer-events-auto p-4 rounded-lg shadow-lg border text-sm flex items-start justify-between gap-3 transition-all ${
               toast.type === 'success'
                 ? 'bg-emerald-50 border-emerald-200 text-emerald-900 dark:bg-emerald-950 dark:border-emerald-800 dark:text-emerald-100'
@@ -3011,8 +3201,10 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
               {toast.message && <p className="mt-0.5 text-xs opacity-90">{toast.message}</p>}
             </div>
             <button
+              type="button"
+              aria-label="Dismiss notification"
               onClick={() => removeToast(toast.id)}
-              className="text-xs opacity-60 hover:opacity-100 font-bold px-1"
+              className="text-xs opacity-60 hover:opacity-100 font-bold px-1 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               ×
             </button>

@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { 
   RolloutStrategy, 
   RolloutPlanInput, 
@@ -35,6 +36,8 @@ export function RolloutPlannerPanel() {
     applyRolloutPlan, 
     addToast 
   } = usePlatformStore();
+  const { user, can } = usePlatformAuth();
+  const canManageRollout = can('platform.settings.update') || can('system.features.toggle');
 
   // Active flags eligible for rollout (exclude archived)
   const availableFlags = useMemo(() => {
@@ -111,6 +114,14 @@ export function RolloutPlannerPanel() {
   };
 
   const handleApply = () => {
+    if (!canManageRollout) {
+      addToast({
+        type: 'error',
+        title: 'Authorization Required',
+        message: 'You lack permission to modify rollout strategies.',
+      });
+      return;
+    }
     if (!validationReport.isValid) {
       addToast({
         type: 'error',
@@ -120,20 +131,7 @@ export function RolloutPlannerPanel() {
       return;
     }
 
-    const res = applyRolloutPlan(planInput, 'Super-Admin Lead (Current)');
-    if (res.success) {
-      addToast({
-        type: 'success',
-        title: 'Rollout Plan Applied (Local Demo)',
-        message: `Updated targeting strategy for flag "${selectedFlag?.name}" to ${strategy}.`
-      });
-    } else {
-      addToast({
-        type: 'error',
-        title: 'Failed to Apply Plan',
-        message: res.error
-      });
-    }
+    applyRolloutPlan(planInput, user?.name);
   };
 
   return (
@@ -381,7 +379,7 @@ export function RolloutPlannerPanel() {
             <button
               type="button"
               onClick={handleApply}
-              disabled={!validationReport.isValid}
+              disabled={!validationReport.isValid || !canManageRollout}
               className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Send className="w-3.5 h-3.5" />

@@ -29,12 +29,14 @@ export function StatCard({
   className,
   onClick,
 }: StatCardProps) {
+  const Component = onClick ? 'button' : 'div';
   return (
-    <div
+    <Component
+      type={onClick ? 'button' : undefined}
       onClick={onClick}
       className={cn(
-        'bg-card text-card-foreground p-5 rounded-xl border border-border shadow-xs transition-all',
-        onClick && 'cursor-pointer hover:border-primary/50 hover:shadow-sm',
+        'bg-card text-card-foreground p-5 rounded-xl border border-border shadow-xs transition-all block',
+        onClick && 'w-full text-left cursor-pointer hover:border-primary/50 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
         className
       )}
     >
@@ -87,6 +89,6 @@ export function StatCard({
           )}
         </div>
       )}
-    </div>
+    </Component>
   );
 }

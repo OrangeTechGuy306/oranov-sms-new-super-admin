@@ -1,8 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { useId, useRef } from 'react';
 import { X } from 'lucide-react';
 import { DataLifecycleRuleRecord } from '@/lib/types/data-governance';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 
 interface LifecycleRuleDetailModalProps {
   rule: DataLifecycleRuleRecord | null;
@@ -15,6 +16,10 @@ export function LifecycleRuleDetailModal({
   onClose,
   onToggle,
 }: LifecycleRuleDetailModalProps) {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogA11y(Boolean(rule), onClose, dialogRef);
+
   if (!rule) return null;
 
   const getStageBadge = (stage: string) => {
@@ -35,8 +40,17 @@ export function LifecycleRuleDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card p-6 shadow-xl">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs overscroll-contain"
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card p-6 shadow-xl focus:outline-none"
+      >
         <div className="flex items-start justify-between border-b border-border pb-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
@@ -60,14 +74,15 @@ export function LifecycleRuleDetailModal({
                 {rule.status}
               </span>
             </div>
-            <h2 className="text-lg font-bold text-foreground">{rule.name}</h2>
+            <h2 id={titleId} className="text-lg font-bold text-foreground">{rule.name}</h2>
           </div>
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close lifecycle rule details"
             className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
 

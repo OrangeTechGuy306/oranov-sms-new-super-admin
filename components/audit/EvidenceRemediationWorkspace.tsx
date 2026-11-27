@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { GovernanceEvidence, GovernanceEvidenceType } from '@/lib/types/compliance';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { formatDate } from '@/lib/utils/formatters';
 import {
   Filter,
@@ -25,6 +26,8 @@ export function EvidenceRemediationWorkspace({
   evidenceList,
   onUpdateEvidenceStatus,
 }: EvidenceRemediationWorkspaceProps) {
+  const { user, can } = usePlatformAuth();
+  const canManageGovernance = can('audit.governance.manage');
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -32,7 +35,7 @@ export function EvidenceRemediationWorkspace({
   const [inspectEvidence, setInspectEvidence] = useState<GovernanceEvidence | null>(null);
   const [targetStatus, setTargetStatus] = useState<'verified' | 'pending_inspection' | 'unavailable'>('verified');
   const [reviewNotes, setReviewNotes] = useState('');
-  const [reviewerName, setReviewerName] = useState('Elena Rostova (Compliance Auditor)');
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   const filteredEvidence = useMemo(() => {
     return evidenceList.filter((evd) => {
@@ -56,11 +59,16 @@ export function EvidenceRemediationWorkspace({
     setInspectEvidence(evd);
     setTargetStatus(evd.reviewStatus);
     setReviewNotes(evd.notes || '');
+    setReviewError(null);
   };
 
   const handleSaveReview = () => {
-    if (!inspectEvidence) return;
-    onUpdateEvidenceStatus(inspectEvidence.id, targetStatus, reviewNotes, reviewerName);
+    if (!inspectEvidence || !canManageGovernance) return;
+    const res = onUpdateEvidenceStatus(inspectEvidence.id, targetStatus, reviewNotes, user?.name);
+    if (!res.success) {
+      setReviewError(res.error || 'Failed to update evidence status.');
+      return;
+    }
     setInspectEvidence(null);
   };
 
@@ -108,6 +116,7 @@ export function EvidenceRemediationWorkspace({
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <Filter className="w-4 h-4 text-muted-foreground" />
           <select
+            aria-label="Filter evidence by type"
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
             className="rounded-lg border border-border bg-muted px-2.5 py-1 text-foreground focus:outline-none"
@@ -121,6 +130,7 @@ export function EvidenceRemediationWorkspace({
           </select>
 
           <select
+            aria-label="Filter evidence by review status"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             className="rounded-lg border border-border bg-muted px-2.5 py-1 text-foreground focus:outline-none"
@@ -135,6 +145,7 @@ export function EvidenceRemediationWorkspace({
         <div className="flex items-center gap-2">
           <input
             type="text"
+            aria-label="Search governance evidence records"
             placeholder="Search evidence records..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -171,13 +182,15 @@ export function EvidenceRemediationWorkspace({
 
                 <div className="flex items-center gap-2">
                   {getStatusBadge(evd.reviewStatus)}
-                  <button
-                    type="button"
-                    onClick={() => handleOpenReview(evd)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-muted text-xs transition-colors"
-                  >
-                    <span>Update Status</span>
-                  </button>
+                  {canManageGovernance && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenReview(evd)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-muted text-xs transition-colors"
+                    >
+                      <span>Update Status</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -229,11 +242,18 @@ export function EvidenceRemediationWorkspace({
               </p>
             </div>
 
+            {reviewError && (
+              <div role="alert" className="p-2.5 rounded-lg bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 text-xs">
+                {reviewError}
+              </div>
+            )}
+
             <div className="space-y-1.5">
-              <label className="font-bold text-foreground block">
+              <label htmlFor="evidence-status-select" className="font-bold text-foreground block">
                 Verification Review Decision *
               </label>
               <select
+                id="evidence-status-select"
                 value={targetStatus}
                 onChange={(e) => setTargetStatus(e.target.value as 'verified' | 'pending_inspection' | 'unavailable')}
                 className="w-full rounded-lg border border-border bg-card p-2 text-xs text-foreground focus:outline-none"
@@ -245,22 +265,20 @@ export function EvidenceRemediationWorkspace({
             </div>
 
             <div className="space-y-1.5">
-              <label className="font-bold text-foreground block">
-                Auditor / Reviewer Identity
-              </label>
-              <input
-                type="text"
-                value={reviewerName}
-                onChange={(e) => setReviewerName(e.target.value)}
-                className="w-full rounded-lg border border-border bg-card p-2 text-xs text-foreground focus:outline-none"
-              />
+              <span className="font-bold text-foreground block">
+                Authenticated Reviewing Auditor
+              </span>
+              <div className="w-full rounded-lg border border-border bg-muted/50 px-3 py-2 text-xs text-foreground font-medium">
+                {user ? `${user.name} (${user.role})` : 'Unauthenticated'}
+              </div>
             </div>
 
             <div className="space-y-1.5">
-              <label className="font-bold text-foreground block">
+              <label htmlFor="evidence-review-notes" className="font-bold text-foreground block">
                 Verification Notes & Audit Findings
               </label>
               <textarea
+                id="evidence-review-notes"
                 value={reviewNotes}
                 onChange={(e) => setReviewNotes(e.target.value)}
                 placeholder="Add audit assessment details or verification observations..."

@@ -439,10 +439,10 @@ export const INITIAL_SUPPORT_TICKETS: SupportTicket[] = [
     ticketNumber: 'TCK-1003',
     subject: 'Wire Transfer Settlement Confirmation for Annual Growth Plan',
     description: 'We submitted wire settlement reference WT-2026-003 for invoice INV-2026-029 ($4,890.00). Our portal banner still displays "Awaiting Payment". Please apply manual ledger settlement.',
-    organizationId: 'org_003', // Greenfield Science Academy
+    organizationId: 'org_003', // Apex Institute of Technical Sciences
     requester: {
       name: 'Tariq Al-Mansoor',
-      email: 'tariq.m@greenfield-science.ac.ae',
+      email: 'tariq.m@apextech.edu',
       roleTitle: 'Director of Operations & Finance',
       phone: '+971 4 398 7654',
     },
@@ -469,7 +469,7 @@ export const INITIAL_SUPPORT_TICKETS: SupportTicket[] = [
       {
         id: 'msg_1003_1',
         ticketId: 'tck_1003',
-        authorId: 'tariq.m@greenfield-science.ac.ae',
+        authorId: 'tariq.m@apextech.edu',
         authorName: 'Tariq Al-Mansoor',
         authorRole: 'tenant_admin',
         type: 'tenant_reply',
@@ -483,7 +483,7 @@ export const INITIAL_SUPPORT_TICKETS: SupportTicket[] = [
         authorName: 'David Chen',
         authorRole: 'platform_operator',
         type: 'tenant_reply',
-        content: 'Hello Tariq, our treasury team has received the incoming batch notification. Please confirm whether the bank transfer was sent under the legal entity name "Greenfield Education LLC" so we can match the settlement in the ledger.',
+        content: 'Hello Tariq, our treasury team has received the incoming batch notification. Please confirm whether the bank transfer was sent under the legal entity name "Apex Institute of Technical Sciences LLC" so we can match the settlement in the ledger.',
         createdAt: '2026-03-16T12:15:00Z',
       },
       {
@@ -503,10 +503,10 @@ export const INITIAL_SUPPORT_TICKETS: SupportTicket[] = [
     ticketNumber: 'TCK-1004',
     subject: 'Emergency Suspension Appeal and Roster Archive Retrieval',
     description: 'School board governance requires immediate access to export final graduation audit reports following institution suspension. Board counsel requests temporary 48-hour compliance read-only window.',
-    organizationId: 'org_004', // Apex Charter Academy
+    organizationId: 'org_004', // Valley View Community High School
     requester: {
       name: 'Marcus Vance',
-      email: 'm.vance@apexcharter.org',
+      email: 'm.vance@valleyview.edu',
       roleTitle: 'Former Chief Academic Officer',
       phone: '+1 (555) 456-7890',
     },
@@ -695,10 +695,10 @@ export const INITIAL_SUPPORT_TICKETS: SupportTicket[] = [
     ticketNumber: 'TCK-1007',
     subject: 'Roster Batch Import Duplicate Identification Reconciliation',
     description: 'During Term 1 student import of 420 learners, 6 records threw duplicate matriculation code warnings. Needed guidance on merge versus override rules.',
-    organizationId: 'org_009', // Cedar Valley Comprehensive High School
+    organizationId: 'org_009', // Nordic International School
     requester: {
       name: 'Marcus Brody',
-      email: 'm.brody@cedarvalley.org',
+      email: 'm.brody@nordicintl.edu',
       roleTitle: 'Registrar & Admissions Officer',
     },
     category: 'student_information',
@@ -738,10 +738,10 @@ export const INITIAL_SUPPORT_TICKETS: SupportTicket[] = [
     ticketNumber: 'TCK-1008',
     subject: 'Webhook Signing Key Rotation Instructions for SIS Sync',
     description: 'Our district IT department will rotate our TLS certificates and API secret credentials on Friday. We need step-by-step guidance on zero-downtime webhook key rotation.',
-    organizationId: 'org_010', // Riverdale Community School
+    organizationId: 'org_010', // Solaris STEM Academy
     requester: {
       name: 'Chloe Bennett',
-      email: 'chloe.b@riverdale-schools.org',
+      email: 'chloe.b@solarisstem.edu',
       roleTitle: 'District IT Specialist',
     },
     category: 'integrations_api',
@@ -1197,7 +1197,7 @@ export const INITIAL_CSAT_RECORDS: CustomerSatisfactionRecord[] = [
     id: 'csat_002',
     ticketId: 'tck_1007',
     ticketNumber: 'TCK-1007',
-    organizationId: 'org_009', // Cedar Valley
+    organizationId: 'org_009', // Nordic International School
     rating: 5,
     category: 'student_information',
     comment: 'Marcus Brody guided our admissions team on handling duplicate matriculation codes without data loss.',
@@ -1230,7 +1230,7 @@ export const INITIAL_CSAT_RECORDS: CustomerSatisfactionRecord[] = [
     id: 'csat_005',
     ticketId: 'tck_historical_02',
     ticketNumber: 'TCK-0965',
-    organizationId: 'org_003', // Greenfield
+    organizationId: 'org_003', // Apex Institute of Technical Sciences
     rating: 5,
     category: 'org_onboarding',
     comment: 'Seamless multi-branch campus migration.',
@@ -1241,7 +1241,7 @@ export const INITIAL_CSAT_RECORDS: CustomerSatisfactionRecord[] = [
     id: 'csat_006',
     ticketId: 'tck_historical_03',
     ticketNumber: 'TCK-0940',
-    organizationId: 'org_010', // Riverdale
+    organizationId: 'org_010', // Solaris STEM Academy
     rating: 3,
     category: 'performance_latency',
     comment: 'Took a few days to optimize the attendance report generation, but it works smoothly now.',
@@ -1300,9 +1300,9 @@ export const INITIAL_CS_TASKS: CustomerSuccessTask[] = [
   },
   {
     id: 'cst_004',
-    title: 'Resolve Greenfield Annual Plan Wire Remittance',
+    title: 'Resolve Apex Institute Annual Plan Wire Remittance',
     description: 'Verify Dubai Islamic Bank wire settlement reference WT-2026-003 and remove pending payment portal banner.',
-    organizationId: 'org_003', // Greenfield
+    organizationId: 'org_003', // Apex Institute of Technical Sciences
     assignedOwnerId: 'usr_billing_04', // David Chen
     priority: 'normal',
     status: 'in_progress',
@@ -1313,8 +1313,8 @@ export const INITIAL_CS_TASKS: CustomerSuccessTask[] = [
   {
     id: 'cst_005',
     title: 'Suspension Appeal Follow-Up with Compliance Counsel',
-    description: 'Review board counsel roster export request for Apex Charter and prepare executive approval package.',
-    organizationId: 'org_004', // Apex Charter
+    description: 'Review board counsel roster export request for Valley View and prepare executive approval package.',
+    organizationId: 'org_004', // Valley View Community High School
     assignedOwnerId: 'usr_super_01', // Alexander Sterling
     priority: 'urgent',
     status: 'in_progress',
@@ -1335,9 +1335,9 @@ export const INITIAL_CS_TASKS: CustomerSuccessTask[] = [
   },
   {
     id: 'cst_007',
-    title: 'Term 1 Admissions Onboarding Follow-Up (Cedar Valley)',
+    title: 'Term 1 Admissions Onboarding Follow-Up (Nordic International)',
     description: 'Ensure student import reconciliation is complete and bursary fee templates are successfully configured.',
-    organizationId: 'org_009', // Cedar Valley
+    organizationId: 'org_009', // Nordic International School
     assignedOwnerId: 'usr_support_03',
     priority: 'low',
     status: 'completed',
@@ -1348,9 +1348,9 @@ export const INITIAL_CS_TASKS: CustomerSuccessTask[] = [
   },
   {
     id: 'cst_008',
-    title: 'Webhook Key Rotation Assistance (Riverdale)',
+    title: 'Webhook Key Rotation Assistance (Solaris STEM Academy)',
     description: 'Provide dual-secret verification documentation to Chloe Bennett for Friday rotation window.',
-    organizationId: 'org_010', // Riverdale
+    organizationId: 'org_010', // Solaris STEM Academy
     assignedOwnerId: 'usr_ops_02',
     priority: 'low',
     status: 'pending',

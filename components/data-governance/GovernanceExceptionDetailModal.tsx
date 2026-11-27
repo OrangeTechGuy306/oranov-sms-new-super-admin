@@ -1,9 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useId, useRef } from 'react';
 import { X } from 'lucide-react';
 import { GovernanceExceptionRecord } from '@/lib/types/data-governance';
 import { isOverdue } from '@/lib/data-governance/evaluator';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 
 interface GovernanceExceptionDetailModalProps {
   exception: GovernanceExceptionRecord | null;
@@ -16,6 +17,10 @@ export function GovernanceExceptionDetailModal({
   onClose,
   onReview,
 }: GovernanceExceptionDetailModalProps) {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogA11y(Boolean(exception), onClose, dialogRef);
+
   if (!exception) return null;
 
   const isReviewOverdue = isOverdue(exception.reviewDueAt);
@@ -36,8 +41,17 @@ export function GovernanceExceptionDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card p-6 shadow-xl">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs overscroll-contain"
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card p-6 shadow-xl focus:outline-none"
+      >
         <div className="flex items-start justify-between border-b border-border pb-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
@@ -55,14 +69,15 @@ export function GovernanceExceptionDetailModal({
                 {exception.reasonCategory.replace(/_/g, ' ')}
               </span>
             </div>
-            <h2 className="text-lg font-bold text-foreground">{exception.title}</h2>
+            <h2 id={titleId} className="text-lg font-bold text-foreground">{exception.title}</h2>
           </div>
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close governance exception details"
             className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
 

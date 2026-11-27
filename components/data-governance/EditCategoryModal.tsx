@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import { X, AlertCircle, Save } from 'lucide-react';
 import {
   DataCategoryRecord,
@@ -8,6 +8,7 @@ import {
   UpdateDataCategoryInput,
   GovernanceRetentionPolicy,
 } from '@/lib/types/data-governance';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 
 interface EditCategoryModalProps {
   category: DataCategoryRecord | null;
@@ -22,6 +23,10 @@ export function EditCategoryModal({
   onClose,
   onSave,
 }: EditCategoryModalProps) {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogA11y(Boolean(category), onClose, dialogRef);
+
   const [classification, setClassification] = useState<DataClassificationLevel>(
     category?.classificationLevel || 'internal'
   );
@@ -51,23 +56,33 @@ export function EditCategoryModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-      <div className="relative w-full max-w-xl rounded-xl border border-border bg-card p-6 shadow-xl">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs overscroll-contain"
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="relative w-full max-w-xl rounded-xl border border-border bg-card p-6 shadow-xl focus:outline-none"
+      >
         <div className="flex items-start justify-between border-b border-border pb-3">
           <div>
             <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400">
               {category.code}
             </span>
-            <h2 className="text-base font-bold text-foreground">
+            <h2 id={titleId} className="text-base font-bold text-foreground">
               Edit Category Classification & Governance
             </h2>
           </div>
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close category edit dialog"
             className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
 

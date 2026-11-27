@@ -2,6 +2,8 @@
 
 import React, { useState } from 'react';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
+import { isPlatformDevControlsEnabled } from '@/lib/auth/platformAuthConfig';
 import { ExtendedPlatformSettings } from '@/lib/types/platform-config';
 import {
   SUPPORTED_LOCALES,
@@ -30,6 +32,9 @@ import {
 
 export function GlobalSettingsPanel() {
   const { extendedSettings, updateExtendedSettings, resetToDefaults, createChangeProposal } = usePlatformStore();
+  const { can } = usePlatformAuth();
+  const canUpdateSettings = can('platform.settings.update');
+  const canResetDevFixtures = isPlatformDevControlsEnabled() && can('system.maintenance.manage');
 
   const [formState, setFormState] = useState<ExtendedPlatformSettings>(extendedSettings);
   const [activeSection, setActiveSection] = useState<'branding' | 'regional' | 'onboarding' | 'academic' | 'security' | 'notifications' | 'maintenance'>('branding');
@@ -153,22 +158,26 @@ export function GlobalSettingsPanel() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowResetConfirm(true)}
-            className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-muted text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Reset Defaults</span>
-          </button>
-          <button
-            type="button"
-            onClick={handleOpenPreview}
-            className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 flex items-center gap-1.5 transition-colors shadow-xs"
-          >
-            <Save className="w-3.5 h-3.5" />
-            <span>Review & Save</span>
-          </button>
+          {canResetDevFixtures && (
+            <button
+              type="button"
+              onClick={() => setShowResetConfirm(true)}
+              className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-muted text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Defaults</span>
+            </button>
+          )}
+          {canUpdateSettings && (
+            <button
+              type="button"
+              onClick={handleOpenPreview}
+              className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 flex items-center gap-1.5 transition-colors shadow-xs"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>Review & Save</span>
+            </button>
+          )}
         </div>
       </div>
 

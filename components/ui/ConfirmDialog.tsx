@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Modal } from './Modal';
 import { AlertTriangle, AlertCircle, Info } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils/cn';
 export interface ConfirmDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   title: string;
   description: React.ReactNode;
   confirmLabel?: string;
@@ -32,6 +32,9 @@ export function ConfirmDialog({
   isLoading = false,
   isConfirmDisabled = false,
 }: ConfirmDialogProps) {
+  const [isPending, setIsPending] = useState(false);
+  const busy = isLoading || isPending;
+
   const variantIcons = {
     danger: <AlertTriangle className="w-6 h-6 text-rose-500 shrink-0" />,
     warning: <AlertCircle className="w-6 h-6 text-amber-500 shrink-0" />,
@@ -60,24 +63,29 @@ export function ConfirmDialog({
           <button
             type="button"
             onClick={onClose}
-            disabled={isLoading}
+            disabled={busy}
             className="px-4 py-2 text-sm font-medium rounded-lg border border-border text-foreground/80 hover:bg-muted transition-colors disabled:opacity-50"
           >
             {cancelLabel}
           </button>
           <button
             type="button"
-            onClick={() => {
-              onConfirm();
-              onClose();
+            onClick={async () => {
+              setIsPending(true);
+              try {
+                await Promise.resolve(onConfirm());
+                onClose();
+              } finally {
+                setIsPending(false);
+              }
             }}
-            disabled={isLoading || isConfirmDisabled}
+            disabled={busy || isConfirmDisabled}
             className={cn(
               'px-4 py-2 text-sm font-medium rounded-lg shadow-xs transition-colors disabled:opacity-50',
               confirmBtnStyles[variant]
             )}
           >
-            {isLoading ? 'Processing...' : confirmLabel}
+            {busy ? 'Processing...' : confirmLabel}
           </button>
         </>
       }

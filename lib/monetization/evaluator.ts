@@ -371,6 +371,11 @@ export function computeMonetizationAnalytics(
         let monthlyValue = 0;
         if (sub.billingCycle === 'annual') {
           monthlyValue = plan.priceAnnual > 0 ? round2(plan.priceAnnual / 12) : 0;
+        } else if (sub.billingCycle === 'quarterly') {
+          monthlyValue =
+            typeof plan.priceQuarterly === 'number' && plan.priceQuarterly > 0
+              ? round2(plan.priceQuarterly / 3)
+              : plan.priceMonthly || 0;
         } else {
           monthlyValue = plan.priceMonthly || 0;
         }

@@ -9,6 +9,7 @@ import { DataTable, Column } from '@/components/ui/DataTable';
 import { Badge } from '@/components/ui/Badge';
 import { SearchFilterBar } from '@/components/ui/SearchFilterBar';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { AlertBanner } from '@/components/ui/AlertBanner';
 import { PlatformUser, PlatformRoleKey } from '@/lib/types/platform-users';
 import { PlatformRole, PlatformPermission } from '@/lib/types/iam';
 import { AuditEvent } from '@/lib/types/audit-logs';
@@ -74,6 +75,7 @@ export default function PlatformUsersPage() {
   const [isCreateUserOpen, setIsCreateUserOpen] = useState(false);
   const [isCreateRoleOpen, setIsCreateRoleOpen] = useState(false);
   const [roleChangeTarget, setRoleChangeTarget] = useState<{ user: PlatformUser; role: PlatformRoleKey } | null>(null);
+  const [roleActionError, setRoleActionError] = useState<string | null>(null);
 
   // Filters for Tab 1 (Users)
   const [userSearchQuery, setUserSearchQuery] = useState('');
@@ -144,9 +146,10 @@ export default function PlatformUsersPage() {
   const handleQuickRoleChange = (user: PlatformUser, newRoleKey: PlatformRoleKey) => {
     const val = validateRoleAssignment(user, newRoleKey, platformUsers, platformRoles, 'assign');
     if (!val.valid) {
-      alert(val.error);
+      setRoleActionError(val.error || 'Role assignment blocked by governance policy.');
       return;
     }
+    setRoleActionError(null);
     setRoleChangeTarget({ user, role: newRoleKey });
   };
 
@@ -553,6 +556,24 @@ export default function PlatformUsersPage() {
 
       {/* Top IAM Governance KPI Cards */}
       <IamSummaryCards metrics={iamMetrics} />
+
+      {roleActionError && (
+        <AlertBanner
+          variant="error"
+          title="Role Assignment Blocked"
+          action={
+            <button
+              type="button"
+              onClick={() => setRoleActionError(null)}
+              className="text-xs font-semibold underline cursor-pointer"
+            >
+              Dismiss
+            </button>
+          }
+        >
+          {roleActionError}
+        </AlertBanner>
+      )}
 
       {/* Navigation Tabs */}
       <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />

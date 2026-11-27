@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
 import { SupportTicket, EscalationTargetTier, EscalationUrgency } from '@/lib/types/support-desk';
 import { X, ArrowUpRight, AlertTriangle, AlertCircle } from 'lucide-react';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 
 interface EscalateTicketModalProps {
   isOpen: boolean;
@@ -13,6 +14,9 @@ interface EscalateTicketModalProps {
 
 export function EscalateTicketModal({ isOpen, onClose, ticket }: EscalateTicketModalProps) {
   const { supportTeams, escalateSupportTicket } = usePlatformStore();
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogA11y(isOpen, onClose, dialogRef);
 
   const [reason, setReason] = useState('');
   const [targetTeamId, setTargetTeamId] = useState(
@@ -49,16 +53,25 @@ export function EscalateTicketModal({ isOpen, onClose, ticket }: EscalateTicketM
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs overscroll-contain"
+    >
       <div className="fixed inset-0" onClick={onClose} aria-hidden="true" />
-      <div className="relative w-full max-w-lg rounded-xl border border-red-500/30 bg-card shadow-2xl p-6 z-10 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="relative w-full max-w-lg rounded-xl border border-red-500/30 bg-card shadow-2xl p-6 z-10 space-y-4 animate-in fade-in zoom-in-95 duration-150 focus:outline-none"
+      >
         <div className="flex items-center justify-between pb-3 border-b border-border">
           <div className="flex items-center gap-2">
             <div className="p-1.5 rounded-lg bg-red-500/10 text-red-500">
-              <AlertTriangle className="w-4 h-4" />
+              <AlertTriangle className="w-4 h-4" aria-hidden="true" />
             </div>
             <div>
-              <h3 className="text-base font-semibold text-foreground">
+              <h3 id={titleId} className="text-base font-semibold text-foreground">
                 Escalate Support Case: {ticket.ticketNumber}
               </h3>
               <p className="text-xs text-muted-foreground">
@@ -69,9 +82,10 @@ export function EscalateTicketModal({ isOpen, onClose, ticket }: EscalateTicketM
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close escalate support case dialog"
             className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted"
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
 

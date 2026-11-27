@@ -170,7 +170,18 @@ export const organizationSubscriptionSchema = z
     organizationId: nonEmptyIdSchema,
     planId: nonEmptyIdSchema,
     billingCycle: z.enum(["monthly", "annual", "quarterly"]),
-    status: z.enum(["active", "trialing", "past_due", "canceled", "expired"]),
+    status: z.enum([
+      "active",
+      "trialing",
+      "past_due",
+      "grace_period",
+      "canceled",
+      "cancelled",
+      "expired",
+      "suspended",
+      "pending_payment",
+      "draft",
+    ]),
   })
   .passthrough();
 

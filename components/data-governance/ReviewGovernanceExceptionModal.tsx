@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import { X, CheckCircle2, AlertTriangle } from 'lucide-react';
 import {
   GovernanceExceptionRecord,
   ExceptionReviewStatus,
 } from '@/lib/types/data-governance';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 
 interface ReviewGovernanceExceptionModalProps {
   exception: GovernanceExceptionRecord | null;
@@ -18,6 +19,10 @@ export function ReviewGovernanceExceptionModal({
   onClose,
   onSubmitReview,
 }: ReviewGovernanceExceptionModalProps) {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogA11y(Boolean(exception), onClose, dialogRef);
+
   const [status, setStatus] = useState<ExceptionReviewStatus>(
     exception?.reviewStatus === 'pending_review' ? 'approved_demo' : (exception?.reviewStatus || 'approved_demo')
   );
@@ -40,23 +45,33 @@ export function ReviewGovernanceExceptionModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-      <div className="relative w-full max-w-lg rounded-xl border border-border bg-card p-6 shadow-xl">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs overscroll-contain"
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="relative w-full max-w-lg rounded-xl border border-border bg-card p-6 shadow-xl focus:outline-none"
+      >
         <div className="flex items-start justify-between border-b border-border pb-3">
           <div>
             <span className="font-mono text-xs font-bold text-amber-600 dark:text-amber-400">
               {exception.code}
             </span>
-            <h2 className="text-base font-bold text-foreground">
+            <h2 id={titleId} className="text-base font-bold text-foreground">
               Review Governance Exception / Hold
             </h2>
           </div>
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close exception review dialog"
             className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
 

@@ -80,7 +80,7 @@ export function SubscriptionDetailClient({ subscriptionId }: SubscriptionDetailC
   // Upgrade / Downgrade Plan Switch Modal State
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [selectedNewPlanId, setSelectedNewPlanId] = useState('');
-  const [selectedNewCycle, setSelectedNewCycle] = useState<'monthly' | 'annual'>('annual');
+  const [selectedNewCycle, setSelectedNewCycle] = useState<'monthly' | 'quarterly' | 'annual'>('annual');
   const [planSwitchError, setPlanSwitchError] = useState('');
 
   // Add-on Grant Form State
@@ -502,7 +502,16 @@ export function SubscriptionDetailClient({ subscriptionId }: SubscriptionDetailC
             <div className="flex justify-between">
               <span className="text-muted-foreground">Base Price:</span>
               <span className="font-mono font-bold text-foreground">
-                {plan ? formatCurrency(subscription.billingCycle === 'annual' ? plan.priceAnnual : plan.priceMonthly, plan.currency) : '—'}
+                {plan
+                  ? formatCurrency(
+                      subscription.billingCycle === 'annual'
+                        ? plan.priceAnnual
+                        : subscription.billingCycle === 'quarterly'
+                        ? (plan.priceQuarterly ?? plan.priceMonthly * 3)
+                        : plan.priceMonthly,
+                      plan.currency
+                    )
+                  : '—'}
               </span>
             </div>
             <div className="flex justify-between">
@@ -865,10 +874,11 @@ export function SubscriptionDetailClient({ subscriptionId }: SubscriptionDetailC
               <label className="font-semibold text-foreground block">Billing Cycle</label>
               <select
                 value={selectedNewCycle}
-                onChange={(e) => setSelectedNewCycle(e.target.value as 'monthly' | 'annual')}
+                onChange={(e) => setSelectedNewCycle(e.target.value as 'monthly' | 'quarterly' | 'annual')}
                 className="w-full px-3 py-2 bg-muted/50 border border-border rounded-lg text-foreground focus:outline-none"
               >
                 <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
                 <option value="annual">Annual</option>
               </select>
             </div>

@@ -305,13 +305,13 @@ export function Sidebar({ isCollapsed, onToggleCollapse, onCloseMobile }: Sideba
       </div>
 
       {/* Navigation Groups */}
-      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
+      <nav aria-label="Primary platform navigation" className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
         {navGroups.map((group) => (
           <div key={group.title} className="space-y-1">
             {!isCollapsed && (
-              <h3 className="px-3 text-[10px] font-bold uppercase tracking-wider text-sidebar-foreground/50 mb-2">
+              <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-sidebar-foreground/50 mb-2">
                 {group.title}
-              </h3>
+              </p>
             )}
             <ul className="space-y-1">
               {group.items.map((item) => {
@@ -324,6 +324,8 @@ export function Sidebar({ isCollapsed, onToggleCollapse, onCloseMobile }: Sideba
                       href={item.href}
                       onClick={onCloseMobile}
                       title={isCollapsed ? item.label : undefined}
+                      aria-label={isCollapsed ? item.label : undefined}
+                      aria-current={active ? 'page' : undefined}
                       className={cn(
                         'flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all group relative',
                         active
@@ -333,6 +335,7 @@ export function Sidebar({ isCollapsed, onToggleCollapse, onCloseMobile }: Sideba
                       )}
                     >
                       <Icon
+                        aria-hidden="true"
                         className={cn(
                           'w-4 h-4 shrink-0 transition-colors',
                           active ? 'text-sidebar-primary' : 'text-sidebar-foreground/60 group-hover:text-sidebar-foreground'
@@ -346,11 +349,16 @@ export function Sidebar({ isCollapsed, onToggleCollapse, onCloseMobile }: Sideba
                       {/* Status dot or badge */}
                       {!isCollapsed && item.statusDot && (
                         <span
+                          aria-label={item.statusDot === 'operational' ? 'Status: Operational' : 'Status: Warning'}
                           className={cn(
                             'w-2 h-2 rounded-full shrink-0',
                             item.statusDot === 'operational' ? 'bg-emerald-400' : 'bg-amber-400'
                           )}
-                        />
+                        >
+                          <span className="sr-only">
+                            {item.statusDot === 'operational' ? 'Operational' : 'Warning'}
+                          </span>
+                        </span>
                       )}
 
                       {!isCollapsed && item.badge !== undefined && (
@@ -372,7 +380,7 @@ export function Sidebar({ isCollapsed, onToggleCollapse, onCloseMobile }: Sideba
             </ul>
           </div>
         ))}
-      </div>
+      </nav>
 
       {/* Footer Area: Development Reset (Only shown when dev mock controls enabled & authorized) */}
       {canResetFixtures && (
@@ -403,6 +411,7 @@ export function Sidebar({ isCollapsed, onToggleCollapse, onCloseMobile }: Sideba
                 type="button"
                 onClick={() => setShowResetConfirm(true)}
                 title="Reset development fixtures"
+                aria-label="Reset development fixtures"
                 className="p-2 rounded-lg text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent"
               >
                 <RotateCcw className="w-4 h-4" />

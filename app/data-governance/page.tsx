@@ -291,14 +291,18 @@ function DataGovernanceContent() {
             tenants={tenantSummaries}
             exceptions={governanceExceptions}
             auditLogs={auditLogs}
-            onResetDefaults={() => {
-              resetToDefaults();
-              addToast({
-                title: 'Reset Completed',
-                message: 'Governance demonstration baseline reloaded.',
-                type: 'info',
-              });
-            }}
+            onResetDefaults={
+              canResetFixtures
+                ? () => {
+                    resetToDefaults();
+                    addToast({
+                      title: 'Reset Completed',
+                      message: 'Governance demonstration baseline reloaded.',
+                      type: 'info',
+                    });
+                  }
+                : undefined
+            }
             addToast={addToast}
           />
         )}
@@ -308,10 +312,6 @@ function DataGovernanceContent() {
 }
 
 export default function DataGovernancePage() {
-  const { can } = usePlatformAuth();
-  const canResetFixtures =
-    isPlatformDevControlsEnabled() && can('system.maintenance.manage');
-
   return (
     <Suspense
       fallback={

@@ -16,7 +16,7 @@ export type SubscriptionStatus =
   | 'canceled'
   | 'expired';
 
-export type BillingCycle = 'monthly' | 'annual';
+export type BillingCycle = 'monthly' | 'quarterly' | 'annual';
 
 export type InvoiceStatus = 'draft' | 'issued' | 'paid' | 'overdue' | 'void' | 'uncollectible';
 

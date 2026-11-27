@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useTheme } from '../providers/ThemeContext';
@@ -28,6 +28,7 @@ import { getInitials } from '@/lib/utils/formatters';
 
 interface TopBarProps {
   onOpenMobileMenu: () => void;
+  mobileMenuOpen?: boolean;
 }
 
 const PLATFORM_MODULES = [
@@ -49,6 +50,8 @@ const PLATFORM_MODULES = [
   { label: 'Audit Logs & Compliance', href: '/audit-logs', category: 'Governance & Security' },
   { label: 'Data Governance & Privacy Workflows', href: '/data-governance', category: 'Governance & Security' },
   { label: 'System Health & Operations', href: '/system-health', category: 'Operations & Maintenance' },
+  { label: 'Administrative Approvals Queue', href: '/approvals', category: 'Operations & Maintenance' },
+  { label: 'Operational Exceptions Queue', href: '/exceptions', category: 'Operations & Maintenance' },
   { label: 'Communications & Delivery Governance', href: '/communications', category: 'Operations & Maintenance' },
   { label: 'Support Desk & Customer Success', href: '/support', category: 'Operations & Maintenance' },
   { label: 'APIs, Webhooks & Integrations', href: '/integrations', category: 'Operations & Maintenance' },
@@ -56,7 +59,7 @@ const PLATFORM_MODULES = [
   { label: 'Platform Settings & Feature Flags', href: '/settings', category: 'Platform Configuration' },
 ];
 
-export function TopBar({ onOpenMobileMenu }: TopBarProps) {
+export function TopBar({ onOpenMobileMenu, mobileMenuOpen = false }: TopBarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
@@ -66,8 +69,9 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Global '/' keyboard shortcut to trigger Quick Find
+  // Global '/' keyboard shortcut & Escape dismissal for popovers
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
@@ -76,11 +80,21 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
       ) {
         e.preventDefault();
         setSearchOpen(true);
+      } else if (e.key === 'Escape') {
+        if (searchOpen) setSearchOpen(false);
+        if (userMenuOpen) setUserMenuOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [searchOpen, userMenuOpen]);
+
+  useEffect(() => {
+    if (searchOpen) {
+      const t = setTimeout(() => searchInputRef.current?.focus(), 10);
+      return () => clearTimeout(t);
+    }
+  }, [searchOpen]);
 
   // Authenticated platform administrator identity (never defaults silently when unauthenticated)
   const currentUser = user;
@@ -127,6 +141,8 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
       else if (part === 'platform-users') label = 'Platform Users & Roles';
       else if (part === 'audit-logs') label = 'Audit Logs & Compliance';
       else if (part === 'system-health') label = 'System Health & Ops';
+      else if (part === 'approvals') label = 'Administrative Approvals';
+      else if (part === 'exceptions') label = 'Operational Exceptions';
       else if (part === 'communications') label = 'Communications & Delivery';
       else if (part === 'support') label = 'Support Desk & Tenant Success';
       else if (part === 'settings') label = 'Platform Settings';
@@ -184,6 +200,8 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
         <button
           type="button"
           onClick={onOpenMobileMenu}
+          aria-expanded={mobileMenuOpen}
+          aria-controls="platform-mobile-navigation"
           className="md:hidden p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted"
           aria-label="Open navigation menu"
         >
@@ -196,9 +214,9 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
             const isLast = idx === breadcrumbs.length - 1;
             return (
               <React.Fragment key={crumb.href}>
-                {idx > 0 && <ChevronRight className="w-3.5 h-3.5 opacity-40 shrink-0" />}
+                {idx > 0 && <ChevronRight aria-hidden="true" className="w-3.5 h-3.5 opacity-40 shrink-0" />}
                 {isLast ? (
-                  <span className="font-semibold text-foreground truncate max-w-[200px]">
+                  <span aria-current="page" className="font-semibold text-foreground truncate max-w-[200px]">
                     {crumb.label}
                   </span>
                 ) : (
@@ -222,9 +240,12 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
           <button
             type="button"
             onClick={() => setSearchOpen(!searchOpen)}
+            aria-expanded={searchOpen}
+            aria-haspopup="dialog"
+            aria-label="Open Quick Find search"
             className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
           >
-            <Search className="w-3.5 h-3.5" />
+            <Search aria-hidden="true" className="w-3.5 h-3.5" />
             <span className="hidden lg:inline">Quick Find...</span>
             <kbd className="hidden lg:inline-block text-[10px] px-1 py-0.2 rounded bg-muted text-muted-foreground font-mono">
               /
@@ -235,18 +256,24 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
           {searchOpen && (
             <>
               <div
+                aria-hidden="true"
                 className="fixed inset-0 z-30"
                 onClick={() => setSearchOpen(false)}
               />
-              <div className="absolute right-0 top-full mt-2 w-80 bg-card rounded-xl border border-border shadow-xl z-40 p-2 space-y-2 animate-in fade-in zoom-in-95 duration-150">
+              <div
+                role="dialog"
+                aria-label="Quick Find"
+                className="absolute right-0 top-full mt-2 w-80 bg-card rounded-xl border border-border shadow-xl z-40 p-2 space-y-2 animate-in fade-in zoom-in-95 duration-150"
+              >
                 <div className="relative">
-                  <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                  <Search aria-hidden="true" className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
+                    ref={searchInputRef}
                     type="text"
+                    aria-label="Search schools, routes, and platform workspaces"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search schools by name or code..."
-                    autoFocus
                     className="w-full pl-9 pr-3 py-2 text-xs bg-muted/50 rounded-lg border border-border focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
@@ -258,21 +285,22 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                         Platform Workspaces & Governance
                       </div>
                       {searchResultsModules.map((mod) => (
-                        <div
+                        <button
                           key={mod.href}
+                          type="button"
                           onClick={() => {
                             setSearchOpen(false);
                             setSearchQuery('');
                             router.push(mod.href);
                           }}
-                          className="p-2 hover:bg-muted rounded-lg cursor-pointer flex items-center justify-between transition-colors"
+                          className="w-full text-left p-2 hover:bg-muted rounded-lg cursor-pointer flex items-center justify-between transition-colors"
                         >
                           <div className="min-w-0">
                             <p className="font-semibold text-foreground truncate">{mod.label}</p>
                             <p className="text-[10px] text-muted-foreground">{mod.category} • {mod.href}</p>
                           </div>
                           <Compass className="w-3.5 h-3.5 text-primary shrink-0" />
-                        </div>
+                        </button>
                       ))}
                     </div>
                   )}
@@ -283,14 +311,15 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                         School Organizations
                       </div>
                       {searchResultsOrgs.map((org) => (
-                        <div
+                        <button
                           key={org.id}
+                          type="button"
                           onClick={() => {
                             setSearchOpen(false);
                             setSearchQuery('');
                             router.push(`/organizations/${org.id}`);
                           }}
-                          className="p-2 hover:bg-muted rounded-lg cursor-pointer flex items-center justify-between transition-colors"
+                          className="w-full text-left p-2 hover:bg-muted rounded-lg cursor-pointer flex items-center justify-between transition-colors"
                         >
                           <div className="min-w-0">
                             <p className="font-semibold text-foreground truncate">{org.name}</p>
@@ -299,7 +328,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                             </p>
                           </div>
                           <Building2 className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                        </div>
+                        </button>
                       ))}
                     </div>
                   )}
@@ -343,6 +372,9 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
             <button
               type="button"
               onClick={() => setUserMenuOpen(!userMenuOpen)}
+              aria-label={`Account menu for ${currentUser.name}`}
+              aria-expanded={userMenuOpen}
+              aria-haspopup="menu"
               className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-muted transition-colors"
             >
               <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground font-bold text-xs flex items-center justify-center shadow-xs">
@@ -358,10 +390,15 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
             {userMenuOpen && (
               <>
                 <div
+                  aria-hidden="true"
                   className="fixed inset-0 z-30"
                   onClick={() => setUserMenuOpen(false)}
                 />
-                <div className="absolute right-0 top-full mt-2 w-64 bg-card rounded-xl border border-border shadow-xl z-40 p-2 space-y-1 text-xs">
+                <div
+                  role="menu"
+                  aria-label="Account actions"
+                  className="absolute right-0 top-full mt-2 w-64 bg-card rounded-xl border border-border shadow-xl z-40 p-2 space-y-1 text-xs"
+                >
                   <div className="p-3 border-b border-border bg-muted/30 rounded-lg mb-1">
                     <p className="font-semibold text-foreground">{currentUser.name}</p>
                     <p className="text-[11px] text-muted-foreground truncate">{currentUser.email}</p>

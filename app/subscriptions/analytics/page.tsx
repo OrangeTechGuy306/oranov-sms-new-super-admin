@@ -72,13 +72,18 @@ export default function MonetizationAnalyticsPage() {
     currency: selectedCurrency,
     mrr: 0,
     arr: 0,
-    activePaidSubscriptions: 0,
-    invoicedVolume: 0,
-    collectedVolume: 0,
-    outstandingBalance: 0,
-    arpu: 0,
-    overdueInvoiceCount: 0,
+    totalInvoiced: 0,
+    totalCollected: 0,
+    totalOutstanding: 0,
+    overdueBalance: 0,
   };
+
+  const currencyPaidCount = useMemo(() => {
+    const planCurrencyMap = new Map(plans.map((p) => [p.id, p.currency]));
+    return subscriptions.filter(
+      (s) => s.status === 'active' && planCurrencyMap.get(s.planId) === selectedCurrency
+    ).length;
+  }, [subscriptions, plans, selectedCurrency]);
 
   return (
     <div className="space-y-6">
@@ -183,8 +188,8 @@ export default function MonetizationAnalyticsPage() {
         />
         <StatCard
           title={`Average Revenue / Account (${selectedCurrency})`}
-          value={formatCurrency(currentMetrics.mrr / Math.max(1, analytics.activePaidSubscriptions), selectedCurrency)}
-          subtitle={`Across ${analytics.activePaidSubscriptions} paid accounts`}
+          value={formatCurrency(currentMetrics.mrr / Math.max(1, currencyPaidCount), selectedCurrency)}
+          subtitle={`Across ${currencyPaidCount} paid ${selectedCurrency} accounts`}
           icon={<DollarSign className="w-5 h-5 text-primary" />}
         />
         <StatCard

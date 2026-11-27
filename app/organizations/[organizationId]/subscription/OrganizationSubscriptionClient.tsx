@@ -35,7 +35,7 @@ export function OrganizationSubscriptionClient({ organizationId }: ClientProps) 
   const invoices = getInvoicesByOrgId(organizationId);
 
   const [selectedPlanId, setSelectedPlanId] = useState<string>(org?.planId || 'plan_growth');
-  const [selectedCycle, setSelectedCycle] = useState<'monthly' | 'annual'>(
+  const [selectedCycle, setSelectedCycle] = useState<'monthly' | 'quarterly' | 'annual'>(
     subscription?.billingCycle || 'annual'
   );
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -230,6 +230,17 @@ export function OrganizationSubscriptionClient({ organizationId }: ClientProps) 
             </button>
             <button
               type="button"
+              onClick={() => setSelectedCycle('quarterly')}
+              className={`px-3 py-1 rounded-md transition-all ${
+                selectedCycle === 'quarterly'
+                  ? 'bg-card text-foreground shadow-2xs font-bold'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Quarterly
+            </button>
+            <button
+              type="button"
               onClick={() => setSelectedCycle('annual')}
               className={`px-3 py-1 rounded-md transition-all flex items-center gap-1.5 ${
                 selectedCycle === 'annual'
@@ -247,7 +258,12 @@ export function OrganizationSubscriptionClient({ organizationId }: ClientProps) 
           {plans.map((plan) => {
             const isSelected = selectedPlanId === plan.id;
             const isCurrentlyAssigned = org.planId === plan.id;
-            const price = selectedCycle === 'annual' ? plan.priceAnnual : plan.priceMonthly;
+            const price =
+              selectedCycle === 'annual'
+                ? plan.priceAnnual
+                : selectedCycle === 'quarterly'
+                ? (plan.priceQuarterly ?? plan.priceMonthly * 3)
+                : plan.priceMonthly;
 
             return (
               <div
@@ -270,8 +286,10 @@ export function OrganizationSubscriptionClient({ organizationId }: ClientProps) 
                   </div>
                   <p className="text-xs text-muted-foreground leading-relaxed">{plan.description}</p>
                   <div>
-                    <span className="text-2xl font-black text-foreground">{formatCurrency(price)}</span>
-                    <span className="text-xs text-muted-foreground">/{selectedCycle === 'annual' ? 'year' : 'month'}</span>
+                    <span className="text-2xl font-black text-foreground">{formatCurrency(price, plan.currency)}</span>
+                    <span className="text-xs text-muted-foreground">
+                      /{selectedCycle === 'annual' ? 'year' : selectedCycle === 'quarterly' ? 'quarter' : 'month'}
+                    </span>
                   </div>
                 </div>
 

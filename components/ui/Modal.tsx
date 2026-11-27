@@ -31,33 +31,66 @@ export function Modal({
   const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const focusableSelector =
+      'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (!isOpen) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
         onClose();
+        return;
+      }
+      if (e.key === 'Tab' && modalRef.current) {
+        const focusables = Array.from(
+          modalRef.current.querySelectorAll<HTMLElement>(focusableSelector)
+        ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+        if (focusables.length === 0) {
+          e.preventDefault();
+          return;
+        }
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && (document.activeElement === first || document.activeElement === modalRef.current)) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
     };
 
+    const focusTimer = isOpen
+      ? setTimeout(() => {
+          if (modalRef.current) {
+            const firstFocusable = modalRef.current.querySelector<HTMLElement>(focusableSelector);
+            if (firstFocusable) {
+              firstFocusable.focus();
+            } else {
+              modalRef.current.focus();
+            }
+          }
+        }, 20)
+      : null;
+
     if (isOpen) {
       prevActiveElement.current = document.activeElement as HTMLElement;
-      document.body.style.overflow = 'hidden';
       window.addEventListener('keydown', handleKeyDown);
-
-      // Focus the modal container
-      setTimeout(() => {
-        if (modalRef.current) {
-          modalRef.current.focus();
-        }
-      }, 50);
-    } else {
-      document.body.style.overflow = 'unset';
-      if (prevActiveElement.current && typeof prevActiveElement.current.focus === 'function') {
-        prevActiveElement.current.focus();
-      }
     }
 
     return () => {
-      document.body.style.overflow = 'unset';
+      if (focusTimer) clearTimeout(focusTimer);
       window.removeEventListener('keydown', handleKeyDown);
+      if (
+        isOpen &&
+        prevActiveElement.current &&
+        document.contains(prevActiveElement.current) &&
+        typeof prevActiveElement.current.focus === 'function'
+      ) {
+        prevActiveElement.current.focus();
+        prevActiveElement.current = null;
+      }
     };
   }, [isOpen, onClose]);
 
@@ -77,12 +110,13 @@ export function Modal({
       aria-modal="true"
       aria-labelledby={titleId}
       aria-describedby={description ? descId : undefined}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto overscroll-contain"
     >
       {/* Backdrop */}
       <div
         onClick={onClose}
-        className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
+        aria-hidden="true"
+        className="fixed inset-0 bg-black/60 backdrop-blur-xs overscroll-contain transition-opacity animate-in fade-in duration-200"
       />
 
       {/* Modal Dialog Content */}

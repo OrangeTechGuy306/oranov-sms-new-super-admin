@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useId, useMemo, useRef, useState } from 'react';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 import {
   SlaPolicy,
   SupportTicketPriority,
@@ -34,6 +36,11 @@ const SIMULATION_BASE_ISO = '2026-10-20T12:00:00.000Z';
 const SIMULATION_BASE_TIME = new Date(SIMULATION_BASE_ISO).getTime();
 
 export function SlaPolicyManagementPanel() {
+  const { can } = usePlatformAuth();
+  const canManageSla = can('support.tickets.manage');
+  const createTitleId = useId();
+  const createModalRef = useRef<HTMLDivElement>(null);
+
   const {
     slaPolicies,
     supportTickets,
@@ -57,6 +64,7 @@ export function SlaPolicyManagementPanel() {
   const [timeZone, setTimeZone] = useState('Africa/Lagos');
   const [escalationThresholdPercent, setEscalationThresholdPercent] = useState(75);
   const [formError, setFormError] = useState<string | null>(null);
+  useDialogA11y(isCreateOpen, () => setIsCreateOpen(false), createModalRef);
 
   // Interactive Sandbox state
   const [sandboxPolicyId, setSandboxPolicyId] = useState<string>(slaPolicies[0]?.id || '');
@@ -188,12 +196,15 @@ export function SlaPolicyManagementPanel() {
         <div className="lg:col-span-1 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Configured Policies</h3>
-            <button
-              onClick={() => setIsCreateOpen(true)}
-              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" /> New Policy
-            </button>
+            {canManageSla && (
+              <button
+                type="button"
+                onClick={() => setIsCreateOpen(true)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" aria-hidden="true" /> New Policy
+              </button>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -205,49 +216,56 @@ export function SlaPolicyManagementPanel() {
               return (
                 <div
                   key={policy.id}
-                  onClick={() => setSelectedPolicyId(policy.id)}
-                  className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                  className={`p-3 rounded-xl border transition-all space-y-2 ${
                     isSelected
                       ? 'border-primary bg-primary/5 shadow-sm ring-1 ring-primary'
                       : 'border-border bg-card hover:bg-muted/40'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-xs text-foreground">{policy.name}</span>
-                        {policy.isDefault && (
-                          <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-primary/20 text-primary">
-                            Default
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-muted-foreground line-clamp-1">{policy.description}</p>
-                    </div>
-
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleToggleActive(policy);
-                      }}
-                      className="text-muted-foreground hover:text-foreground p-0.5"
-                      title={policy.isEnabled ? 'Deactivate Policy' : 'Activate Policy'}
+                      type="button"
+                      onClick={() => setSelectedPolicyId(policy.id)}
+                      aria-pressed={isSelected}
+                      className="flex-1 text-left focus:outline-none focus-visible:underline"
                     >
-                      {policy.isEnabled ? (
-                        <ToggleRight className="w-5 h-5 text-emerald-500" />
-                      ) : (
-                        <ToggleLeft className="w-5 h-5 text-slate-400" />
-                      )}
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-xs text-foreground">{policy.name}</span>
+                          {policy.isDefault && (
+                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-primary/20 text-primary">
+                              Default
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-muted-foreground line-clamp-1">{policy.description}</p>
+                      </div>
                     </button>
+
+                    {canManageSla && (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleActive(policy)}
+                        aria-label={policy.isEnabled ? `Deactivate policy ${policy.name}` : `Activate policy ${policy.name}`}
+                        className="text-muted-foreground hover:text-foreground p-0.5 shrink-0"
+                        title={policy.isEnabled ? 'Deactivate Policy' : 'Activate Policy'}
+                      >
+                        {policy.isEnabled ? (
+                          <ToggleRight className="w-5 h-5 text-emerald-500" aria-hidden="true" />
+                        ) : (
+                          <ToggleLeft className="w-5 h-5 text-slate-400" aria-hidden="true" />
+                        )}
+                      </button>
+                    )}
                   </div>
 
-                  <div className="mt-2.5 pt-2 border-t border-border/50 flex items-center justify-between text-[11px] text-muted-foreground">
+                  <div className="w-full mt-2.5 pt-2 border-t border-border/50 flex items-center justify-between text-[11px] text-muted-foreground">
                     <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
+                      <Clock className="w-3 h-3" aria-hidden="true" />
                       Resp: {formatMinutesDuration(highResponse)}
                     </span>
                     <span className="flex items-center gap-1">
-                      <Timer className="w-3 h-3" />
+                      <Timer className="w-3 h-3" aria-hidden="true" />
                       Res: {formatMinutesDuration(highResolution)}
                     </span>
                     <span className="text-[10px] px-1 rounded bg-muted">
@@ -559,11 +577,22 @@ export function SlaPolicyManagementPanel() {
 
       {/* Create Policy Modal */}
       {isCreateOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-lg rounded-xl border border-border bg-card p-5 shadow-2xl space-y-4">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={createTitleId}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200 overscroll-contain"
+        >
+          <div
+            ref={createModalRef}
+            tabIndex={-1}
+            className="w-full max-w-lg rounded-xl border border-border bg-card p-5 shadow-2xl space-y-4 focus:outline-none"
+          >
             <div className="flex items-center justify-between pb-2 border-b border-border">
-              <h3 className="text-sm font-bold text-foreground">Create Support SLA Policy</h3>
+              <h3 id={createTitleId} className="text-sm font-bold text-foreground">Create Support SLA Policy</h3>
               <button
+                type="button"
+                aria-label="Close create SLA policy dialog"
                 onClick={() => setIsCreateOpen(false)}
                 className="text-muted-foreground hover:text-foreground text-xs"
               >

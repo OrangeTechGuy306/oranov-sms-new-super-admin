@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
 import {
   SupportCategoryKey,
@@ -10,6 +10,7 @@ import {
 } from '@/lib/types/support-desk';
 import { SUPPORT_CATEGORIES } from '@/lib/support/fixtures';
 import { X, Plus, AlertCircle, LifeBuoy, Building2 } from 'lucide-react';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 
 interface CreateTicketModalProps {
   isOpen: boolean;
@@ -19,6 +20,9 @@ interface CreateTicketModalProps {
 
 export function CreateTicketModal({ isOpen, onClose, initialOrgId }: CreateTicketModalProps) {
   const { organizations, platformUsers, supportTeams, slaPolicies, createSupportTicket } = usePlatformStore();
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogA11y(isOpen, onClose, dialogRef);
 
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
@@ -87,21 +91,30 @@ export function CreateTicketModal({ isOpen, onClose, initialOrgId }: CreateTicke
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs overscroll-contain"
+    >
       <div
         className="fixed inset-0"
         onClick={onClose}
         aria-hidden="true"
       />
-      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card shadow-2xl p-6 z-10 space-y-5 animate-in fade-in zoom-in-95 duration-150">
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card shadow-2xl p-6 z-10 space-y-5 animate-in fade-in zoom-in-95 duration-150 focus:outline-none"
+      >
         {/* Modal Header */}
         <div className="flex items-center justify-between pb-3 border-b border-border">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-lg bg-primary/10 text-primary">
-              <LifeBuoy className="w-5 h-5" />
+              <LifeBuoy className="w-5 h-5" aria-hidden="true" />
             </div>
             <div>
-              <h3 className="text-base font-semibold text-foreground">Create Support Ticket</h3>
+              <h3 id={titleId} className="text-base font-semibold text-foreground">Create Support Ticket</h3>
               <p className="text-xs text-muted-foreground">
                 Register a new assistance case for a school organization in local development state.
               </p>
@@ -110,9 +123,10 @@ export function CreateTicketModal({ isOpen, onClose, initialOrgId }: CreateTicke
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close create support ticket dialog"
             className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
 

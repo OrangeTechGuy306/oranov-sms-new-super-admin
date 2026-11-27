@@ -15,6 +15,7 @@ import { DataTable, Column } from '@/components/ui/DataTable';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { StatCard } from '@/components/ui/StatCard';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { formatDate } from '@/lib/utils/formatters';
 import {
   Wrench,
@@ -46,6 +47,8 @@ export function MaintenanceWindowsWorkspace({
   onUpdateWindow,
   onCancelWindow,
 }: MaintenanceWindowsWorkspaceProps) {
+  const { user, can } = usePlatformAuth();
+  const canManageMaintenance = can('system.maintenance.manage');
   // Tabs & filters
   const [statusFilter, setStatusFilter] = useState<'all' | MaintenanceStatus>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -64,8 +67,9 @@ export function MaintenanceWindowsWorkspace({
   const [endTime, setEndTime] = useState('2026-10-25T04:30');
   const [timeZone, setTimeZone] = useState('UTC');
   const [impactDescription, setImpactDescription] = useState('');
-  const [responsibleOperator, setResponsibleOperator] = useState('Alexander Sterling');
   const [formErrors, setFormErrors] = useState<string[]>([]);
+
+  const authenticatedOperatorName = user?.name || 'Platform Operator';
 
   // Filtered maintenance windows
   const filteredWindows = useMemo(() => {
@@ -100,7 +104,6 @@ export function MaintenanceWindowsWorkspace({
     setEndTime('2026-10-25T04:30');
     setTimeZone('UTC');
     setImpactDescription('');
-    setResponsibleOperator('Alexander Sterling');
     setFormErrors([]);
     setIsCreateModalOpen(true);
   };
@@ -114,11 +117,11 @@ export function MaintenanceWindowsWorkspace({
     setEndTime(win.endTime.slice(0, 16));
     setTimeZone(win.timeZone);
     setImpactDescription(win.impactDescription);
-    setResponsibleOperator(win.responsibleOperator);
     setFormErrors([]);
   };
 
   const handleSubmitCreate = () => {
+    if (!canManageMaintenance) return;
     const input: CreateMaintenanceInput = {
       title,
       description,
@@ -127,7 +130,7 @@ export function MaintenanceWindowsWorkspace({
       endTime: new Date(endTime).toISOString(),
       timeZone,
       impactDescription,
-      responsibleOperator,
+      responsibleOperator: authenticatedOperatorName,
     };
 
     const validation = validateMaintenanceWindow(input, maintenanceWindows);
@@ -141,7 +144,7 @@ export function MaintenanceWindowsWorkspace({
   };
 
   const handleSubmitEdit = () => {
-    if (!editingWindow) return;
+    if (!editingWindow || !canManageMaintenance) return;
     const input: CreateMaintenanceInput = {
       title,
       description,
@@ -150,7 +153,7 @@ export function MaintenanceWindowsWorkspace({
       endTime: new Date(endTime).toISOString(),
       timeZone,
       impactDescription,
-      responsibleOperator,
+      responsibleOperator: authenticatedOperatorName,
     };
 
     const validation = validateMaintenanceWindow(input, maintenanceWindows, editingWindow.id);
@@ -266,18 +269,19 @@ export function MaintenanceWindowsWorkspace({
       header: 'Actions',
       render: (win) => (
         <div className="flex items-center gap-1.5">
-          {win.status === 'scheduled' && (
+          {canManageMaintenance && win.status === 'scheduled' && (
             <button
               type="button"
               onClick={() => handleOpenEdit(win)}
               className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
               title="Edit scheduled window"
+              aria-label={`Edit maintenance window ${win.title}`}
             >
               <Edit2 className="w-3.5 h-3.5 text-primary" />
             </button>
           )}
 
-          {(win.status === 'scheduled' || win.status === 'in_progress') && (
+          {canManageMaintenance && (win.status === 'scheduled' || win.status === 'in_progress') && (
             <button
               type="button"
               onClick={() => {
@@ -287,6 +291,7 @@ export function MaintenanceWindowsWorkspace({
               }}
               className="p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-950 text-rose-500 cursor-pointer"
               title="Cancel maintenance window"
+              aria-label={`Cancel maintenance window ${win.title}`}
             >
               <XCircle className="w-3.5 h-3.5" />
             </button>
@@ -375,14 +380,16 @@ export function MaintenanceWindowsWorkspace({
           </button>
         </div>
 
-        <button
-          type="button"
-          onClick={handleOpenCreate}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg font-semibold text-xs cursor-pointer shadow-2xs hover:opacity-95 transition-opacity"
-        >
-          <PlusCircle className="w-3.5 h-3.5" />
-          Schedule Maintenance Window
-        </button>
+        {canManageMaintenance && (
+          <button
+            type="button"
+            onClick={handleOpenCreate}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg font-semibold text-xs cursor-pointer shadow-2xs hover:opacity-95 transition-opacity"
+          >
+            <PlusCircle className="w-3.5 h-3.5" />
+            Schedule Maintenance Window
+          </button>
+        )}
       </div>
 
       {/* Windows Table */}
@@ -530,15 +537,12 @@ export function MaintenanceWindowsWorkspace({
             </div>
 
             <div className="space-y-1">
-              <label className="font-bold text-foreground block">
-                Responsible Platform Operator
-              </label>
-              <input
-                type="text"
-                value={responsibleOperator}
-                onChange={(e) => setResponsibleOperator(e.target.value)}
-                className="w-full px-3 py-2 text-xs bg-background border border-border rounded-lg text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
-              />
+              <span className="font-bold text-foreground block">
+                Responsible Platform Operator (Authenticated)
+              </span>
+              <div className="w-full px-3 py-2 text-xs bg-muted/50 border border-border rounded-lg text-foreground font-medium">
+                {user ? `${user.name} (${user.role})` : authenticatedOperatorName}
+              </div>
             </div>
           </div>
         </Modal>

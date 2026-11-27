@@ -35,6 +35,7 @@ import {
   Copy,
   Table,
 } from 'lucide-react';
+import { Modal } from '@/components/ui/Modal';
 
 interface ReportsExportsWorkspaceProps {
   filters: AnalyticsGlobalFilters;
@@ -322,49 +323,52 @@ export function ReportsExportsWorkspace({
       </div>
 
       {/* Save Modal */}
-      {showSaveModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-card border border-border rounded-xl shadow-xl max-w-sm w-full p-5 space-y-4">
-            <h3 className="font-bold text-sm text-foreground flex items-center gap-2">
-              <Bookmark className="w-4 h-4 text-primary" />
-              Save Report Preset
-            </h3>
-
-            <div className="space-y-2 text-xs">
-              <label className="font-semibold text-muted-foreground block">
-                Preset Title
-              </label>
-              <input
-                type="text"
-                value={saveTitle}
-                onChange={(e) => setSaveTitle(e.target.value)}
-                placeholder="e.g. Monthly Executive Board Package"
-                className="w-full px-3 py-1.5 bg-muted/40 border border-border rounded-lg text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary"
-              />
-              <p className="text-[11px] text-muted-foreground">
-                Saves current template ({selectedTemplateId}) and active filter parameters.
-              </p>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
-              <button
-                type="button"
-                onClick={() => setShowSaveModal(false)}
-                className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground font-semibold rounded-lg"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveCurrentReport}
-                className="px-4 py-1.5 text-xs bg-primary text-primary-foreground font-semibold rounded-lg hover:bg-primary/90 shadow-2xs"
-              >
-                Save Local Preset
-              </button>
-            </div>
-          </div>
+      <Modal
+        isOpen={showSaveModal}
+        onClose={() => setShowSaveModal(false)}
+        title={
+          <span className="flex items-center gap-2">
+            <Bookmark className="w-4 h-4 text-primary" />
+            Save Report Preset
+          </span>
+        }
+        size="sm"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setShowSaveModal(false)}
+              className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground font-semibold rounded-lg"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveCurrentReport}
+              className="px-4 py-1.5 text-xs bg-primary text-primary-foreground font-semibold rounded-lg hover:bg-primary/90 shadow-2xs"
+            >
+              Save Local Preset
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-2 text-xs">
+          <label htmlFor="report-preset-title" className="font-semibold text-muted-foreground block">
+            Preset Title
+          </label>
+          <input
+            id="report-preset-title"
+            type="text"
+            value={saveTitle}
+            onChange={(e) => setSaveTitle(e.target.value)}
+            placeholder="e.g. Monthly Executive Board Package"
+            className="w-full px-3 py-1.5 bg-muted/40 border border-border rounded-lg text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary"
+          />
+          <p className="text-[11px] text-muted-foreground">
+            Saves current template ({selectedTemplateId}) and active filter parameters.
+          </p>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }

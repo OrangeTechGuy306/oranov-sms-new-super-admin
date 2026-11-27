@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import Link from 'next/link';
 
 export default function PlatformGlobalError({
@@ -10,9 +10,23 @@ export default function PlatformGlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('Control-plane boundary caught error:', error);
+    }
+  }, [error]);
+
+  const userSafeMessage =
+    process.env.NODE_ENV === 'production'
+      ? 'An unexpected error interrupted this control-plane view. Retry or return to Control Plane Home.'
+      : error?.message || 'An unexpected error interrupted this control-plane view.';
+
   return (
     <div className="min-h-[60vh] flex items-center justify-center p-6">
-      <div className="max-w-md w-full rounded-xl border border-red-200 dark:border-red-900/60 bg-white dark:bg-slate-900 p-6 shadow-sm space-y-4">
+      <div
+        role="alert"
+        className="max-w-md w-full rounded-xl border border-red-200 dark:border-red-900/60 bg-white dark:bg-slate-900 p-6 shadow-sm space-y-4"
+      >
         <div className="space-y-1">
           <p className="text-xs font-semibold uppercase tracking-wider text-red-600 dark:text-red-400">
             Super Admin Control Plane
@@ -21,8 +35,13 @@ export default function PlatformGlobalError({
             Something went wrong
           </h2>
           <p className="text-sm text-slate-600 dark:text-slate-400">
-            {error?.message || 'An unexpected error interrupted this control-plane view.'}
+            {userSafeMessage}
           </p>
+          {error?.digest && (
+            <p className="text-xs font-mono text-slate-500">
+              Reference ID: {error.digest}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <button

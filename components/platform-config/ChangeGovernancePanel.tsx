@@ -2,6 +2,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
+import { Modal } from '@/components/ui/Modal';
 import {
   ConfigurationChangeProposal,
   ProposalStatus,
@@ -35,6 +37,16 @@ export function ChangeGovernancePanel() {
     transitionProposalStatus,
     addToast
   } = usePlatformStore();
+  const { user, can } = usePlatformAuth();
+  const canCreateProposal = can('platform.settings.update') || can('system.features.toggle');
+  const canReviewProposal = can('operations.approvals.manage') || can('platform.settings.update');
+
+  const isAuthorOfProposal = (proposal: ConfigurationChangeProposal) =>
+    Boolean(
+      user &&
+        ((proposal.author.id && proposal.author.id === user.id && proposal.author.name.trim().toLowerCase() === user.name.trim().toLowerCase()) ||
+          proposal.author.name.trim().toLowerCase() === user.name.trim().toLowerCase())
+    );
 
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [scopeFilter, setScopeFilter] = useState<string>('all');
@@ -165,41 +177,16 @@ export function ChangeGovernancePanel() {
     });
 
     if (res.success) {
-      addToast({
-        type: 'success',
-        title: 'Proposal Submitted',
-        message: `Proposal "${newTitle}" created and queued for peer review.`
-      });
       setIsCreateModalOpen(false);
       setNewTitle('');
       setNewReason('');
-    } else {
-      addToast({
-        type: 'error',
-        title: 'Creation Failed',
-        message: res.error
-      });
     }
   };
 
   const handleTransition = (proposalId: string, status: ProposalStatus, notes?: string) => {
-    const res = transitionProposalStatus(proposalId, status, notes);
-    if (res.success) {
-      addToast({
-        type: 'success',
-        title: 'Governance Decision Recorded',
-        message: `Proposal status transitioned to ${status.replace('_', ' ')}.`
-      });
-      // Update modal view if currently inspecting this proposal
-      if (inspectingProposal && inspectingProposal.id === proposalId && res.proposal) {
-        setInspectingProposal(res.proposal);
-      }
-    } else {
-      addToast({
-        type: 'error',
-        title: 'Action Failed',
-        message: res.error
-      });
+    const res = transitionProposalStatus(proposalId, status, notes, user?.name);
+    if (res.success && inspectingProposal && inspectingProposal.id === proposalId && res.proposal) {
+      setInspectingProposal(res.proposal);
     }
   };
 
@@ -303,17 +290,19 @@ export function ChangeGovernancePanel() {
           </select>
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            setNewTargetId(featureFlags[0]?.key || '');
-            setIsCreateModalOpen(true);
-          }}
-          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-sm"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          Create Change Proposal
-        </button>
+        {canCreateProposal && (
+          <button
+            type="button"
+            onClick={() => {
+              setNewTargetId(featureFlags[0]?.key || '');
+              setIsCreateModalOpen(true);
+            }}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-sm"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Create Change Proposal
+          </button>
+        )}
       </div>
 
       {/* Proposals List / Table */}
@@ -329,16 +318,16 @@ export function ChangeGovernancePanel() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Configuration change proposals table">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 font-semibold border-b border-slate-200 dark:border-slate-800">
                 <tr>
-                  <th className="px-4 py-3">Proposal Details</th>
-                  <th className="px-4 py-3">Scope & Target</th>
-                  <th className="px-4 py-3">Author</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Reviewer Decision</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th scope="col" className="px-4 py-3">Proposal Details</th>
+                  <th scope="col" className="px-4 py-3">Scope & Target</th>
+                  <th scope="col" className="px-4 py-3">Author</th>
+                  <th scope="col" className="px-4 py-3">Status</th>
+                  <th scope="col" className="px-4 py-3">Reviewer Decision</th>
+                  <th scope="col" className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
@@ -416,7 +405,7 @@ export function ChangeGovernancePanel() {
                           Inspect Diff
                         </button>
 
-                        {proposal.status === 'approved' && (
+                        {canCreateProposal && proposal.status === 'approved' && (
                           <button
                             type="button"
                             onClick={() => handleTransition(proposal.id, 'applied_locally', 'Applied approved change to local platform demonstration store')}
@@ -438,27 +427,21 @@ export function ChangeGovernancePanel() {
 
       {/* Inspect & Review Proposal Modal */}
       {inspectingProposal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl p-6 space-y-5">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-                    Proposal: {inspectingProposal.title}
-                  </h3>
-                  {getStatusBadge(inspectingProposal.status)}
-                </div>
-                <p className="text-xs text-slate-500 font-mono mt-0.5">
-                  ID: {inspectingProposal.id} • Target: {inspectingProposal.targetEntity} ({inspectingProposal.scope})
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setInspectingProposal(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
-              >
-                <X className="w-5 h-5" />
-              </button>
+        <Modal
+          isOpen={true}
+          onClose={() => setInspectingProposal(null)}
+          title={`Proposal: ${inspectingProposal.title}`}
+          description={`ID: ${inspectingProposal.id} • Target: ${inspectingProposal.targetEntity} (${inspectingProposal.scope})`}
+          size="xl"
+        >
+          <div className="space-y-5">
+            <div className="flex items-center justify-between">
+              {getStatusBadge(inspectingProposal.status)}
+              {isAuthorOfProposal(inspectingProposal) && inspectingProposal.status === 'pending_review' && (
+                <span className="text-[11px] font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 rounded-md border border-amber-200 dark:border-amber-800">
+                  Self-approval disabled: another authorized reviewer must approve this proposal.
+                </span>
+              )}
             </div>
 
             {/* Author & Reason */}
@@ -533,7 +516,7 @@ export function ChangeGovernancePanel() {
             {/* Modal Actions */}
             <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
               <div>
-                {inspectingProposal.status === 'pending_review' && (
+                {canCreateProposal && inspectingProposal.status === 'pending_review' && (
                   <button
                     type="button"
                     onClick={() => handleTransition(inspectingProposal.id, 'cancelled', 'Cancelled by operator')}
@@ -553,7 +536,7 @@ export function ChangeGovernancePanel() {
                   Close
                 </button>
 
-                {inspectingProposal.status === 'pending_review' && (
+                {canReviewProposal && inspectingProposal.status === 'pending_review' && (
                   <>
                     <button
                       type="button"
@@ -564,15 +547,21 @@ export function ChangeGovernancePanel() {
                     </button>
                     <button
                       type="button"
+                      disabled={isAuthorOfProposal(inspectingProposal)}
+                      title={
+                        isAuthorOfProposal(inspectingProposal)
+                          ? 'Dual-control policy prevents approving your own proposal'
+                          : 'Approve proposal'
+                      }
                       onClick={() => handleTransition(inspectingProposal.id, 'approved', reviewerNotes || 'Approved by secondary reviewer')}
-                      className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+                      className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-45 disabled:cursor-not-allowed"
                     >
                       Approve Proposal
                     </button>
                   </>
                 )}
 
-                {inspectingProposal.status === 'approved' && (
+                {canCreateProposal && inspectingProposal.status === 'approved' && (
                   <button
                     type="button"
                     onClick={() => handleTransition(inspectingProposal.id, 'applied_locally', 'Applied to local store')}
@@ -584,29 +573,19 @@ export function ChangeGovernancePanel() {
               </div>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* Create Proposal Modal */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <form 
-            onSubmit={handleCreateProposal}
-            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl max-w-lg w-full shadow-2xl p-6 space-y-4"
-          >
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                <Plus className="w-4 h-4 text-indigo-500" />
-                Submit New Configuration Proposal
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsCreateModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+        <Modal
+          isOpen={true}
+          onClose={() => setIsCreateModalOpen(false)}
+          title="Submit New Configuration Proposal"
+          description="Submit proposed changes for dual-control peer review."
+          size="md"
+        >
+          <form onSubmit={handleCreateProposal} className="space-y-4">
 
             <div className="space-y-3 text-xs">
               <div>
@@ -747,7 +726,7 @@ export function ChangeGovernancePanel() {
               </button>
             </div>
           </form>
-        </div>
+        </Modal>
       )}
     </div>
   );

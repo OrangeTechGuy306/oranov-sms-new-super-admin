@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { DataRetentionPolicy } from '@/lib/types/compliance';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { formatDate } from '@/lib/utils/formatters';
 import {
   Clock,
@@ -28,11 +29,12 @@ export function DataRetentionPolicyWorkspace({
   policies,
   onUpdatePolicy,
 }: DataRetentionPolicyWorkspaceProps) {
+  const { user, can } = usePlatformAuth();
+  const canManageGovernance = can('audit.governance.manage');
   const [selectedPolicy, setSelectedPolicy] = useState<DataRetentionPolicy | null>(null);
   const [targetDays, setTargetDays] = useState<number>(365);
   const [isEnabled, setIsEnabled] = useState<boolean>(true);
   const [justification, setJustification] = useState('');
-  const [actorName, setActorName] = useState('Alexander Sterling (Super Admin)');
   const [updateError, setUpdateError] = useState<string | null>(null);
 
   const handleOpenEdit = (pol: DataRetentionPolicy) => {
@@ -44,13 +46,13 @@ export function DataRetentionPolicyWorkspace({
   };
 
   const handleSavePolicy = () => {
-    if (!selectedPolicy) return;
+    if (!selectedPolicy || !canManageGovernance) return;
     const res = onUpdatePolicy(
       selectedPolicy.id,
       Number(targetDays),
       justification,
       isEnabled,
-      actorName
+      user?.name
     );
     if (!res.success) {
       setUpdateError(res.error || 'Failed to update policy');
@@ -140,14 +142,16 @@ export function DataRetentionPolicyWorkspace({
                 Reviewed: {formatDate(pol.lastReviewedDate)}
               </span>
 
-              <button
-                type="button"
-                onClick={() => handleOpenEdit(pol)}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-border text-foreground hover:bg-muted text-xs transition-colors font-medium"
-              >
-                <Edit2 className="w-3 h-3 text-muted-foreground" />
-                <span>Adjust Schedule</span>
-              </button>
+              {canManageGovernance && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenEdit(pol)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-border text-foreground hover:bg-muted text-xs transition-colors font-medium"
+                >
+                  <Edit2 className="w-3 h-3 text-muted-foreground" />
+                  <span>Adjust Schedule</span>
+                </button>
+              )}
             </div>
           </div>
         ))}
@@ -227,10 +231,11 @@ export function DataRetentionPolicyWorkspace({
             </div>
 
             <div className="space-y-1.5">
-              <label className="font-bold text-foreground block">
+              <label htmlFor="retention-justification-input" className="font-bold text-foreground block">
                 Audited Regulatory Justification *
               </label>
               <textarea
+                id="retention-justification-input"
                 value={justification}
                 onChange={(e) => setJustification(e.target.value)}
                 placeholder="State the regulatory statute, corporate board resolution, or legal counsel approval basis..."
@@ -243,15 +248,12 @@ export function DataRetentionPolicyWorkspace({
             </div>
 
             <div className="space-y-1.5">
-              <label className="font-bold text-foreground block">
-                Authorizing Super-Admin Identity
-              </label>
-              <input
-                type="text"
-                value={actorName}
-                onChange={(e) => setActorName(e.target.value)}
-                className="w-full rounded-lg border border-border bg-card p-2 text-xs text-foreground focus:outline-none"
-              />
+              <span className="font-bold text-foreground block">
+                Authenticated Authorizing Operator
+              </span>
+              <div className="w-full rounded-lg border border-border bg-muted/50 px-3 py-2 text-xs text-foreground font-medium">
+                {user ? `${user.name} (${user.role})` : 'Unauthenticated'}
+              </div>
             </div>
 
             <div className="flex items-center justify-between pt-2 border-t border-border">

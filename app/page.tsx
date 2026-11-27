@@ -32,7 +32,7 @@ export default function PlatformOverviewPage() {
     organizations,
     plans,
     auditEvents,
-    systemServices,
+    operationalComponents,
     operationalOverview,
     operationalQueues,
   } = usePlatformStore();
@@ -368,20 +368,41 @@ export default function PlatformOverviewPage() {
             </div>
 
             <div className="space-y-2 text-xs">
-              {systemServices.slice(0, 4).map((svc) => (
-                <div
-                  key={svc.id}
-                  className="p-2 rounded-lg bg-muted/30 flex items-center justify-between text-xs"
-                >
-                  <div className="min-w-0 pr-2">
-                    <p className="font-medium text-foreground truncate">{svc.name}</p>
-                    <p className="text-[10px] text-muted-foreground truncate">{svc.category.replace('_', ' ')}</p>
+              {operationalComponents.slice(0, 4).map((comp) => {
+                const statusBadge: {
+                  variant: 'success' | 'warning' | 'error' | 'neutral';
+                  label: string;
+                } =
+                  comp.status === 'healthy'
+                    ? { variant: 'success', label: 'Healthy' }
+                    : comp.status === 'critical'
+                    ? { variant: 'error', label: 'Critical' }
+                    : comp.status === 'degraded' ||
+                      comp.status === 'stale' ||
+                      comp.status === 'maintenance'
+                    ? { variant: 'warning', label: comp.status.replace(/_/g, ' ') }
+                    : {
+                        variant: 'neutral',
+                        label: comp.status === 'not_connected' ? 'Not Connected' : 'Unknown',
+                      };
+
+                return (
+                  <div
+                    key={comp.id}
+                    className="p-2 rounded-lg bg-muted/30 flex items-center justify-between text-xs"
+                  >
+                    <div className="min-w-0 pr-2">
+                      <p className="font-medium text-foreground truncate">{comp.name}</p>
+                      <p className="text-[10px] text-muted-foreground truncate">
+                        {comp.category.replace(/_/g, ' ')}
+                      </p>
+                    </div>
+                    <Badge variant={statusBadge.variant} size="sm" dot className="capitalize shrink-0">
+                      {statusBadge.label}
+                    </Badge>
                   </div>
-                  <Badge variant="success" size="sm" dot>
-                    Operational
-                  </Badge>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="pt-2 border-t border-border/50">

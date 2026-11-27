@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useId, useMemo, useRef, useState } from 'react';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 import {
   KnowledgeBaseArticle,
   SupportCategoryKey,
@@ -28,6 +30,12 @@ import {
 
 export function KnowledgeBasePanel() {
   const { kbArticles, createKbArticle, updateKbArticle, setKbArticleStatus, deleteKbArticle } = usePlatformStore();
+  const { can } = usePlatformAuth();
+  const canManageKb = can('support.tickets.manage');
+  const previewTitleId = useId();
+  const createTitleId = useId();
+  const previewModalRef = useRef<HTMLDivElement>(null);
+  const createModalRef = useRef<HTMLDivElement>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
@@ -46,6 +54,9 @@ export function KnowledgeBasePanel() {
   const [status, setStatus] = useState<'draft' | 'published'>('published');
   const [locale, setLocale] = useState('en-NG');
   const [formError, setFormError] = useState<string | null>(null);
+
+  useDialogA11y(Boolean(previewArticle), () => setPreviewArticle(null), previewModalRef);
+  useDialogA11y(isCreateOpen, () => setIsCreateOpen(false), createModalRef);
 
   // Filter articles
   const filteredArticles = useMemo(() => {
@@ -145,12 +156,15 @@ export function KnowledgeBasePanel() {
             />
           </div>
 
-          <button
-            onClick={() => setIsCreateOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shrink-0"
-          >
-            <Plus className="w-3.5 h-3.5" /> New Article
-          </button>
+          {canManageKb && (
+            <button
+              type="button"
+              onClick={() => setIsCreateOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5" aria-hidden="true" /> New Article
+            </button>
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-2 border-t border-border/50 text-xs">
@@ -277,20 +291,31 @@ export function KnowledgeBasePanel() {
 
       {/* Read / Preview Modal */}
       {previewArticle && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-2xl max-h-[85vh] rounded-xl border border-border bg-card shadow-2xl flex flex-col overflow-hidden">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={previewTitleId}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200 overscroll-contain"
+        >
+          <div
+            ref={previewModalRef}
+            tabIndex={-1}
+            className="w-full max-w-2xl max-h-[85vh] rounded-xl border border-border bg-card shadow-2xl flex flex-col overflow-hidden focus:outline-none"
+          >
             <div className="p-4 border-b border-border flex items-start justify-between gap-3 bg-muted/20">
               <div className="space-y-1">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-primary">
                   {previewArticle.category} • {previewArticle.locale}
                 </span>
-                <h3 className="font-bold text-base text-foreground">{previewArticle.title}</h3>
+                <h3 id={previewTitleId} className="font-bold text-base text-foreground">{previewArticle.title}</h3>
               </div>
               <button
+                type="button"
+                aria-label="Close article preview"
                 onClick={() => setPreviewArticle(null)}
                 className="p-1.5 rounded-lg border border-border hover:bg-muted text-muted-foreground hover:text-foreground"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
 
@@ -326,13 +351,17 @@ export function KnowledgeBasePanel() {
               </span>
 
               <div className="flex items-center gap-2">
+                {canManageKb && (
+                  <button
+                    type="button"
+                    onClick={() => handleTogglePublish(previewArticle)}
+                    className="px-3 py-1 rounded-lg border border-border hover:bg-muted font-medium text-foreground"
+                  >
+                    {previewArticle.status === 'published' ? 'Switch to Draft' : 'Publish Article'}
+                  </button>
+                )}
                 <button
-                  onClick={() => handleTogglePublish(previewArticle)}
-                  className="px-3 py-1 rounded-lg border border-border hover:bg-muted font-medium text-foreground"
-                >
-                  {previewArticle.status === 'published' ? 'Switch to Draft' : 'Publish Article'}
-                </button>
-                <button
+                  type="button"
                   onClick={() => setPreviewArticle(null)}
                   className="px-3 py-1 rounded-lg bg-primary text-primary-foreground font-semibold hover:bg-primary/90"
                 >
@@ -346,11 +375,22 @@ export function KnowledgeBasePanel() {
 
       {/* Create Article Modal */}
       {isCreateOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-xl max-h-[90vh] rounded-xl border border-border bg-card p-5 shadow-2xl space-y-4 overflow-y-auto">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={createTitleId}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200 overscroll-contain"
+        >
+          <div
+            ref={createModalRef}
+            tabIndex={-1}
+            className="w-full max-w-xl max-h-[90vh] rounded-xl border border-border bg-card p-5 shadow-2xl space-y-4 overflow-y-auto focus:outline-none"
+          >
             <div className="flex items-center justify-between pb-2 border-b border-border">
-              <h3 className="text-sm font-bold text-foreground">Create Support Knowledge Article</h3>
+              <h3 id={createTitleId} className="text-sm font-bold text-foreground">Create Support Knowledge Article</h3>
               <button
+                type="button"
+                aria-label="Close create article modal"
                 onClick={() => setIsCreateOpen(false)}
                 className="text-muted-foreground hover:text-foreground text-xs"
               >

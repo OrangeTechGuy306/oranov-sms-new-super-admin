@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import { X, Plus, AlertCircle } from 'lucide-react';
 import {
   CreateLifecycleRuleInput,
@@ -9,6 +9,7 @@ import {
   LifecycleTriggerEvent,
   LifecycleApprovalRequirement,
 } from '@/lib/types/data-governance';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 
 interface CreateLifecycleRuleModalProps {
   categories: DataCategoryRecord[];
@@ -21,6 +22,9 @@ export function CreateLifecycleRuleModal({
   onClose,
   onCreate,
 }: CreateLifecycleRuleModalProps) {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogA11y(true, onClose, dialogRef);
   const [name, setName] = useState('');
   const [coveredCategoryId, setCoveredCategoryId] = useState(
     categories[0]?.id || ''
@@ -63,11 +67,20 @@ export function CreateLifecycleRuleModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-      <div className="relative w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card p-6 shadow-xl">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs overscroll-contain"
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="relative w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card p-6 shadow-xl focus:outline-none"
+      >
         <div className="flex items-start justify-between border-b border-border pb-3">
           <div>
-            <h2 className="text-base font-bold text-foreground">
+            <h2 id={titleId} className="text-base font-bold text-foreground">
               Define Data Lifecycle Rule
             </h2>
             <p className="text-xs text-muted-foreground">
@@ -77,9 +90,10 @@ export function CreateLifecycleRuleModal({
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close lifecycle rule creation dialog"
             className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
 

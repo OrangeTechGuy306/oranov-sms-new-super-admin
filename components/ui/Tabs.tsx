@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useRef } from 'react';
 import { cn } from '@/lib/utils/cn';
 
 export interface TabItem {
@@ -18,16 +18,41 @@ export interface TabsProps {
 }
 
 export function Tabs({ tabs, activeTab, onChange, className }: TabsProps) {
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (tabs.length === 0) return;
+    let nextIndex = -1;
+    if (e.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length;
+    else if (e.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length;
+    else if (e.key === 'Home') nextIndex = 0;
+    else if (e.key === 'End') nextIndex = tabs.length - 1;
+
+    if (nextIndex >= 0) {
+      e.preventDefault();
+      const targetTab = tabs[nextIndex];
+      onChange(targetTab.id);
+      tabRefs.current[nextIndex]?.focus();
+    }
+  };
+
   return (
     <div className={cn('border-b border-border overflow-x-auto no-scrollbar', className)}>
-      <nav className="flex space-x-2 min-w-max pb-px" aria-label="Tabs">
-        {tabs.map((tab) => {
+      <div role="tablist" className="flex space-x-2 min-w-max pb-px" aria-label="Section tabs">
+        {tabs.map((tab, index) => {
           const isActive = tab.id === activeTab;
           return (
             <button
               key={tab.id}
+              ref={(el) => {
+                tabRefs.current[index] = el;
+              }}
               type="button"
+              role="tab"
+              aria-selected={isActive}
+              tabIndex={isActive ? 0 : -1}
               onClick={() => onChange(tab.id)}
+              onKeyDown={(e) => handleKeyDown(e, index)}
               className={cn(
                 'flex items-center gap-2 py-2.5 px-4 text-xs font-semibold border-b-2 transition-all cursor-pointer whitespace-nowrap rounded-t-md',
                 isActive
@@ -52,7 +77,7 @@ export function Tabs({ tabs, activeTab, onChange, className }: TabsProps) {
             </button>
           );
         })}
-      </nav>
+      </div>
     </div>
   );
 }
