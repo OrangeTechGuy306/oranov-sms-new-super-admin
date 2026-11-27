@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Badge } from '@/components/ui/Badge';
+import { useOptionalPlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { WebhookEndpointRecord } from '@/lib/types/integrations';
 import { filterWebhookEndpoints } from '@/lib/integrations/evaluator';
 import { formatDate } from '@/lib/utils/formatters';
@@ -36,6 +37,12 @@ export function WebhookEndpointsTab({
   onToggleEnabled,
   onViewLogs,
 }: WebhookEndpointsTabProps) {
+  const auth = useOptionalPlatformAuth();
+  const canManageIntegrations = auth
+    ? auth.can('system.maintenance.manage') ||
+      auth.can('modules.registry.manage') ||
+      auth.can('platform.settings.update')
+    : true;
   const [searchQuery, setSearchQuery] = useState('');
   const [enabledFilter, setEnabledFilter] = useState('all');
 
@@ -69,14 +76,16 @@ export function WebhookEndpointsTab({
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={onOpenCreate}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 font-semibold text-primary-foreground hover:bg-primary/90 transition-colors shadow-2xs"
-        >
-          <Plus className="h-4 w-4" />
-          Register Webhook Endpoint
-        </button>
+        {canManageIntegrations && (
+          <button
+            type="button"
+            onClick={onOpenCreate}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 font-semibold text-primary-foreground hover:bg-primary/90 transition-colors shadow-2xs"
+          >
+            <Plus className="h-4 w-4" />
+            Register Webhook Endpoint
+          </button>
+        )}
       </div>
 
       {/* Filter bar */}
@@ -173,15 +182,21 @@ export function WebhookEndpointsTab({
                   </td>
 
                   <td className="py-3 px-4">
-                    <label className="relative inline-flex cursor-pointer items-center">
-                      <input
-                        type="checkbox"
-                        checked={ep.isEnabled}
-                        onChange={() => onToggleEnabled(ep.id)}
-                        className="peer sr-only"
-                      />
-                      <div className="peer h-4 w-7 rounded-full bg-muted-foreground/30 after:absolute after:left-[2px] after:top-[2px] after:h-3 after:w-3 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full peer-focus:outline-hidden" />
-                    </label>
+                    {canManageIntegrations ? (
+                      <label className="relative inline-flex cursor-pointer items-center">
+                        <input
+                          type="checkbox"
+                          checked={ep.isEnabled}
+                          onChange={() => onToggleEnabled(ep.id)}
+                          className="peer sr-only"
+                        />
+                        <div className="peer h-4 w-7 rounded-full bg-muted-foreground/30 after:absolute after:left-[2px] after:top-[2px] after:h-3 after:w-3 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full peer-focus:outline-hidden" />
+                      </label>
+                    ) : (
+                      <Badge variant={ep.isEnabled ? 'success' : 'neutral'} size="sm">
+                        {ep.isEnabled ? 'Enabled' : 'Paused'}
+                      </Badge>
+                    )}
                   </td>
 
                   <td className="py-3 px-4">
@@ -197,15 +212,17 @@ export function WebhookEndpointsTab({
 
                   <td className="py-3 px-4 text-right">
                     <div className="flex items-center justify-end gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => onOpenTest(ep)}
-                        title="Simulate test webhook dispatch"
-                        className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted transition-colors"
-                      >
-                        <Send className="h-3 w-3 text-primary" />
-                        Test
-                      </button>
+                      {canManageIntegrations && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenTest(ep)}
+                          title="Simulate test webhook dispatch"
+                          className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-muted transition-colors"
+                        >
+                          <Send className="h-3 w-3 text-primary" />
+                          Test
+                        </button>
+                      )}
 
                       <button
                         type="button"
@@ -216,14 +233,16 @@ export function WebhookEndpointsTab({
                         <History className="h-3.5 w-3.5" />
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => onOpenEdit(ep)}
-                        title="Edit endpoint parameters"
-                        className="rounded border border-border p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                      >
-                        <Sliders className="h-3.5 w-3.5" />
-                      </button>
+                      {canManageIntegrations && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenEdit(ep)}
+                          title="Edit endpoint parameters"
+                          className="rounded border border-border p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                        >
+                          <Sliders className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { StatCard } from '@/components/ui/StatCard';
 import { Badge } from '@/components/ui/Badge';
@@ -28,6 +29,10 @@ import {
 } from 'lucide-react';
 
 export default function PlatformSubscriptionsPage() {
+  const { can } = usePlatformAuth();
+  const canManageSubscriptions = can('billing.subscriptions.manage');
+  const canExportSubscriptions = can('platform.overview.export') || canManageSubscriptions;
+
   const {
     subscriptions,
     organizations,
@@ -265,13 +270,15 @@ export default function PlatformSubscriptionsPage() {
       align: 'right',
       render: (sub) => (
         <div className="flex items-center justify-end gap-1.5">
-          <button
-            type="button"
-            onClick={() => openTransitionModal(sub)}
-            className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-border text-foreground hover:bg-muted transition-colors cursor-pointer"
-          >
-            Transition
-          </button>
+          {canManageSubscriptions && (
+            <button
+              type="button"
+              onClick={() => openTransitionModal(sub)}
+              className="px-2.5 py-1 text-xs font-semibold rounded-lg border border-border text-foreground hover:bg-muted transition-colors cursor-pointer"
+            >
+              Transition
+            </button>
+          )}
           <Link
             href={`/subscriptions/${sub.id}`}
             className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors inline-flex items-center gap-1"
@@ -291,21 +298,25 @@ export default function PlatformSubscriptionsPage() {
         description="Comprehensive platform subscription administration, lifecycle transition state machine, and financial ledger oversight."
         actions={
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleExportCsv}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border bg-card text-foreground hover:bg-muted transition-colors shadow-2xs cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Export Subscriptions CSV
-            </button>
-            <Link
-              href="/subscriptions/plans/new"
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-xs"
-            >
-              <Layers className="w-3.5 h-3.5" />
-              Define New Plan
-            </Link>
+            {canExportSubscriptions && (
+              <button
+                type="button"
+                onClick={handleExportCsv}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border bg-card text-foreground hover:bg-muted transition-colors shadow-2xs cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Export Subscriptions CSV
+              </button>
+            )}
+            {canManageSubscriptions && (
+              <Link
+                href="/subscriptions/plans/new"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-xs"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                Define New Plan
+              </Link>
+            )}
           </div>
         }
       />

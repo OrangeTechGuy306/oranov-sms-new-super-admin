@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { StatCard } from '@/components/ui/StatCard';
 import { Badge } from '@/components/ui/Badge';
@@ -24,6 +25,10 @@ import {
 } from 'lucide-react';
 
 export default function PaymentsMonitoringPage() {
+  const { can } = usePlatformAuth();
+  const canManagePayments = can('billing.payments.manage');
+  const canExportPayments = can('platform.overview.export') || canManagePayments;
+
   const { payments, organizations, invoices, retryPayment } = usePlatformStore();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -31,8 +36,7 @@ export default function PaymentsMonitoringPage() {
   const [retryingId, setRetryingId] = useState<string | null>(null);
 
   const stats = useMemo(() => {
-    let usdSettled = 0;
-    let gbpSettled = 0;
+    const settledByCurrency: Record<string, number> = {};
     let succeededCount = 0;
     let failedCount = 0;
     let pendingCount = 0;
@@ -40,8 +44,8 @@ export default function PaymentsMonitoringPage() {
     payments.forEach((p) => {
       if (p.status === 'succeeded') {
         succeededCount++;
-        if (p.currency === 'GBP') gbpSettled += p.amount;
-        else usdSettled += p.amount;
+        const curr = (p.currency || 'USD').toUpperCase();
+        settledByCurrency[curr] = (settledByCurrency[curr] || 0) + p.amount;
       } else if (p.status === 'failed') {
         failedCount++;
       } else if (p.status === 'pending') {
@@ -49,9 +53,15 @@ export default function PaymentsMonitoringPage() {
       }
     });
 
+    const otherCurrenciesSummary = Object.entries(settledByCurrency)
+      .filter(([curr]) => curr !== 'USD' && curr !== 'GBP')
+      .map(([curr, amt]) => formatCurrency(amt, curr))
+      .join(' • ');
+
     return {
-      usdSettled,
-      gbpSettled,
+      usdSettled: settledByCurrency['USD'] || 0,
+      gbpSettled: settledByCurrency['GBP'] || 0,
+      otherCurrenciesSummary,
       succeededCount,
       failedCount,
       pendingCount,
@@ -209,6 +219,9 @@ export default function PaymentsMonitoringPage() {
       align: 'right',
       render: (p) => {
         if (p.status === 'failed') {
+          if (!canManagePayments) {
+            return <span className="text-[11px] text-rose-500 font-medium">Action Restricted</span>;
+          }
           const isPendingRetry = retryingId === p.id;
           return (
             <button
@@ -236,14 +249,16 @@ export default function PaymentsMonitoringPage() {
         description="Comprehensive audit of settled transactions, gateway failure categories, and administrative retry simulations."
         backUrl="/subscriptions"
         actions={
-          <button
-            type="button"
-            onClick={handleExportCsv}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border bg-card text-foreground hover:bg-muted transition-colors shadow-2xs cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Export Payments CSV
-          </button>
+          canExportPayments ? (
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border bg-card text-foreground hover:bg-muted transition-colors shadow-2xs cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export Payments CSV
+            </button>
+          ) : undefined
         }
       />
 
@@ -255,7 +270,11 @@ export default function PaymentsMonitoringPage() {
         <StatCard
           title="USD Settled Volume"
           value={formatCurrency(stats.usdSettled, 'USD')}
-          subtitle={`${stats.succeededCount} successful attempts`}
+          subtitle={
+            stats.otherCurrenciesSummary
+              ? `${stats.succeededCount} succeeded • Also: ${stats.otherCurrenciesSummary}`
+              : `${stats.succeededCount} successful attempts`
+          }
           icon={<CheckCircle2 className="w-5 h-5 text-emerald-500" />}
         />
         <StatCard

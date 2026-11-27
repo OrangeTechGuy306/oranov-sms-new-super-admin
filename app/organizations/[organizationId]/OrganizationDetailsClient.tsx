@@ -52,7 +52,7 @@ export function OrganizationDetailsClient({ organizationId }: ClientProps) {
   const { can } = usePlatformAuth();
   const canManageLifecycle = can('organizations.lifecycle.manage');
   const canUpdateOrg = can('organizations.update');
-  const canRecordPayment = can('billing.invoices.manage') || can('billing.subscriptions.manage');
+  const canRecordPayment = can('billing.payments.manage');
   const {
     getOrganizationById,
     getSubscriptionByOrgId,

@@ -50,6 +50,7 @@ export default function PlatformUsersPage() {
   const canAssignRoles = can('iam.users.roles.assign');
   const canSuspendUsers = can('iam.users.suspend');
   const canCreateRoles = can('iam.roles.create');
+  const canManageRoles = can('iam.roles.manage');
 
   const {
     platformUsers,
@@ -756,9 +757,12 @@ export default function PlatformUsersPage() {
         isOpen={Boolean(selectedUserForDetail)}
         onClose={() => setSelectedUserForDetail(null)}
         user={selectedUserForDetail}
+        allUsers={platformUsers}
         allRoles={platformRoles}
         allPermissions={platformPermissions}
         allAuditEvents={auditEvents}
+        canAssignRoles={canAssignRoles}
+        canSuspendUsers={canSuspendUsers}
         onAssignRole={assignRoleToUser}
         onRemoveRole={removeRoleFromUser}
         onUpdateStatus={updatePlatformUserStatus}
@@ -771,6 +775,7 @@ export default function PlatformUsersPage() {
         role={selectedRoleForDetail}
         allPermissions={platformPermissions}
         allUsers={platformUsers}
+        canManageRoles={canManageRoles}
         onUpdateRolePermissions={updatePlatformRolePermissions}
         onDeleteRole={deletePlatformRole}
         onSelectUser={(u) => setSelectedUserForDetail(u)}

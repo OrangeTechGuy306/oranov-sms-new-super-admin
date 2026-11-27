@@ -13,6 +13,7 @@ import {
 type ModuleAvailabilityState = NonNullable<TenantModuleDefinition['availabilityStatus']>;
 import { CATEGORY_METADATA } from '@/lib/modules/registry-data';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { useOptionalPlatformAuth } from '@/components/providers/PlatformAuthContext';
 import {
   Layers,
   CheckCircle2,
@@ -50,6 +51,8 @@ export function ModuleDetailModal({ module, isOpen, onClose }: ModuleDetailModal
 }
 
 function ModuleDetailBody({ module }: { module: TenantModuleDefinition }) {
+  const auth = useOptionalPlatformAuth();
+  const canManageModules = auth ? auth.can('modules.registry.manage') : true;
   const {
     plans,
     features,
@@ -168,33 +171,35 @@ function ModuleDetailBody({ module }: { module: TenantModuleDefinition }) {
             )}
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setIsEditing((prev) => !prev);
-                setEditError('');
-                setEditSuccess('');
-              }}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer border border-border bg-card text-foreground hover:bg-muted transition-colors"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-              <span>{isEditing ? 'Close Editor' : 'Edit Metadata'}</span>
-            </button>
+          {canManageModules && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditing((prev) => !prev);
+                  setEditError('');
+                  setEditSuccess('');
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer border border-border bg-card text-foreground hover:bg-muted transition-colors"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                <span>{isEditing ? 'Close Editor' : 'Edit Metadata'}</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={handleToggleGlobal}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer border transition-colors ${
-                liveModule.isGloballyEnabled
-                  ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-300'
-                  : 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300'
-              }`}
-            >
-              <Power className="w-3.5 h-3.5" />
-              <span>{liveModule.isGloballyEnabled ? 'Disable Platform-Wide' : 'Enable Platform-Wide'}</span>
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={handleToggleGlobal}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer border transition-colors ${
+                  liveModule.isGloballyEnabled
+                    ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-300'
+                    : 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300'
+                }`}
+              >
+                <Power className="w-3.5 h-3.5" />
+                <span>{liveModule.isGloballyEnabled ? 'Disable Platform-Wide' : 'Enable Platform-Wide'}</span>
+              </button>
+            </div>
+          )}
         </div>
 
         <p className="text-foreground text-xs leading-relaxed">{liveModule.description}</p>

@@ -19,6 +19,7 @@ import { isOverdue } from '@/lib/data-governance/evaluator';
 import { PrivacyRequestDetailModal } from './PrivacyRequestDetailModal';
 import { UpdatePrivacyStatusModal } from './UpdatePrivacyStatusModal';
 import { SimulatePrivacyProcessingModal } from './SimulatePrivacyProcessingModal';
+import { useOptionalPlatformAuth } from '@/components/providers/PlatformAuthContext';
 
 interface PrivacyRequestsTabProps {
   requests: PrivacyRequestRecord[];
@@ -36,6 +37,8 @@ export function PrivacyRequestsTab({
   onUpdateStatus,
   onSimulateProcessing,
 }: PrivacyRequestsTabProps) {
+  const auth = useOptionalPlatformAuth();
+  const canManageGovernance = auth ? auth.can('audit.governance.manage') : true;
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
@@ -333,22 +336,26 @@ export function PrivacyRequestsTab({
                           >
                             <Eye className="h-3.5 w-3.5" />
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setStatusModalRequest(r)}
-                            className="rounded-md p-1.5 text-sky-600 hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-950/50"
-                            title="Advance workflow status"
-                          >
-                            <ArrowRight className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setSimulateModalRequest(r)}
-                            className="rounded-md p-1.5 text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/50"
-                            title="Simulate processing"
-                          >
-                            <Play className="h-3.5 w-3.5" />
-                          </button>
+                          {canManageGovernance && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setStatusModalRequest(r)}
+                                className="rounded-md p-1.5 text-sky-600 hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-950/50"
+                                title="Advance workflow status"
+                              >
+                                <ArrowRight className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSimulateModalRequest(r)}
+                                className="rounded-md p-1.5 text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/50"
+                                title="Simulate processing"
+                              >
+                                <Play className="h-3.5 w-3.5" />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>

@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Tabs } from '@/components/ui/Tabs';
 import { platformService } from '@/lib/api/platformService';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { getUserFriendlyPlatformError } from '@/lib/api/dataSource';
 import {
   filterExamGovernanceData,
@@ -38,6 +39,8 @@ import {
 } from 'lucide-react';
 
 export default function ExaminationGovernancePage() {
+  const { can } = usePlatformAuth();
+  const canExport = can('governance.examinations.export');
   // Active filter state
   const [filter, setFilter] = useState<ExamGovernanceFilterState>({
     organizationId: 'ALL',
@@ -120,16 +123,18 @@ export default function ExaminationGovernancePage() {
         title="Examinations, CBT & Assessment Governance"
         description="Cross-tenant oversight of examination series, assessment weighting, CBT exam delivery, question bank taxonomies, timetable scheduling conflicts, and report-card publication readiness."
         actions={
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => downloadExamGovernanceReport(filteredData, filter)}
-              className="inline-flex items-center gap-2 px-3.5 py-2 bg-primary text-primary-foreground font-semibold text-xs rounded-lg hover:bg-primary/90 transition-colors shadow-xs cursor-pointer"
-            >
-              <Download className="w-4 h-4" />
-              Export Aggregate CSV
-            </button>
-          </div>
+          canExport ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => downloadExamGovernanceReport(filteredData, filter)}
+                className="inline-flex items-center gap-2 px-3.5 py-2 bg-primary text-primary-foreground font-semibold text-xs rounded-lg hover:bg-primary/90 transition-colors shadow-xs cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                Export Aggregate CSV
+              </button>
+            </div>
+          ) : undefined
         }
       />
 

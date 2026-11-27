@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useOptionalPlatformAuth } from '@/components/providers/PlatformAuthContext';
 import {
   OperationalQueueId,
   OperationalQueueItem,
@@ -103,6 +104,25 @@ const QUEUE_META: Array<{
 ];
 
 export function PlatformOperationsQueues({ queues, plans }: PlatformOperationsQueuesProps) {
+  const auth = useOptionalPlatformAuth();
+  const visibleQueues = useMemo(() => {
+    if (!auth) return QUEUE_META;
+    return QUEUE_META.filter((q) => {
+      switch (q.id) {
+        case 'unresolved_support_cases':
+          return auth.can('support.tickets.read');
+        case 'administrative_approvals':
+          return auth.can('operations.approvals.read');
+        case 'subscription_exceptions':
+          return auth.can('billing.subscriptions.read') || auth.can('operations.exceptions.read');
+        case 'provisioning_exceptions':
+          return auth.can('operations.exceptions.read') || auth.can('tenants.readiness.evaluate');
+        default:
+          return auth.can('organizations.read');
+      }
+    });
+  }, [auth]);
+
   const [selectedQueue, setSelectedQueue] = useState<OperationalQueueId>('awaiting_activation');
   const [search, setSearch] = useState('');
   const [severity, setSeverity] = useState<'all' | 'low' | 'medium' | 'high' | 'critical'>('all');
@@ -110,8 +130,11 @@ export function PlatformOperationsQueues({ queues, plans }: PlatformOperationsQu
   const [sortBy, setSortBy] = useState<'priority_desc' | 'date_desc' | 'date_asc' | 'name_asc'>('priority_desc');
   const [page, setPage] = useState(1);
 
-  const activeMeta = QUEUE_META.find((q) => q.id === selectedQueue) || QUEUE_META[0];
-  const rawItems = queues[selectedQueue] || [];
+  const effectiveQueue = visibleQueues.some((q) => q.id === selectedQueue)
+    ? selectedQueue
+    : visibleQueues[0]?.id || 'awaiting_activation';
+  const activeMeta = visibleQueues.find((q) => q.id === effectiveQueue) || visibleQueues[0] || QUEUE_META[0];
+  const rawItems = visibleQueues.length > 0 ? queues[effectiveQueue] || [] : [];
 
   const result = useMemo(
     () =>
@@ -154,12 +177,12 @@ export function PlatformOperationsQueues({ queues, plans }: PlatformOperationsQu
         </span>
       </div>
 
-      {/* 10 Queue Tabs */}
+      {/* Queue Tabs */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
-        {QUEUE_META.map((q) => {
+        {visibleQueues.map((q) => {
           const Icon = q.icon;
           const count = (queues[q.id] || []).length;
-          const isSelected = q.id === selectedQueue;
+          const isSelected = q.id === effectiveQueue;
           return (
             <button
               key={q.id}

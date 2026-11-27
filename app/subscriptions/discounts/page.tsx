@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { StatCard } from '@/components/ui/StatCard';
 import { DataTable, Column } from '@/components/ui/DataTable';
@@ -21,6 +22,8 @@ import {
 } from 'lucide-react';
 
 export default function DiscountPoliciesPage() {
+  const { can } = usePlatformAuth();
+  const canManageDiscounts = can('billing.discounts.manage');
   const { discounts, plans, createDiscount, toggleDiscount } = usePlatformStore();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -193,19 +196,22 @@ export default function DiscountPoliciesPage() {
       key: 'actions',
       header: 'Action',
       align: 'right',
-      render: (d) => (
-        <button
-          type="button"
-          onClick={() => toggleDiscount(d.id)}
-          className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-colors cursor-pointer ${
-            d.isActive
-              ? 'border-border text-foreground hover:bg-muted'
-              : 'border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10'
-          }`}
-        >
-          {d.isActive ? 'Deactivate' : 'Activate'}
-        </button>
-      ),
+      render: (d) =>
+        canManageDiscounts ? (
+          <button
+            type="button"
+            onClick={() => toggleDiscount(d.id)}
+            className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-colors cursor-pointer ${
+              d.isActive
+                ? 'border-border text-foreground hover:bg-muted'
+                : 'border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10'
+            }`}
+          >
+            {d.isActive ? 'Deactivate' : 'Activate'}
+          </button>
+        ) : (
+          <span className="text-[11px] text-muted-foreground">Read-only</span>
+        ),
     },
   ];
 
@@ -216,14 +222,16 @@ export default function DiscountPoliciesPage() {
         description="Platform promotional voucher codes, percentage discounts, and onboarding incentive campaigns."
         backUrl="/subscriptions"
         actions={
-          <button
-            type="button"
-            onClick={handleOpenCreateModal}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-bold hover:bg-primary/90 shadow-xs cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Create Promotional Code
-          </button>
+          canManageDiscounts ? (
+            <button
+              type="button"
+              onClick={handleOpenCreateModal}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-bold hover:bg-primary/90 shadow-xs cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Create Promotional Code
+            </button>
+          ) : undefined
         }
       />
 

@@ -517,7 +517,9 @@ export default function OrganizationsDirectoryPage() {
                     )}
                   </div>
                 </>
-              ) : confirmTarget.org.status === 'pending' ? (
+              ) : confirmTarget.org.status === 'registration_pending' ||
+                confirmTarget.org.status === 'awaiting_activation' ||
+                confirmTarget.org.status === 'pending' ? (
                 <p>
                   Confirm activation for <strong className="text-foreground">{confirmTarget.org.name}</strong> ({confirmTarget.org.code}). This will transition the school to active status and authorize standard tenant operations.
                 </p>

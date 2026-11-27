@@ -8,6 +8,7 @@ import {
   PlatformUser,
   AuditEvent,
   AuditActor,
+  AuditActorType,
   PlatformServiceHealth,
   PlatformIncidentNotice,
   PlatformSettings,
@@ -1208,9 +1209,20 @@ export class PlatformStore {
     this.campuses.unshift(initialCampus);
     this.subscriptions.unshift(newSub);
 
-    if (!isDraft) {
+    if (!isDraft && !isTrial) {
       const invId = `inv_${Date.now()}`;
-      const amount = input.billingCycle === 'annual' ? selectedPlan.priceAnnual : selectedPlan.priceMonthly;
+      const amount =
+        input.billingCycle === 'annual'
+          ? selectedPlan.priceAnnual
+          : input.billingCycle === 'quarterly'
+          ? (selectedPlan.priceQuarterly ?? selectedPlan.priceMonthly * 3)
+          : selectedPlan.priceMonthly;
+      const cycleLabel =
+        input.billingCycle === 'annual'
+          ? 'Annual'
+          : input.billingCycle === 'quarterly'
+          ? 'Quarterly'
+          : 'Monthly';
       const newInvoice: Invoice = {
         id: invId,
         invoiceNumber: `INV-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
@@ -1225,7 +1237,7 @@ export class PlatformStore {
         lineItems: [
           {
             id: `li_${Date.now()}`,
-            description: `${selectedPlan.name} Subscription (${input.billingCycle === 'annual' ? 'Annual' : 'Monthly'})`,
+            description: `${selectedPlan.name} Subscription (${cycleLabel})`,
             quantity: 1,
             unitAmount: amount,
             totalAmount: amount,
@@ -3510,7 +3522,7 @@ export class PlatformStore {
     id: string,
     notes: string,
     targetDate?: string,
-    reviewer = 'Elena Rostova (Compliance Auditor)'
+    reviewer: string | { id: string; name: string; email?: string; role?: string } = 'Elena Rostova (Compliance Auditor)'
   ): { success: boolean; error?: string } {
     const control = this.complianceControls.find((c) => c.id === id);
     if (!control) {
@@ -3520,6 +3532,28 @@ export class PlatformStore {
     if (!notes || notes.trim().length < 5) {
       return { success: false, error: 'Remediation notes must be at least 5 characters.' };
     }
+
+    const resolvedReviewer =
+      typeof reviewer === 'string'
+        ? {
+            id: 'usr_audit_05',
+            name: reviewer,
+            email: 'elena.r@saas-platform.internal',
+            role: 'compliance_auditor' as const,
+            actorType: 'compliance_auditor' as const,
+          }
+        : {
+            id: reviewer.id,
+            name: reviewer.name,
+            email: reviewer.email || 'compliance@saas-platform.internal',
+            role: (reviewer.role || 'compliance_auditor') as PlatformRoleKey,
+            actorType: ((reviewer.role === 'super_admin' ||
+              reviewer.role === 'platform_operator' ||
+              reviewer.role === 'support_lead' ||
+              reviewer.role === 'compliance_auditor'
+              ? reviewer.role
+              : 'compliance_auditor') as AuditActorType),
+          };
 
     control.remediationNotes = notes.trim();
     if (targetDate) control.remediationTargetDate = targetDate;
@@ -3531,13 +3565,7 @@ export class PlatformStore {
       category: 'compliance_governance',
       action: 'COMPLIANCE_CONTROL_REMEDIATION_UPDATED',
       severity: 'info',
-      actor: {
-        id: 'usr_audit_04',
-        name: reviewer,
-        email: 'elena.r@saas-platform.internal',
-        role: 'compliance_auditor',
-        actorType: 'compliance_auditor',
-      },
+      actor: resolvedReviewer,
       targetEntity: 'ComplianceControl',
       targetId: control.id,
       targetName: control.name,
@@ -3566,17 +3594,39 @@ export class PlatformStore {
     id: string,
     status: 'verified' | 'pending_inspection' | 'unavailable',
     notes?: string,
-    reviewer = 'Elena Rostova (Compliance Auditor)'
+    reviewer: string | { id: string; name: string; email?: string; role?: string } = 'Elena Rostova (Compliance Auditor)'
   ): { success: boolean; error?: string } {
     const evidence = this.governanceEvidence.find((e) => e.id === id);
     if (!evidence) {
       return { success: false, error: `Governance evidence record "${id}" not found.` };
     }
 
+    const resolvedReviewer =
+      typeof reviewer === 'string'
+        ? {
+            id: 'usr_audit_05',
+            name: reviewer,
+            email: 'elena.r@saas-platform.internal',
+            role: 'compliance_auditor' as const,
+            actorType: 'compliance_auditor' as const,
+          }
+        : {
+            id: reviewer.id,
+            name: reviewer.name,
+            email: reviewer.email || 'compliance@saas-platform.internal',
+            role: (reviewer.role || 'compliance_auditor') as PlatformRoleKey,
+            actorType: ((reviewer.role === 'super_admin' ||
+              reviewer.role === 'platform_operator' ||
+              reviewer.role === 'support_lead' ||
+              reviewer.role === 'compliance_auditor'
+              ? reviewer.role
+              : 'compliance_auditor') as AuditActorType),
+          };
+
     const previousStatus = evidence.reviewStatus;
     evidence.reviewStatus = status;
     if (notes) evidence.notes = notes.trim();
-    evidence.reviewerLabel = reviewer;
+    evidence.reviewerLabel = resolvedReviewer.name;
     evidence.collectionDate = new Date().toISOString();
 
     this.auditEvents.unshift({
@@ -3585,13 +3635,7 @@ export class PlatformStore {
       category: 'compliance_governance',
       action: 'GOVERNANCE_EVIDENCE_STATUS_UPDATED',
       severity: 'info',
-      actor: {
-        id: 'usr_audit_04',
-        name: reviewer,
-        email: 'elena.r@saas-platform.internal',
-        role: 'compliance_auditor',
-        actorType: 'compliance_auditor',
-      },
+      actor: resolvedReviewer,
       targetEntity: 'GovernanceEvidence',
       targetId: evidence.id,
       targetName: evidence.title,

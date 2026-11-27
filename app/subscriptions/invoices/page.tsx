@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { StatCard } from '@/components/ui/StatCard';
 import { Badge } from '@/components/ui/Badge';
@@ -26,6 +27,11 @@ import {
 } from 'lucide-react';
 
 export default function InvoicesLedgerPage() {
+  const { can } = usePlatformAuth();
+  const canRecordPayment = can('billing.payments.manage');
+  const canManageInvoices = can('billing.invoices.manage');
+  const canExportInvoices = can('platform.overview.export') || canManageInvoices;
+
   const {
     invoices,
     organizations,
@@ -281,7 +287,7 @@ export default function InvoicesLedgerPage() {
               <Printer className="w-3.5 h-3.5" />
             </button>
 
-            {balance > 0 && inv.status !== 'void' && (
+            {balance > 0 && inv.status !== 'void' && canRecordPayment && (
               <button
                 type="button"
                 onClick={() => {
@@ -295,7 +301,7 @@ export default function InvoicesLedgerPage() {
               </button>
             )}
 
-            {canVoid && (
+            {canVoid && canManageInvoices && (
               <button
                 type="button"
                 onClick={() => {
@@ -322,14 +328,16 @@ export default function InvoicesLedgerPage() {
         description="Platform commercial invoice directory, payment recording, and balance reconciliation."
         backUrl="/subscriptions"
         actions={
-          <button
-            type="button"
-            onClick={handleExportCsv}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border bg-card text-foreground hover:bg-muted transition-colors shadow-2xs cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Export Invoices CSV
-          </button>
+          canExportInvoices ? (
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border bg-card text-foreground hover:bg-muted transition-colors shadow-2xs cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export Invoices CSV
+            </button>
+          ) : undefined
         }
       />
 
@@ -465,10 +473,9 @@ export default function InvoicesLedgerPage() {
                 className="w-full px-3 py-2 bg-muted/50 border border-border rounded-lg text-xs text-foreground focus:outline-none"
               >
                 <option value="bank_transfer">Electronic Bank Transfer</option>
-                <option value="credit_card">Corporate Credit Card</option>
-                <option value="debit_card">Debit Card</option>
-                <option value="cash_deposit">Direct Bank Wire</option>
-                <option value="cheque">Institutional Check</option>
+                <option value="card">Corporate Credit / Debit Card</option>
+                <option value="cheque">Institutional Cheque</option>
+                <option value="manual_invoice">Manual Ledger Settlement</option>
               </select>
             </div>
 

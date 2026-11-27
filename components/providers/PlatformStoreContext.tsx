@@ -2093,13 +2093,23 @@ export function PlatformStoreProvider({ children }: { children: React.ReactNode 
     updateComplianceControlRemediation: (id, notes, targetDate, reviewer) => {
       const err = guardPerm('audit.governance.manage', 'update compliance remediation');
       if (err) return { success: false, error: err };
-      return platformStore.updateComplianceControlRemediation(id, notes, targetDate, authenticatedActorName(reviewer));
+      return platformStore.updateComplianceControlRemediation(
+        id,
+        notes,
+        targetDate,
+        authenticatedActorIdentity(reviewer)
+      );
     },
     getGovernanceEvidence: (filters) => platformStore.getGovernanceEvidence(filters),
     updateGovernanceEvidenceStatus: (id, status, notes, reviewer) => {
       const err = guardPerm('audit.governance.manage', 'update governance evidence status');
       if (err) return { success: false, error: err };
-      return platformStore.updateGovernanceEvidenceStatus(id, status, notes, authenticatedActorName(reviewer));
+      return platformStore.updateGovernanceEvidenceStatus(
+        id,
+        status,
+        notes,
+        authenticatedActorIdentity(reviewer)
+      );
     },
     getRetentionPolicies: (filters) => platformStore.getRetentionPolicies(filters),
     updateRetentionPolicy: (id, newDays, reason, isEnabled, actorName) => {

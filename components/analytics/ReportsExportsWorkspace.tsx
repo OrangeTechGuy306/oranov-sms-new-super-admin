@@ -36,6 +36,7 @@ import {
   Table,
 } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
+import { useOptionalPlatformAuth } from '@/components/providers/PlatformAuthContext';
 
 interface ReportsExportsWorkspaceProps {
   filters: AnalyticsGlobalFilters;
@@ -58,6 +59,8 @@ export function ReportsExportsWorkspace({
   notifications,
   auditEvents,
 }: ReportsExportsWorkspaceProps) {
+  const auth = useOptionalPlatformAuth();
+  const canExportReports = auth ? auth.can('platform.overview.export') : true;
   const [selectedTemplateId, setSelectedTemplateId] = useState<ReportCategoryKey>('executive_summary');
   const [savedReports, setSavedReports] = useState<SavedReportConfig[]>([
     {
@@ -212,23 +215,27 @@ export function ReportsExportsWorkspace({
             Save Preset
           </button>
 
-          <button
-            type="button"
-            onClick={handleExportJson}
-            className="px-3 py-1.5 bg-muted text-foreground font-semibold text-xs rounded-lg hover:bg-muted/80 flex items-center gap-1.5 cursor-pointer"
-          >
-            <Copy className="w-3.5 h-3.5" />
-            JSON
-          </button>
+          {canExportReports && (
+            <>
+              <button
+                type="button"
+                onClick={handleExportJson}
+                className="px-3 py-1.5 bg-muted text-foreground font-semibold text-xs rounded-lg hover:bg-muted/80 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                JSON
+              </button>
 
-          <button
-            type="button"
-            onClick={handleExportCsv}
-            className="px-4 py-1.5 bg-primary text-primary-foreground font-semibold text-xs rounded-lg hover:bg-primary/90 flex items-center gap-1.5 shadow-2xs cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Export CSV
-          </button>
+              <button
+                type="button"
+                onClick={handleExportCsv}
+                className="px-4 py-1.5 bg-primary text-primary-foreground font-semibold text-xs rounded-lg hover:bg-primary/90 flex items-center gap-1.5 shadow-2xs cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Export CSV
+              </button>
+            </>
+          )}
         </div>
       </div>
 

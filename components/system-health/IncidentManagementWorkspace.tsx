@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
+import { useOptionalPlatformAuth } from '@/components/providers/PlatformAuthContext';
 import {
   PlatformIncident,
   IncidentLifecycleStatus,
@@ -58,6 +59,8 @@ export function IncidentManagementWorkspace({
   selectedIncidentFromProps,
   onClearSelectedIncident,
 }: IncidentManagementWorkspaceProps) {
+  const auth = useOptionalPlatformAuth();
+  const canManageIncidents = auth ? auth.can('system.maintenance.manage') : true;
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -471,45 +474,46 @@ export function IncidentManagementWorkspace({
             </div>
 
             {/* Lifecycle Action Buttons Bar */}
-            <div className="p-3 rounded-xl border border-border bg-card flex flex-wrap items-center justify-between gap-2">
-              <span className="font-bold text-foreground flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
-                <ShieldAlert className="w-4 h-4 text-primary" />
-                Lifecycle Actions:
-              </span>
+            {canManageIncidents && (
+              <div className="p-3 rounded-xl border border-border bg-card flex flex-wrap items-center justify-between gap-2">
+                <span className="font-bold text-foreground flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
+                  <ShieldAlert className="w-4 h-4 text-primary" />
+                  Lifecycle Actions:
+                </span>
 
-              <div className="flex flex-wrap items-center gap-2">
-                {/* 1. Acknowledge */}
-                {activeIncident.status === 'open' && (
-                  <button
-                    type="button"
-                    onClick={() => onAcknowledge(activeIncident.id)}
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-xs transition-colors cursor-pointer shadow-2xs"
-                  >
-                    Acknowledge Incident
-                  </button>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* 1. Acknowledge */}
+                  {activeIncident.status === 'open' && (
+                    <button
+                      type="button"
+                      onClick={() => onAcknowledge(activeIncident.id)}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-xs transition-colors cursor-pointer shadow-2xs"
+                    >
+                      Acknowledge Incident
+                    </button>
+                  )}
 
-                {/* 2. Begin Investigation */}
-                {activeIncident.status === 'acknowledged' && (
-                  <button
-                    type="button"
-                    onClick={() => onTransitionStatus(activeIncident.id, 'investigating')}
-                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold text-xs transition-colors cursor-pointer shadow-2xs"
-                  >
-                    Begin Investigation
-                  </button>
-                )}
+                  {/* 2. Begin Investigation */}
+                  {activeIncident.status === 'acknowledged' && (
+                    <button
+                      type="button"
+                      onClick={() => onTransitionStatus(activeIncident.id, 'investigating')}
+                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold text-xs transition-colors cursor-pointer shadow-2xs"
+                    >
+                      Begin Investigation
+                    </button>
+                  )}
 
-                {/* 3. Move to Monitoring */}
-                {activeIncident.status === 'investigating' && (
-                  <button
-                    type="button"
-                    onClick={() => onTransitionStatus(activeIncident.id, 'monitoring')}
-                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold text-xs transition-colors cursor-pointer shadow-2xs"
-                  >
-                    Move to Monitoring
-                  </button>
-                )}
+                  {/* 3. Move to Monitoring */}
+                  {activeIncident.status === 'investigating' && (
+                    <button
+                      type="button"
+                      onClick={() => onTransitionStatus(activeIncident.id, 'monitoring')}
+                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold text-xs transition-colors cursor-pointer shadow-2xs"
+                    >
+                      Move to Monitoring
+                    </button>
+                  )}
 
                 {/* 4. Resolve Incident */}
                 {(activeIncident.status === 'investigating' || activeIncident.status === 'monitoring') && (
@@ -543,7 +547,8 @@ export function IncidentManagementWorkspace({
                   Add Note
                 </button>
               </div>
-            </div>
+              </div>
+            )}
 
             {/* Root Cause & Resolution Summary if resolved */}
             {activeIncident.status === 'resolved' && (

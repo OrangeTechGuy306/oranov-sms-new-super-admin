@@ -26,9 +26,12 @@ interface UserDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   user: PlatformUser | null;
+  allUsers?: PlatformUser[];
   allRoles: PlatformRole[];
   allPermissions: PlatformPermission[];
   allAuditEvents: AuditEvent[];
+  canAssignRoles?: boolean;
+  canSuspendUsers?: boolean;
   onAssignRole: (userId: string, roleId: string) => { success: boolean; error?: string };
   onRemoveRole: (userId: string, roleId: string) => { success: boolean; error?: string };
   onUpdateStatus: (userId: string, status: 'active' | 'suspended') => { success: boolean; error?: string };
@@ -38,9 +41,12 @@ export function UserDetailModal({
   isOpen,
   onClose,
   user,
+  allUsers,
   allRoles,
   allPermissions,
   allAuditEvents,
+  canAssignRoles = true,
+  canSuspendUsers = true,
   onAssignRole,
   onRemoveRole,
   onUpdateStatus,
@@ -95,7 +101,7 @@ export function UserDetailModal({
     const role = allRoles.find((r) => r.id === selectedRoleToAssign);
     if (!role) return;
 
-    const val = validateRoleAssignment(user, role.id, [user], allRoles, 'assign');
+    const val = validateRoleAssignment(user, role.id, allUsers && allUsers.length > 0 ? allUsers : [user], allRoles, 'assign');
     if (!val.valid) {
       setActionError(val.error || 'Invalid role assignment.');
       return;
@@ -127,7 +133,7 @@ export function UserDetailModal({
 
   const handleRemoveRoleClick = (role: PlatformRole) => {
     setActionError('');
-    const val = validateRoleAssignment(user, role.id, [user], allRoles, 'remove');
+    const val = validateRoleAssignment(user, role.id, allUsers && allUsers.length > 0 ? allUsers : [user], allRoles, 'remove');
     if (!val.valid) {
       setActionError(val.error || 'Cannot revoke role.');
       return;
@@ -190,25 +196,27 @@ export function UserDetailModal({
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              {user.status === 'active' ? (
-                <button
-                  type="button"
-                  onClick={() => onUpdateStatus(user.id, 'suspended')}
-                  className="px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg border border-rose-200 dark:border-rose-900 transition-colors cursor-pointer"
-                >
-                  Suspend Account
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => onUpdateStatus(user.id, 'active')}
-                  className="px-3 py-1.5 text-xs font-semibold text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg border border-emerald-200 dark:border-emerald-900 transition-colors cursor-pointer"
-                >
-                  Activate Account
-                </button>
-              )}
-            </div>
+            {canSuspendUsers && (
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {user.status === 'active' ? (
+                  <button
+                    type="button"
+                    onClick={() => onUpdateStatus(user.id, 'suspended')}
+                    className="px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg border border-rose-200 dark:border-rose-900 transition-colors cursor-pointer"
+                  >
+                    Suspend Account
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onUpdateStatus(user.id, 'active')}
+                    className="px-3 py-1.5 text-xs font-semibold text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg border border-emerald-200 dark:border-emerald-900 transition-colors cursor-pointer"
+                  >
+                    Activate Account
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Metadata Grid */}
@@ -396,21 +404,23 @@ export function UserDetailModal({
                         </span>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveRoleClick(role)}
-                        className="px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg border border-rose-200 dark:border-rose-900 transition-colors flex items-center gap-1 cursor-pointer shrink-0"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        Revoke
-                      </button>
+                      {canAssignRoles && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveRoleClick(role)}
+                          className="px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg border border-rose-200 dark:border-rose-900 transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Revoke
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
               </div>
 
               {/* Assign Additional Role */}
-              {availableRolesToAssign.length > 0 && (
+              {canAssignRoles && availableRolesToAssign.length > 0 && (
                 <div className="bg-muted/30 border border-border rounded-xl p-3 space-y-2 text-xs">
                   <span className="font-semibold text-foreground block">Assign Additional Role</span>
                   <div className="flex items-center gap-2">

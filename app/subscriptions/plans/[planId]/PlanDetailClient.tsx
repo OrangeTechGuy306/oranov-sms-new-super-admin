@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { useOptionalPlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -42,6 +43,8 @@ const SCHOOL_TYPES: Array<{ id: CanonicalSchoolType; label: string }> = [
 ];
 
 export function PlanDetailClient({ planId }: PlanDetailClientProps) {
+  const auth = useOptionalPlatformAuth();
+  const canManagePlans = auth ? auth.can('billing.subscriptions.manage') : true;
   const { plans, organizations, modules, updatePlan } = usePlatformStore();
 
   const plan = plans.find((p) => p.id === planId);
@@ -74,6 +77,7 @@ export function PlanDetailClient({ planId }: PlanDetailClientProps) {
       plans={plans}
       assignedOrgs={assignedOrgs}
       modules={modules}
+      canManagePlans={canManagePlans}
       updatePlan={updatePlan}
     />
   );
@@ -84,12 +88,14 @@ function PlanDetailEditor({
   plans,
   assignedOrgs,
   modules,
+  canManagePlans,
   updatePlan,
 }: {
   plan: SubscriptionPlan;
   plans: SubscriptionPlan[];
   assignedOrgs: Organization[];
   modules: ReturnType<typeof usePlatformStore>['modules'];
+  canManagePlans: boolean;
   updatePlan: ReturnType<typeof usePlatformStore>['updatePlan'];
 }) {
   const [name, setName] = useState(plan.name);
@@ -163,7 +169,7 @@ function PlanDetailEditor({
         upgradeToPlanIds,
         downgradeToPlanIds,
       },
-      plans
+      plans.filter((p) => p.id !== plan.id)
     );
   }, [
     plan.id,
@@ -910,14 +916,16 @@ function PlanDetailEditor({
             >
               Cancel
             </Link>
-            <button
-              type="submit"
-              disabled={!liveValidation.isValid}
-              className="flex items-center gap-1.5 px-5 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-bold hover:bg-primary/90 shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Save className="w-4 h-4" />
-              Save Simulated Changes
-            </button>
+            {canManagePlans && (
+              <button
+                type="submit"
+                disabled={!liveValidation.isValid}
+                className="flex items-center gap-1.5 px-5 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-bold hover:bg-primary/90 shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Save className="w-4 h-4" />
+                Save Simulated Changes
+              </button>
+            )}
           </div>
         </div>
       </form>

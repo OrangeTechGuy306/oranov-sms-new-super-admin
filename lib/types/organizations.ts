@@ -161,7 +161,7 @@ export interface CreateOrganizationInput {
     studentCapacity?: number;
   };
   planId: string;
-  billingCycle: "monthly" | "annual";
+  billingCycle: "monthly" | "quarterly" | "annual";
   startTrial?: boolean;
   technicalConfig: TechnicalConfig;
   notes?: string;

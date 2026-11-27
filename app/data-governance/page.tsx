@@ -179,6 +179,7 @@ function DataGovernanceContent() {
   };
 
   const { can } = usePlatformAuth();
+  const canExportGovernance = can('audit.logs.export') || can('audit.governance.manage');
   const canResetFixtures =
     isPlatformDevControlsEnabled() && can('system.maintenance.manage');
 
@@ -189,14 +190,16 @@ function DataGovernanceContent() {
         description="Review educational data categories, configure statutory retention schedules, manage simulated privacy requests, and audit multi-tenant compliance posture."
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleQuickExport}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground shadow-2xs hover:bg-muted transition-colors"
-            >
-              <Download className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
-              Export Package
-            </button>
+            {canExportGovernance && (
+              <button
+                type="button"
+                onClick={handleQuickExport}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground shadow-2xs hover:bg-muted transition-colors"
+              >
+                <Download className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                Export Package
+              </button>
+            )}
             {canResetFixtures && (
               <button
                 type="button"

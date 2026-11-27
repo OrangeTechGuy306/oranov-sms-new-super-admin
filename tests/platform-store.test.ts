@@ -46,6 +46,7 @@ describe('PlatformStore Development Data Layer', () => {
       },
       planId: 'plan_growth',
       billingCycle: 'annual',
+      startTrial: false,
       technicalConfig: {
         subdomain: 'testacad',
         timezone: 'America/Chicago',

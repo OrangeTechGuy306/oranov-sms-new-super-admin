@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { useOptionalPlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { AlertBanner } from '@/components/ui/AlertBanner';
@@ -20,6 +21,10 @@ import {
 } from 'lucide-react';
 
 export function TenantOverridesPanel() {
+  const auth = useOptionalPlatformAuth();
+  const canManageOverrides = auth
+    ? auth.can('system.features.toggle') || auth.can('modules.registry.manage')
+    : true;
   const {
     organizations,
     featureFlags,
@@ -277,26 +282,30 @@ export function TenantOverridesPanel() {
                     </td>
 
                     <td className="p-3 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => handleOpenOverrideModal(flag.key, isOverridden ? explicitOverride!.overrideValue : flag.enabled)}
-                          className="px-2.5 py-1 rounded-md border border-border hover:bg-muted text-foreground text-[11px] font-semibold transition-colors"
-                        >
-                          {isOverridden ? 'Edit Override' : 'Configure Override'}
-                        </button>
-
-                        {isOverridden && (
+                      {canManageOverrides ? (
+                        <div className="flex items-center justify-end gap-1.5">
                           <button
                             type="button"
-                            onClick={() => setFlagKeyToRemove(flag.key)}
-                            className="p-1 rounded-md border border-border hover:bg-rose-500/10 text-muted-foreground hover:text-rose-500 transition-colors"
-                            title="Remove Override (Restore Inheritance)"
+                            onClick={() => handleOpenOverrideModal(flag.key, isOverridden ? explicitOverride!.overrideValue : flag.enabled)}
+                            className="px-2.5 py-1 rounded-md border border-border hover:bg-muted text-foreground text-[11px] font-semibold transition-colors"
                           >
-                            <RotateCcw className="w-3.5 h-3.5" />
+                            {isOverridden ? 'Edit Override' : 'Configure Override'}
                           </button>
-                        )}
-                      </div>
+
+                          {isOverridden && (
+                            <button
+                              type="button"
+                              onClick={() => setFlagKeyToRemove(flag.key)}
+                              className="p-1 rounded-md border border-border hover:bg-rose-500/10 text-muted-foreground hover:text-rose-500 transition-colors"
+                              title="Remove Override (Restore Inheritance)"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground">Read-only</span>
+                      )}
                     </td>
                   </tr>
                 );

@@ -1,8 +1,8 @@
-import { INITIAL_ORGANIZATIONS } from '@/lib/data/initial-data';
+import { INITIAL_ORGANIZATIONS, EXTENDED_P05_ORGANIZATIONS } from '@/lib/data/initial-data';
 import { OrganizationDetailsClient } from './OrganizationDetailsClient';
 
 export function generateStaticParams() {
-  return INITIAL_ORGANIZATIONS.map((org) => ({
+  return [...INITIAL_ORGANIZATIONS, ...EXTENDED_P05_ORGANIZATIONS].map((org) => ({
     organizationId: org.id,
   }));
 }

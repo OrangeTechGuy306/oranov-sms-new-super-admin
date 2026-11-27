@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Badge } from '@/components/ui/Badge';
+import { useOptionalPlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { IntegrationRecord } from '@/lib/types/integrations';
 import { filterIntegrations } from '@/lib/integrations/evaluator';
 import { formatDate } from '@/lib/utils/formatters';
@@ -35,6 +36,12 @@ export function IntegrationRegistryTab({
   onToggleEnabled,
   onVerifyConnection,
 }: IntegrationRegistryTabProps) {
+  const auth = useOptionalPlatformAuth();
+  const canManageIntegrations = auth
+    ? auth.can('system.maintenance.manage') ||
+      auth.can('modules.registry.manage') ||
+      auth.can('platform.settings.update')
+    : true;
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -146,15 +153,21 @@ export function IntegrationRegistryTab({
                     </span>
                   </div>
 
-                  <label className="relative inline-flex cursor-pointer items-center shrink-0">
-                    <input
-                      type="checkbox"
-                      checked={item.isEnabled}
-                      onChange={() => onToggleEnabled(item.id)}
-                      className="peer sr-only"
-                    />
-                    <div className="peer h-5 w-9 rounded-full bg-muted-foreground/30 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full peer-focus:outline-hidden" />
-                  </label>
+                  {canManageIntegrations ? (
+                    <label className="relative inline-flex cursor-pointer items-center shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={item.isEnabled}
+                        onChange={() => onToggleEnabled(item.id)}
+                        className="peer sr-only"
+                      />
+                      <div className="peer h-5 w-9 rounded-full bg-muted-foreground/30 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full peer-focus:outline-hidden" />
+                    </label>
+                  ) : (
+                    <Badge variant={item.isEnabled ? 'success' : 'neutral'} className="text-[10px]">
+                      {item.isEnabled ? 'Enabled' : 'Paused'}
+                    </Badge>
+                  )}
                 </div>
 
                 <p className="text-muted-foreground text-xs line-clamp-2 leading-relaxed">
@@ -227,21 +240,25 @@ export function IntegrationRegistryTab({
                 </span>
 
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => onVerifyConnection(item.id)}
-                    title="Simulate connection test against local mock adapter"
-                    className="rounded border border-border p-1.5 text-foreground hover:bg-muted transition-colors"
-                  >
-                    <Play className="h-3.5 w-3.5 text-primary" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onOpenConfig(item)}
-                    className="rounded border border-border px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-muted transition-colors"
-                  >
-                    Configure
-                  </button>
+                  {canManageIntegrations && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => onVerifyConnection(item.id)}
+                        title="Simulate connection test against local mock adapter"
+                        className="rounded border border-border p-1.5 text-foreground hover:bg-muted transition-colors"
+                      >
+                        <Play className="h-3.5 w-3.5 text-primary" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onOpenConfig(item)}
+                        className="rounded border border-border px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-muted transition-colors"
+                      >
+                        Configure
+                      </button>
+                    </>
+                  )}
                   <button
                     type="button"
                     onClick={() => onOpenDetails(item)}

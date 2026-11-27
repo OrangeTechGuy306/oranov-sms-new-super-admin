@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { useOptionalPlatformAuth } from '@/components/providers/PlatformAuthContext';
 import {
   FeatureFlag,
   FeatureFlagLifecycle,
@@ -34,6 +35,10 @@ import {
 } from 'lucide-react';
 
 export function FeatureFlagsRegistry() {
+  const auth = useOptionalPlatformAuth();
+  const canManageFlags = auth
+    ? auth.can('system.features.toggle') || auth.can('modules.registry.manage')
+    : true;
   const {
     featureFlags,
     toggleFeatureFlag,
@@ -201,14 +206,16 @@ export function FeatureFlagsRegistry() {
               className="w-full pl-9 pr-3 py-2 bg-muted/20 border border-border rounded-lg text-xs focus:ring-1 focus:ring-primary"
             />
           </div>
-          <button
-            type="button"
-            onClick={() => setShowCreateModal(true)}
-            className="px-3.5 py-2 rounded-lg bg-primary text-primary-foreground font-semibold text-xs hover:bg-primary/90 flex items-center gap-1.5 transition-colors shadow-xs shrink-0"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Register Feature Flag</span>
-          </button>
+          {canManageFlags && (
+            <button
+              type="button"
+              onClick={() => setShowCreateModal(true)}
+              className="px-3.5 py-2 rounded-lg bg-primary text-primary-foreground font-semibold text-xs hover:bg-primary/90 flex items-center gap-1.5 transition-colors shadow-xs shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Register Feature Flag</span>
+            </button>
+          )}
         </div>
 
         {/* Filters */}
@@ -342,30 +349,36 @@ export function FeatureFlagsRegistry() {
                   {/* Actions & Toggle */}
                   <div className="flex flex-wrap md:flex-col items-end gap-2 shrink-0 pt-2 md:pt-0">
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => toggleFeatureFlag(flag.key)}
-                        disabled={isArchived}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
-                          isArchived
-                            ? 'opacity-40 cursor-not-allowed bg-muted text-muted-foreground border border-border'
-                            : flag.enabled
-                            ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs'
-                            : 'bg-muted text-foreground border border-border hover:bg-muted/80'
-                        }`}
-                      >
-                        {flag.enabled ? (
-                          <>
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>Active / Enabled</span>
-                          </>
-                        ) : (
-                          <>
-                            <XCircle className="w-3.5 h-3.5 text-muted-foreground" />
-                            <span>Disabled</span>
-                          </>
-                        )}
-                      </button>
+                      {canManageFlags ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleFeatureFlag(flag.key)}
+                          disabled={isArchived}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                            isArchived
+                              ? 'opacity-40 cursor-not-allowed bg-muted text-muted-foreground border border-border'
+                              : flag.enabled
+                              ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs'
+                              : 'bg-muted text-foreground border border-border hover:bg-muted/80'
+                          }`}
+                        >
+                          {flag.enabled ? (
+                            <>
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Active / Enabled</span>
+                            </>
+                          ) : (
+                            <>
+                              <XCircle className="w-3.5 h-3.5 text-muted-foreground" />
+                              <span>Disabled</span>
+                            </>
+                          )}
+                        </button>
+                      ) : (
+                        <Badge variant={flag.enabled ? 'success' : 'neutral'} className="text-[10px]">
+                          {flag.enabled ? 'Enabled' : 'Disabled'}
+                        </Badge>
+                      )}
 
                       <button
                         type="button"
@@ -376,31 +389,35 @@ export function FeatureFlagsRegistry() {
                         <Eye className="w-4 h-4" />
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => setFlagToDelete(flag)}
-                        className="p-1.5 rounded-lg border border-border hover:bg-rose-500/10 text-muted-foreground hover:text-rose-500 transition-colors"
-                        title="Delete Flag"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {canManageFlags && (
+                        <button
+                          type="button"
+                          onClick={() => setFlagToDelete(flag)}
+                          className="p-1.5 rounded-lg border border-border hover:bg-rose-500/10 text-muted-foreground hover:text-rose-500 transition-colors"
+                          title="Delete Flag"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
 
                     {/* Quick Lifecycle Transition selector */}
-                    <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                      <span>State:</span>
-                      <select
-                        value={flag.lifecycle}
-                        onChange={(e) => transitionFeatureFlagLifecycle(flag.key, e.target.value as FeatureFlagLifecycle, 'Admin transitioned lifecycle via Super-Admin.')}
-                        className="bg-transparent border border-border rounded px-1.5 py-0.5 text-[11px] text-foreground"
-                      >
-                        <option value="draft">Draft</option>
-                        <option value="active">Active</option>
-                        <option value="disabled">Disabled</option>
-                        <option value="scheduled">Scheduled</option>
-                        <option value="archived">Archived</option>
-                      </select>
-                    </div>
+                    {canManageFlags && (
+                      <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <span>State:</span>
+                        <select
+                          value={flag.lifecycle}
+                          onChange={(e) => transitionFeatureFlagLifecycle(flag.key, e.target.value as FeatureFlagLifecycle, 'Admin transitioned lifecycle via Super-Admin.')}
+                          className="bg-transparent border border-border rounded px-1.5 py-0.5 text-[11px] text-foreground"
+                        >
+                          <option value="draft">Draft</option>
+                          <option value="active">Active</option>
+                          <option value="disabled">Disabled</option>
+                          <option value="scheduled">Scheduled</option>
+                          <option value="archived">Archived</option>
+                        </select>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

@@ -19,6 +19,7 @@ import { isReviewDue } from '@/lib/data-governance/evaluator';
 import { RetentionPolicyDetailModal } from './RetentionPolicyDetailModal';
 import { ReviewRetentionPolicyModal } from './ReviewRetentionPolicyModal';
 import { CreateRetentionPolicyModal } from './CreateRetentionPolicyModal';
+import { useOptionalPlatformAuth } from '@/components/providers/PlatformAuthContext';
 
 interface RetentionPoliciesTabProps {
   policies: GovernanceRetentionPolicy[];
@@ -38,6 +39,8 @@ export function RetentionPoliciesTab({
   onCreatePolicy,
   onReviewPolicy,
 }: RetentionPoliciesTabProps) {
+  const auth = useOptionalPlatformAuth();
+  const canManageGovernance = auth ? auth.can('audit.governance.manage') : true;
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedReviewDue, setSelectedReviewDue] = useState<string>('all');
@@ -128,14 +131,16 @@ export function RetentionPoliciesTab({
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setIsCreateOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 shadow-2xs transition-colors shrink-0"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          New Retention Policy
-        </button>
+        {canManageGovernance && (
+          <button
+            type="button"
+            onClick={() => setIsCreateOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 shadow-2xs transition-colors shrink-0"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New Retention Policy
+          </button>
+        )}
       </div>
 
       {/* Filter and Search Bar */}
@@ -271,14 +276,16 @@ export function RetentionPoliciesTab({
                           >
                             <Eye className="h-3.5 w-3.5" />
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setReviewPolicy(p)}
-                            className="rounded-md p-1.5 text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/50"
-                            title="Simulate policy review"
-                          >
-                            <CheckSquare className="h-3.5 w-3.5" />
-                          </button>
+                          {canManageGovernance && (
+                            <button
+                              type="button"
+                              onClick={() => setReviewPolicy(p)}
+                              className="rounded-md p-1.5 text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/50"
+                              title="Simulate policy review"
+                            >
+                              <CheckSquare className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

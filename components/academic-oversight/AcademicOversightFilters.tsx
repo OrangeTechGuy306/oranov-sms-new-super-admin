@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useOptionalPlatformAuth } from '@/components/providers/PlatformAuthContext';
 import {
   AcademicOversightFilterState,
   OrganizationAcademicOversight,
@@ -31,6 +32,8 @@ export function AcademicOversightFilters({
   allRecords,
   filteredRecords,
 }: AcademicOversightFiltersProps) {
+  const auth = useOptionalPlatformAuth();
+  const canExportAcademicOversight = auth ? auth.can('oversight.academics.export') : true;
   const availableCampuses = getSelectableCampuses(allRecords, filter.organizationId);
 
   // Derive unique academic sessions from data
@@ -216,14 +219,16 @@ export function AcademicOversightFilters({
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={handleExport}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground font-medium text-xs rounded-lg hover:bg-primary/90 transition-colors shadow-xs cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Export CSV
-          </button>
+          {canExportAcademicOversight && (
+            <button
+              type="button"
+              onClick={handleExport}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground font-medium text-xs rounded-lg hover:bg-primary/90 transition-colors shadow-xs cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export CSV
+            </button>
+          )}
         </div>
       </div>
     </div>

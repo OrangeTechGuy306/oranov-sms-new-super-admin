@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { useOptionalPlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { Badge } from '@/components/ui/Badge';
 import { Organization, ProvisioningStatus } from '@/lib/types';
 import type { ProvisioningStageKey } from '@/lib/provisioning/simulator';
@@ -42,6 +43,9 @@ export function ReadinessAndProvisioningPanel({
   organization,
   onNavigateTab,
 }: ReadinessAndProvisioningPanelProps) {
+  const auth = useOptionalPlatformAuth();
+  const canExecuteProvisioning = auth ? auth.can('organizations.lifecycle.manage') : true;
+  const canSimulateControls = auth ? auth.can('tenants.provisioning.simulate') : true;
   const {
     evaluateOrganizationReadiness,
     runSimulatedProvisioning,
@@ -184,17 +188,19 @@ export function ReadinessAndProvisioningPanel({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 pt-2">
-            <button
-              type="button"
-              onClick={() => handleRunSimulation({ forceFail: false })}
-              disabled={isRunning || readiness.hasBlockers}
-              className="px-3 py-1.5 bg-primary text-primary-foreground font-semibold text-xs rounded-lg hover:bg-primary/90 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
-            >
-              <Play className="w-3.5 h-3.5 fill-current" />
-              {isRunning ? 'Simulating...' : 'Run 8-Stage Prep'}
-            </button>
+            {canExecuteProvisioning && (
+              <button
+                type="button"
+                onClick={() => handleRunSimulation({ forceFail: false })}
+                disabled={isRunning || readiness.hasBlockers}
+                className="px-3 py-1.5 bg-primary text-primary-foreground font-semibold text-xs rounded-lg hover:bg-primary/90 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                {isRunning ? 'Simulating...' : 'Run 8-Stage Prep'}
+              </button>
+            )}
 
-            {(currentStatus === 'simulated_failed' || currentStatus === 'needs_attention') && (
+            {canExecuteProvisioning && (currentStatus === 'simulated_failed' || currentStatus === 'needs_attention') && (
               <button
                 type="button"
                 onClick={() => handleRunSimulation({ forceFail: false, isRetry: true })}
@@ -206,32 +212,38 @@ export function ReadinessAndProvisioningPanel({
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={() => handleRunSimulation({ markForManualReview: true })}
-              disabled={isRunning || readiness.hasBlockers}
-              className="px-2.5 py-1.5 border border-amber-500/40 text-amber-700 dark:text-amber-300 font-medium text-xs rounded-lg hover:bg-amber-500/10 cursor-pointer disabled:opacity-50"
-            >
-              Flag Manual Review
-            </button>
+            {canExecuteProvisioning && (
+              <button
+                type="button"
+                onClick={() => handleRunSimulation({ markForManualReview: true })}
+                disabled={isRunning || readiness.hasBlockers}
+                className="px-2.5 py-1.5 border border-amber-500/40 text-amber-700 dark:text-amber-300 font-medium text-xs rounded-lg hover:bg-amber-500/10 cursor-pointer disabled:opacity-50"
+              >
+                Flag Manual Review
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={handleRunSimulation.bind(null, { forceFail: true })}
-              disabled={isRunning || readiness.hasBlockers}
-              className="px-2.5 py-1.5 border border-destructive/40 text-destructive font-medium text-xs rounded-lg hover:bg-destructive/10 flex items-center gap-1 cursor-pointer disabled:opacity-50"
-            >
-              Simulate Failure
-            </button>
+            {canExecuteProvisioning && (
+              <button
+                type="button"
+                onClick={handleRunSimulation.bind(null, { forceFail: true })}
+                disabled={isRunning || readiness.hasBlockers}
+                className="px-2.5 py-1.5 border border-destructive/40 text-destructive font-medium text-xs rounded-lg hover:bg-destructive/10 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+              >
+                Simulate Failure
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={handleReset}
-              className="p-1.5 text-muted-foreground hover:text-foreground rounded-lg hover:bg-muted cursor-pointer"
-              title="Reset simulation status"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
+            {canSimulateControls && (
+              <button
+                type="button"
+                onClick={handleReset}
+                className="p-1.5 text-muted-foreground hover:text-foreground rounded-lg hover:bg-muted cursor-pointer"
+                title="Reset simulation status"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { useOptionalPlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { ApiClientRecord } from '@/lib/types/integrations';
 import { filterApiClients } from '@/lib/integrations/evaluator';
 import { formatDate } from '@/lib/utils/formatters';
@@ -33,6 +34,12 @@ export function ApiClientsTab({
   onOpenCredentials,
   onRevokeClient,
 }: ApiClientsTabProps) {
+  const auth = useOptionalPlatformAuth();
+  const canManageIntegrations = auth
+    ? auth.can('system.maintenance.manage') ||
+      auth.can('modules.registry.manage') ||
+      auth.can('platform.settings.update')
+    : true;
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -79,14 +86,16 @@ export function ApiClientsTab({
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={onOpenCreate}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 font-semibold text-primary-foreground hover:bg-primary/90 transition-colors shadow-2xs"
-        >
-          <Plus className="h-4 w-4" />
-          Register New API Client
-        </button>
+        {canManageIntegrations && (
+          <button
+            type="button"
+            onClick={onOpenCreate}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 font-semibold text-primary-foreground hover:bg-primary/90 transition-colors shadow-2xs"
+          >
+            <Plus className="h-4 w-4" />
+            Register New API Client
+          </button>
+        )}
       </div>
 
       {/* Filters Bar */}
@@ -244,7 +253,7 @@ export function ApiClientsTab({
                           <KeyRound className="h-3.5 w-3.5 text-primary" />
                         </button>
 
-                        {client.status === 'active' && (
+                        {client.status === 'active' && canManageIntegrations && (
                           <button
                             type="button"
                             onClick={() => setRevokingClient(client)}

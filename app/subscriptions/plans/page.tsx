@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Badge } from '@/components/ui/Badge';
 import { SubscriptionNavTabs } from '@/components/monetization/SubscriptionNavTabs';
@@ -24,6 +25,9 @@ import {
 } from 'lucide-react';
 
 export default function PlanCataloguePage() {
+  const { can } = usePlatformAuth();
+  const canManagePlans = can('billing.subscriptions.manage');
+  const canOnboardOrg = can('organizations.create');
   const { plans, organizations, modules } = usePlatformStore();
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('annual');
   const [searchQuery, setSearchQuery] = useState('');
@@ -79,13 +83,15 @@ export default function PlanCataloguePage() {
               </button>
             </div>
 
-            <Link
-              href="/subscriptions/plans/new"
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-bold hover:bg-primary/90 shadow-xs"
-            >
-              <Plus className="w-4 h-4" />
-              Define New Plan
-            </Link>
+            {canManagePlans && (
+              <Link
+                href="/subscriptions/plans/new"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-bold hover:bg-primary/90 shadow-xs"
+              >
+                <Plus className="w-4 h-4" />
+                Define New Plan
+              </Link>
+            )}
           </div>
         }
       />
@@ -262,23 +268,27 @@ export default function PlanCataloguePage() {
               </div>
 
               <div className="pt-6 mt-6 border-t border-border/50 flex items-center gap-2">
-                <Link
-                  href={`/subscriptions/plans/${plan.id}`}
-                  className="flex-1 py-2 px-3 rounded-xl border border-border text-foreground hover:bg-muted text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-                >
-                  <Settings className="w-3.5 h-3.5" />
-                  Configure
-                </Link>
-                <Link
-                  href="/organizations/new"
-                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors ${
-                    plan.isPopular
-                      ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs'
-                      : 'border border-border text-foreground hover:bg-muted'
-                  }`}
-                >
-                  Onboard
-                </Link>
+                {canManagePlans && (
+                  <Link
+                    href={`/subscriptions/plans/${plan.id}`}
+                    className="flex-1 py-2 px-3 rounded-xl border border-border text-foreground hover:bg-muted text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                    Configure
+                  </Link>
+                )}
+                {canOnboardOrg && (
+                  <Link
+                    href="/organizations/new"
+                    className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors ${
+                      plan.isPopular
+                        ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs'
+                        : 'border border-border text-foreground hover:bg-muted'
+                    }`}
+                  >
+                    Onboard
+                  </Link>
+                )}
               </div>
             </div>
           );

@@ -1140,7 +1140,11 @@ export default function OrganizationRegistrationWizardPage() {
                           </div>
                           <p className="text-muted-foreground">
                             {formatCurrency(
-                              formData.billingCycle === 'annual' ? plan.priceAnnual : plan.priceMonthly,
+                              formData.billingCycle === 'annual'
+                                ? plan.priceAnnual
+                                : formData.billingCycle === 'quarterly'
+                                ? (plan.priceQuarterly ?? plan.priceMonthly * 3)
+                                : plan.priceMonthly,
                               plan.currency
                             )}{' '}
                             / {formData.billingCycle}
@@ -1161,12 +1165,13 @@ export default function OrganizationRegistrationWizardPage() {
                       onChange={(e) =>
                         setFormData((p) => ({
                           ...p,
-                          billingCycle: e.target.value as 'monthly' | 'annual',
+                          billingCycle: e.target.value as 'monthly' | 'quarterly' | 'annual',
                         }))
                       }
                       className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground"
                     >
                       <option value="annual">Annual Billing</option>
+                      <option value="quarterly">Quarterly Billing</option>
                       <option value="monthly">Monthly Billing</option>
                     </select>
                   </div>

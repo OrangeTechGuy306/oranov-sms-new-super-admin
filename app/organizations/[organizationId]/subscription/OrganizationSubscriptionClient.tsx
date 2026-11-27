@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Badge } from '@/components/ui/Badge';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -21,6 +22,10 @@ interface ClientProps {
 }
 
 export function OrganizationSubscriptionClient({ organizationId }: ClientProps) {
+  const { can } = usePlatformAuth();
+  const canManageSubscriptions = can('billing.subscriptions.manage');
+  const canRecordPayment = can('billing.payments.manage');
+
   const {
     getOrganizationById,
     getSubscriptionByOrgId,
@@ -144,7 +149,7 @@ export function OrganizationSubscriptionClient({ organizationId }: ClientProps) 
       align: 'right',
       render: (inv) => {
         const bal = Math.max(0, (inv.amountDue || 0) - (inv.amountPaid || 0));
-        if (inv.status === 'paid' || bal <= 0 || inv.status === 'void') return null;
+        if (inv.status === 'paid' || bal <= 0 || inv.status === 'void' || !canRecordPayment) return null;
         return (
           <button
             type="button"
@@ -305,19 +310,21 @@ export function OrganizationSubscriptionClient({ organizationId }: ClientProps) 
         </div>
 
         {/* Action Button */}
-        <div className="flex items-center justify-between pt-4 border-t border-border">
-          <p className="text-xs text-muted-foreground">
-            Selected: <strong className="text-foreground">{newPlan.name}</strong> ({selectedCycle})
-          </p>
-          <button
-            type="button"
-            disabled={selectedPlanId === org.planId && selectedCycle === subscription?.billingCycle}
-            onClick={() => setShowConfirmModal(true)}
-            className="px-5 py-2 text-xs font-bold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed shadow-xs transition-colors"
-          >
-            Apply Plan Change
-          </button>
-        </div>
+        {canManageSubscriptions && (
+          <div className="flex items-center justify-between pt-4 border-t border-border">
+            <p className="text-xs text-muted-foreground">
+              Selected: <strong className="text-foreground">{newPlan.name}</strong> ({selectedCycle})
+            </p>
+            <button
+              type="button"
+              disabled={selectedPlanId === org.planId && selectedCycle === subscription?.billingCycle}
+              onClick={() => setShowConfirmModal(true)}
+              className="px-5 py-2 text-xs font-bold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed shadow-xs transition-colors"
+            >
+              Apply Plan Change
+            </button>
+          </div>
+        )}
       </div>
 
       {/* School Invoices Ledger */}
@@ -345,7 +352,14 @@ export function OrganizationSubscriptionClient({ organizationId }: ClientProps) 
             <strong className="text-foreground">{org.name}</strong> from{' '}
             <strong className="text-foreground">{currentPlan.name}</strong> to{' '}
             <strong className="text-foreground">{newPlan.name}</strong> ({selectedCycle} billing at{' '}
-            {formatCurrency(selectedCycle === 'annual' ? newPlan.priceAnnual : newPlan.priceMonthly)}).
+            {formatCurrency(
+              selectedCycle === 'annual'
+                ? newPlan.priceAnnual
+                : selectedCycle === 'quarterly'
+                ? (newPlan.priceQuarterly ?? newPlan.priceMonthly * 3)
+                : newPlan.priceMonthly,
+              newPlan.currency
+            )}).
           </p>
         }
       />

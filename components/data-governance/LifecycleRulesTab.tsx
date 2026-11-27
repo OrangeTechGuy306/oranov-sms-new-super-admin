@@ -16,6 +16,7 @@ import {
 } from '@/lib/types/data-governance';
 import { LifecycleRuleDetailModal } from './LifecycleRuleDetailModal';
 import { CreateLifecycleRuleModal } from './CreateLifecycleRuleModal';
+import { useOptionalPlatformAuth } from '@/components/providers/PlatformAuthContext';
 
 interface LifecycleRulesTabProps {
   rules: DataLifecycleRuleRecord[];
@@ -30,6 +31,8 @@ export function LifecycleRulesTab({
   onToggleRule,
   onCreateRule,
 }: LifecycleRulesTabProps) {
+  const auth = useOptionalPlatformAuth();
+  const canManageGovernance = auth ? auth.can('audit.governance.manage') : true;
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedStage, setSelectedStage] = useState<string>('all');
@@ -112,14 +115,16 @@ export function LifecycleRulesTab({
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setIsCreateOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 shadow-2xs transition-colors shrink-0"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          New Lifecycle Rule
-        </button>
+        {canManageGovernance && (
+          <button
+            type="button"
+            onClick={() => setIsCreateOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 shadow-2xs transition-colors shrink-0"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New Lifecycle Rule
+          </button>
+        )}
       </div>
 
       {/* Filter and Search Bar */}
@@ -230,8 +235,9 @@ export function LifecycleRulesTab({
                       <td className="py-3 px-3" onClick={(e) => e.stopPropagation()}>
                         <button
                           type="button"
+                          disabled={!canManageGovernance}
                           onClick={() => onToggleRule(r.id)}
-                          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase transition-colors ${
+                          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
                             r.status === 'enabled'
                               ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 dark:bg-emerald-900/60 dark:text-emerald-300'
                               : 'bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-300'

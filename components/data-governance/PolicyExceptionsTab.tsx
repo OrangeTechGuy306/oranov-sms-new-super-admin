@@ -19,6 +19,7 @@ import { isOverdue } from '@/lib/data-governance/evaluator';
 import { GovernanceExceptionDetailModal } from './GovernanceExceptionDetailModal';
 import { ReviewGovernanceExceptionModal } from './ReviewGovernanceExceptionModal';
 import { CreateGovernanceExceptionModal } from './CreateGovernanceExceptionModal';
+import { useOptionalPlatformAuth } from '@/components/providers/PlatformAuthContext';
 
 interface PolicyExceptionsTabProps {
   exceptions: GovernanceExceptionRecord[];
@@ -35,6 +36,8 @@ export function PolicyExceptionsTab({
   onCreateException,
   onReviewException,
 }: PolicyExceptionsTabProps) {
+  const auth = useOptionalPlatformAuth();
+  const canManageGovernance = auth ? auth.can('audit.governance.manage') : true;
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedReason, setSelectedReason] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
@@ -117,14 +120,16 @@ export function PolicyExceptionsTab({
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setIsCreateOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 shadow-2xs transition-colors shrink-0"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Request Exception Hold
-        </button>
+        {canManageGovernance && (
+          <button
+            type="button"
+            onClick={() => setIsCreateOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 shadow-2xs transition-colors shrink-0"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Request Exception Hold
+          </button>
+        )}
       </div>
 
       {/* Filter and Search Bar */}
@@ -258,14 +263,16 @@ export function PolicyExceptionsTab({
                           >
                             <Eye className="h-3.5 w-3.5" />
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setReviewException(e)}
-                            className="rounded-md p-1.5 text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/50"
-                            title="Review exception decision"
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                          </button>
+                          {canManageGovernance && (
+                            <button
+                              type="button"
+                              onClick={() => setReviewException(e)}
+                              className="rounded-md p-1.5 text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/50"
+                              title="Review exception decision"
+                            >
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

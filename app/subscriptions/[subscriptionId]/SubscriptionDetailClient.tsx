@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
@@ -40,6 +41,10 @@ interface SubscriptionDetailClientProps {
 }
 
 export function SubscriptionDetailClient({ subscriptionId }: SubscriptionDetailClientProps) {
+  const { can } = usePlatformAuth();
+  const canManageSubscriptions = can('billing.subscriptions.manage');
+  const canManagePayments = can('billing.payments.manage');
+
   const {
     getSubscriptionById,
     getOrganizationById,
@@ -371,6 +376,9 @@ export function SubscriptionDetailClient({ subscriptionId }: SubscriptionDetailC
       align: 'right',
       render: (p) => {
         if (p.status === 'failed') {
+          if (!canManagePayments) {
+            return <span className="text-[11px] text-rose-500 font-medium">Restricted</span>;
+          }
           return (
             <button
               type="button"
@@ -402,40 +410,44 @@ export function SubscriptionDetailClient({ subscriptionId }: SubscriptionDetailC
               <Building2 className="w-3.5 h-3.5" />
               View School Profile
             </Link>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedNewPlanId(subscription.planId);
-                setSelectedNewCycle(subscription.billingCycle);
-                setPlanSwitchError('');
-                setShowPlanModal(true);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border bg-card text-foreground hover:bg-muted cursor-pointer"
-            >
-              <ArrowUpDown className="w-3.5 h-3.5" />
-              Upgrade / Change Plan
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setNewTrialEndDate(subscription.trialEndDate || '2026-12-31T23:59:59Z');
-                setTrialReason('');
-                setTrialError('');
-                setShowTrialModal(true);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border bg-card text-foreground hover:bg-muted cursor-pointer"
-            >
-              <Clock className="w-3.5 h-3.5" />
-              Extend Trial (Sim)
-            </button>
-            <button
-              type="button"
-              onClick={handleOpenTransitionModal}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs cursor-pointer"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              Simulate State Transition
-            </button>
+            {canManageSubscriptions && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedNewPlanId(subscription.planId);
+                    setSelectedNewCycle(subscription.billingCycle);
+                    setPlanSwitchError('');
+                    setShowPlanModal(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border bg-card text-foreground hover:bg-muted cursor-pointer"
+                >
+                  <ArrowUpDown className="w-3.5 h-3.5" />
+                  Upgrade / Change Plan
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewTrialEndDate(subscription.trialEndDate || '2026-12-31T23:59:59Z');
+                    setTrialReason('');
+                    setTrialError('');
+                    setShowTrialModal(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border bg-card text-foreground hover:bg-muted cursor-pointer"
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                  Extend Trial (Sim)
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenTransitionModal}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Simulate State Transition
+                </button>
+              </>
+            )}
           </div>
         }
       />
@@ -611,7 +623,7 @@ export function SubscriptionDetailClient({ subscriptionId }: SubscriptionDetailC
           </div>
           <button
             type="submit"
-            disabled={!newAddOnModuleId}
+            disabled={!newAddOnModuleId || !canManageSubscriptions}
             className="px-4 py-2 rounded-lg bg-primary text-primary-foreground font-bold hover:bg-primary/90 disabled:opacity-50 cursor-pointer"
           >
             Grant Simulated Add-On
@@ -1086,10 +1098,9 @@ export function SubscriptionDetailClient({ subscriptionId }: SubscriptionDetailC
                 className="w-full px-3 py-2 bg-muted/50 border border-border rounded-lg text-xs text-foreground focus:outline-none"
               >
                 <option value="bank_transfer">Electronic Bank Transfer</option>
-                <option value="credit_card">Corporate Credit Card (Demo)</option>
-                <option value="debit_card">Debit Card</option>
-                <option value="cash_deposit">Direct Bank Deposit / Wire</option>
-                <option value="cheque">Institutional Check</option>
+                <option value="card">Corporate Credit / Debit Card</option>
+                <option value="cheque">Institutional Cheque</option>
+                <option value="manual_invoice">Manual Ledger Settlement</option>
               </select>
             </div>
 

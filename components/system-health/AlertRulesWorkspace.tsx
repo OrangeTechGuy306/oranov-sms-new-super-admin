@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import { useOptionalPlatformAuth } from '@/components/providers/PlatformAuthContext';
 import {
   AlertRule,
   AlertComparisonOperator,
@@ -49,6 +50,8 @@ export function AlertRulesWorkspace({
   onToggleRule,
   onDeleteRule,
 }: AlertRulesWorkspaceProps) {
+  const auth = useOptionalPlatformAuth();
+  const canManageAlerts = auth ? auth.can('system.maintenance.manage') : true;
   // Filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [severityFilter, setSeverityFilter] = useState('all');
@@ -250,43 +253,51 @@ export function AlertRulesWorkspace({
     {
       key: 'status',
       header: 'Evaluation State',
-      render: (rule) => (
-        <button
-          type="button"
-          onClick={() => onToggleRule(rule.id)}
-          className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors cursor-pointer ${
-            rule.isEnabled
-              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
-              : 'bg-muted text-muted-foreground border-border'
-          }`}
-        >
-          {rule.isEnabled ? 'ENABLED (ACTIVE)' : 'DISABLED'}
-        </button>
-      ),
+      render: (rule) =>
+        canManageAlerts ? (
+          <button
+            type="button"
+            onClick={() => onToggleRule(rule.id)}
+            className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors cursor-pointer ${
+              rule.isEnabled
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800'
+                : 'bg-muted text-muted-foreground border-border'
+            }`}
+          >
+            {rule.isEnabled ? 'ENABLED (ACTIVE)' : 'DISABLED'}
+          </button>
+        ) : (
+          <Badge variant={rule.isEnabled ? 'success' : 'neutral'} size="sm">
+            {rule.isEnabled ? 'ENABLED' : 'DISABLED'}
+          </Badge>
+        ),
     },
     {
       key: 'actions',
       header: 'Actions',
-      render: (rule) => (
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => handleOpenEdit(rule)}
-            className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
-            title="Edit rule threshold"
-          >
-            <Edit2 className="w-3.5 h-3.5 text-primary" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setDeletingRule(rule)}
-            className="p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-950 text-rose-500 cursor-pointer"
-            title="Delete rule"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      ),
+      render: (rule) =>
+        canManageAlerts ? (
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => handleOpenEdit(rule)}
+              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
+              title="Edit rule threshold"
+            >
+              <Edit2 className="w-3.5 h-3.5 text-primary" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setDeletingRule(rule)}
+              className="p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-950 text-rose-500 cursor-pointer"
+              title="Delete rule"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <span className="text-[11px] text-muted-foreground">Read-only</span>
+        ),
     },
   ];
 
@@ -369,14 +380,16 @@ export function AlertRulesWorkspace({
           </select>
         </div>
 
-        <button
-          type="button"
-          onClick={handleOpenCreate}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg font-semibold text-xs cursor-pointer shadow-2xs hover:opacity-95 transition-opacity shrink-0"
-        >
-          <PlusCircle className="w-3.5 h-3.5" />
-          Create Alert Rule
-        </button>
+        {canManageAlerts && (
+          <button
+            type="button"
+            onClick={handleOpenCreate}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg font-semibold text-xs cursor-pointer shadow-2xs hover:opacity-95 transition-opacity shrink-0"
+          >
+            <PlusCircle className="w-3.5 h-3.5" />
+            Create Alert Rule
+          </button>
+        )}
       </div>
 
       {/* Alert Rules Table */}

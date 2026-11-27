@@ -19,6 +19,7 @@ import {
 } from '@/lib/types/data-governance';
 import { CategoryDetailModal } from './CategoryDetailModal';
 import { EditCategoryModal } from './EditCategoryModal';
+import { useOptionalPlatformAuth } from '@/components/providers/PlatformAuthContext';
 
 interface DataInventoryTabProps {
   categories: DataCategoryRecord[];
@@ -31,6 +32,8 @@ export function DataInventoryTab({
   retentionPolicies,
   onUpdateCategory,
 }: DataInventoryTabProps) {
+  const auth = useOptionalPlatformAuth();
+  const canManageGovernance = auth ? auth.can('audit.governance.manage') : true;
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClassification, setSelectedClassification] = useState<string>('all');
   const [selectedModule, setSelectedModule] = useState<string>('all');
@@ -291,14 +294,16 @@ export function DataInventoryTab({
                           >
                             <Eye className="h-3.5 w-3.5" />
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setEditCategory(c)}
-                            className="rounded-md p-1.5 text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/50"
-                            title="Edit classification & policy"
-                          >
-                            <Edit className="h-3.5 w-3.5" />
-                          </button>
+                          {canManageGovernance && (
+                            <button
+                              type="button"
+                              onClick={() => setEditCategory(c)}
+                              className="rounded-md p-1.5 text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/50"
+                              title="Edit classification & policy"
+                            >
+                              <Edit className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

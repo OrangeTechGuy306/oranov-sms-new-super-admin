@@ -6,6 +6,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Tabs } from '@/components/ui/Tabs';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import {
   IntegrationRecord,
   ApiClientRecord,
@@ -50,6 +51,13 @@ import {
 } from 'lucide-react';
 
 function IntegrationsGovernanceContent() {
+  const { can } = usePlatformAuth();
+  const canManageIntegrations =
+    can('system.maintenance.manage') ||
+    can('modules.registry.manage') ||
+    can('platform.settings.update');
+  const canExportIntegrations = can('platform.overview.export') || canManageIntegrations;
+
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialTab = searchParams.get('tab') || 'overview';
@@ -183,14 +191,16 @@ function IntegrationsGovernanceContent() {
         description="Centralized Super-Admin governance console for managing third-party provider configurations, API client identities, webhook event dispatch subscriptions, simulated deliveries, and integration health."
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleExportGovernancePackage}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-border text-foreground hover:bg-muted transition-colors shadow-2xs"
-            >
-              <Download className="w-3.5 h-3.5 text-primary" />
-              Export Governance JSON
-            </button>
+            {canExportIntegrations && (
+              <button
+                type="button"
+                onClick={handleExportGovernancePackage}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-border text-foreground hover:bg-muted transition-colors shadow-2xs"
+              >
+                <Download className="w-3.5 h-3.5 text-primary" />
+                Export Governance JSON
+              </button>
+            )}
             <Link
               href="/system-health"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"

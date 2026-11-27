@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Badge } from '@/components/ui/Badge';
+import { useOptionalPlatformAuth } from '@/components/providers/PlatformAuthContext';
 import {
   WebhookDeliveryRecord,
   WebhookEndpointRecord,
@@ -38,6 +39,15 @@ export function WebhookDeliveryLogsTab({
   onRetryDelivery,
   initialEndpointFilter = 'all',
 }: WebhookDeliveryLogsTabProps) {
+  const auth = useOptionalPlatformAuth();
+  const canManageIntegrations = auth
+    ? auth.can('system.maintenance.manage') ||
+      auth.can('modules.registry.manage') ||
+      auth.can('platform.settings.update')
+    : true;
+  const canExportIntegrations = auth
+    ? auth.can('platform.overview.export') || canManageIntegrations
+    : true;
   const [searchQuery, setSearchQuery] = useState('');
   const [endpointFilter, setEndpointFilter] = useState(initialEndpointFilter);
   const [eventTypeFilter, setEventTypeFilter] = useState('all');
@@ -142,17 +152,19 @@ export function WebhookDeliveryLogsTab({
           </select>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleExportCsv}
-            disabled={filtered.length === 0}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-muted disabled:opacity-50 transition-colors shadow-2xs"
-          >
-            <Download className="h-3.5 w-3.5 text-primary" />
-            Export CSV ({filtered.length})
-          </button>
-        </div>
+        {canExportIntegrations && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              disabled={filtered.length === 0}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-semibold text-foreground hover:bg-muted disabled:opacity-50 transition-colors shadow-2xs"
+            >
+              <Download className="h-3.5 w-3.5 text-primary" />
+              Export CSV ({filtered.length})
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Deliveries Table */}
@@ -237,7 +249,7 @@ export function WebhookDeliveryLogsTab({
 
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          {retry.eligible && (
+                          {retry.eligible && canManageIntegrations && (
                             <button
                               type="button"
                               onClick={() => onRetryDelivery(del.id, true)}

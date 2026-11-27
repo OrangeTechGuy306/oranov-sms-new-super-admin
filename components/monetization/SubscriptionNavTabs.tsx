@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useOptionalPlatformAuth } from '@/components/providers/PlatformAuthContext';
 import {
   CreditCard,
   Layers,
@@ -15,6 +16,7 @@ import {
 
 export function SubscriptionNavTabs() {
   const pathname = usePathname();
+  const auth = useOptionalPlatformAuth();
 
   const tabs = [
     {
@@ -59,7 +61,7 @@ export function SubscriptionNavTabs() {
       exact: false,
       icon: Tag,
     },
-  ];
+  ].filter((tab) => (auth ? auth.canAccessRoute(tab.href) : true));
 
   const isTabActive = (tab: (typeof tabs)[0]) => {
     if (tab.exact) {

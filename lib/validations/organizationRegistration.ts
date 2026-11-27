@@ -100,7 +100,7 @@ export const registrationCampusSchema = z.object({
 
 export const registrationSubscriptionSchema = z.object({
   planId: z.string().trim().min(1, "Select a valid subscription plan."),
-  billingCycle: z.enum(["monthly", "annual"]),
+  billingCycle: z.enum(["monthly", "quarterly", "annual"]),
   startTrial: z.boolean().default(true),
   maxCampuses: z.coerce.number().int().min(1, "At least 1 campus must be allowed.").max(500),
   timezone: z.string().trim().min(2, "Timezone is required."),

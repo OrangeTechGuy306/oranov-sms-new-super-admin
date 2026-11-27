@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePlatformStore } from '@/components/providers/PlatformStoreContext';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { StatCard } from '@/components/ui/StatCard';
 import { Badge } from '@/components/ui/Badge';
@@ -27,9 +28,11 @@ import {
 } from 'lucide-react';
 
 export default function PlatformOverviewPage() {
+  const { can } = usePlatformAuth();
   const {
     metrics,
     organizations,
+    subscriptions,
     plans,
     auditEvents,
     operationalComponents,
@@ -37,13 +40,35 @@ export default function PlatformOverviewPage() {
     operationalQueues,
   } = usePlatformStore();
 
+  const canCreateOrg = can('organizations.create');
+  const canReadApprovals = can('operations.approvals.read');
+  const canReadExceptions = can('operations.exceptions.read');
+  const canReadBilling = can('billing.subscriptions.read');
+  const canReadAudit = can('audit.logs.read');
+  const canReadSystem = can('system.operations.read');
+
   const recentAudits = auditEvents.slice(0, 6);
 
-  // Calculate estimated monthly revenue from mock active subscriptions
-  const estimatedMrr = plans.reduce((acc, plan) => {
-    const count = organizations.filter((o) => o.planId === plan.id && o.status === 'active').length;
-    return acc + count * plan.priceMonthly;
-  }, 0);
+  // Calculate normalized active monthly recurring revenue grouped strictly per currency
+  const mrrByCurrency = subscriptions.reduce<Record<string, number>>((acc, sub) => {
+    if (sub.status !== 'active' && sub.status !== 'past_due') return acc;
+    const plan = plans.find((p) => p.id === sub.planId);
+    if (!plan) return acc;
+    const monthlyEquivalent =
+      sub.billingCycle === 'annual'
+        ? plan.priceAnnual / 12
+        : sub.billingCycle === 'quarterly'
+        ? (plan.priceQuarterly ?? plan.priceMonthly * 3) / 3
+        : plan.priceMonthly;
+    const curr = (plan.currency || 'USD').toUpperCase();
+    acc[curr] = (acc[curr] || 0) + monthlyEquivalent;
+    return acc;
+  }, {});
+  const estimatedUsdMrr = Math.round(mrrByCurrency['USD'] || 0);
+  const secondaryMrrSummary = Object.entries(mrrByCurrency)
+    .filter(([curr, amt]) => curr !== 'USD' && amt > 0)
+    .map(([curr, amt]) => formatCurrency(Math.round(amt), curr))
+    .join(' + ');
 
   return (
     <div className="space-y-6">
@@ -52,27 +77,33 @@ export default function PlatformOverviewPage() {
         description="Platform-wide operational telemetry across all 12 P0-5 tenant lifecycle states, support cases, approvals, exceptions, and subscriptions."
         actions={
           <div className="flex items-center gap-2 flex-wrap">
-            <Link
-              href="/approvals"
-              className="inline-flex items-center gap-1.5 px-3 py-2 bg-card border border-border text-foreground font-semibold text-xs rounded-lg hover:bg-muted transition-colors"
-            >
-              <CheckSquare className="w-4 h-4 text-primary" />
-              Approvals ({operationalOverview.pendingApprovalsTotal})
-            </Link>
-            <Link
-              href="/exceptions"
-              className="inline-flex items-center gap-1.5 px-3 py-2 bg-card border border-border text-foreground font-semibold text-xs rounded-lg hover:bg-muted transition-colors"
-            >
-              <AlertOctagon className="w-4 h-4 text-amber-500" />
-              Exceptions ({operationalOverview.openExceptionsTotal})
-            </Link>
-            <Link
-              href="/organizations/new"
-              className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground font-semibold text-xs rounded-lg hover:bg-primary/90 transition-colors shadow-xs"
-            >
-              <UserPlus className="w-4 h-4" />
-              Onboard School
-            </Link>
+            {canReadApprovals && (
+              <Link
+                href="/approvals"
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-card border border-border text-foreground font-semibold text-xs rounded-lg hover:bg-muted transition-colors"
+              >
+                <CheckSquare className="w-4 h-4 text-primary" />
+                Approvals ({operationalOverview.pendingApprovalsTotal})
+              </Link>
+            )}
+            {canReadExceptions && (
+              <Link
+                href="/exceptions"
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-card border border-border text-foreground font-semibold text-xs rounded-lg hover:bg-muted transition-colors"
+              >
+                <AlertOctagon className="w-4 h-4 text-amber-500" />
+                Exceptions ({operationalOverview.openExceptionsTotal})
+              </Link>
+            )}
+            {canCreateOrg && (
+              <Link
+                href="/organizations/new"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground font-semibold text-xs rounded-lg hover:bg-primary/90 transition-colors shadow-xs"
+              >
+                <UserPlus className="w-4 h-4" />
+                Onboard School
+              </Link>
+            )}
           </div>
         }
       />
@@ -121,16 +152,33 @@ export default function PlatformOverviewPage() {
           }}
         />
 
-        <StatCard
-          title="Estimated Monthly MRR & Exceptions"
-          value={formatCurrency(estimatedMrr)}
-          subtitle={`${operationalOverview.organizationsWithSubscriptionExceptions} billing exception orgs • ${metrics.systemServicesOperational}/${metrics.systemServicesTotal} services`}
-          icon={<CreditCard className="w-5 h-5" />}
-          badge={{
-            label: `${operationalOverview.cancellationPendingOrganizations} Cancelling • ${operationalOverview.cancelledOrganizations + operationalOverview.archivedOrganizations} Closed/Arch`,
-            variant: 'neutral',
-          }}
-        />
+        {canReadBilling ? (
+          <StatCard
+            title="Estimated Monthly MRR & Exceptions"
+            value={formatCurrency(estimatedUsdMrr, 'USD')}
+            subtitle={
+              secondaryMrrSummary
+                ? `+ ${secondaryMrrSummary}/mo • ${operationalOverview.organizationsWithSubscriptionExceptions} billing exception orgs`
+                : `${operationalOverview.organizationsWithSubscriptionExceptions} billing exception orgs • ${metrics.systemServicesOperational}/${metrics.systemServicesTotal} services`
+            }
+            icon={<CreditCard className="w-5 h-5" />}
+            badge={{
+              label: `${operationalOverview.cancellationPendingOrganizations} Cancelling • ${operationalOverview.cancelledOrganizations + operationalOverview.archivedOrganizations} Closed/Arch`,
+              variant: 'neutral',
+            }}
+          />
+        ) : (
+          <StatCard
+            title="Platform Service Health"
+            value={`${metrics.systemServicesOperational}/${metrics.systemServicesTotal}`}
+            subtitle={`${operationalOverview.unresolvedSupportCasesTotal} open support tickets • Services operational`}
+            icon={<Activity className="w-5 h-5" />}
+            badge={{
+              label: `${operationalOverview.cancellationPendingOrganizations} Cancelling • ${operationalOverview.cancelledOrganizations + operationalOverview.archivedOrganizations} Closed/Arch`,
+              variant: 'neutral',
+            }}
+          />
+        )}
       </div>
 
       {/* Granular 12-State P0-5 Lifecycle Distribution Strip */}
@@ -180,12 +228,14 @@ export default function PlatformOverviewPage() {
                   Distribution of school organizations across SaaS subscription tiers.
                 </p>
               </div>
-              <Link
-                href="/subscriptions/plans"
-                className="text-xs text-primary hover:underline font-medium flex items-center gap-1"
-              >
-                Plan Catalogue <ChevronRight className="w-3.5 h-3.5" />
-              </Link>
+              {canReadBilling && (
+                <Link
+                  href="/subscriptions/plans"
+                  className="text-xs text-primary hover:underline font-medium flex items-center gap-1"
+                >
+                  Plan Catalogue <ChevronRight className="w-3.5 h-3.5" />
+                </Link>
+              )}
             </div>
 
             <div className="space-y-4">
@@ -244,12 +294,14 @@ export default function PlatformOverviewPage() {
                   Quick highlights from suspended holds, launch sign-offs, and open exceptions.
                 </p>
               </div>
-              <Link
-                href="/exceptions"
-                className="text-xs text-primary hover:underline font-semibold"
-              >
-                Open Exceptions Center →
-              </Link>
+              {canReadExceptions && (
+                <Link
+                  href="/exceptions"
+                  className="text-xs text-primary hover:underline font-semibold"
+                >
+                  Open Exceptions Center →
+                </Link>
+              )}
             </div>
 
             <div className="space-y-3">
@@ -318,40 +370,42 @@ export default function PlatformOverviewPage() {
         {/* Right Col: Recent Activity & System Health Snippet */}
         <div className="space-y-6">
           {/* Recent Platform Administrative Activity */}
-          <div className="bg-card text-card-foreground p-5 rounded-xl border border-border shadow-xs space-y-4">
-            <div className="flex items-center justify-between border-b border-border/50 pb-3">
-              <h3 className="font-semibold text-xs tracking-wider uppercase text-muted-foreground">
-                Recent Audit Events
-              </h3>
-              <Link
-                href="/audit-logs"
-                className="text-xs text-primary hover:underline font-medium"
-              >
-                View all
-              </Link>
-            </div>
+          {canReadAudit && (
+            <div className="bg-card text-card-foreground p-5 rounded-xl border border-border shadow-xs space-y-4">
+              <div className="flex items-center justify-between border-b border-border/50 pb-3">
+                <h3 className="font-semibold text-xs tracking-wider uppercase text-muted-foreground">
+                  Recent Audit Events
+                </h3>
+                <Link
+                  href="/audit-logs"
+                  className="text-xs text-primary hover:underline font-medium"
+                >
+                  View all
+                </Link>
+              </div>
 
-            <div className="space-y-3.5">
-              {recentAudits.map((event) => (
-                <div key={event.id} className="text-xs space-y-1 pb-2.5 border-b border-border/40 last:border-none last:pb-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-semibold text-foreground truncate max-w-[170px]">
-                      {event.action.replace(/_/g, ' ')}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground shrink-0 font-mono">
-                      {formatDate(event.timestamp, true)}
-                    </span>
+              <div className="space-y-3.5">
+                {recentAudits.map((event) => (
+                  <div key={event.id} className="text-xs space-y-1 pb-2.5 border-b border-border/40 last:border-none last:pb-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-foreground truncate max-w-[170px]">
+                        {event.action.replace(/_/g, ' ')}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground shrink-0 font-mono">
+                        {formatDate(event.timestamp, true)}
+                      </span>
+                    </div>
+                    <p className="text-muted-foreground text-[11px] line-clamp-2 leading-relaxed">
+                      {event.details}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground/80 flex items-center gap-1 font-mono">
+                      By {event.actor.name} • <Badge variant={event.severity === 'critical' ? 'error' : event.severity === 'warning' ? 'warning' : 'neutral'} size="sm">{event.severity}</Badge>
+                    </p>
                   </div>
-                  <p className="text-muted-foreground text-[11px] line-clamp-2 leading-relaxed">
-                    {event.details}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground/80 flex items-center gap-1 font-mono">
-                    By {event.actor.name} • <Badge variant={event.severity === 'critical' ? 'error' : event.severity === 'warning' ? 'warning' : 'neutral'} size="sm">{event.severity}</Badge>
-                  </p>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Quick Nav / System Health Summary */}
           <div className="bg-card text-card-foreground p-5 rounded-xl border border-border shadow-xs space-y-4">
@@ -359,12 +413,14 @@ export default function PlatformOverviewPage() {
               <h3 className="font-semibold text-xs tracking-wider uppercase text-muted-foreground">
                 Platform Operational Readiness
               </h3>
-              <Link
-                href="/system-health"
-                className="text-xs text-primary hover:underline font-medium"
-              >
-                Inspect
-              </Link>
+              {canReadSystem && (
+                <Link
+                  href="/system-health"
+                  className="text-xs text-primary hover:underline font-medium"
+                >
+                  Inspect
+                </Link>
+              )}
             </div>
 
             <div className="space-y-2 text-xs">

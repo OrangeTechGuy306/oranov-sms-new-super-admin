@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Tabs } from '@/components/ui/Tabs';
 import { platformService } from '@/lib/api/platformService';
+import { usePlatformAuth } from '@/components/providers/PlatformAuthContext';
 import { getUserFriendlyPlatformError } from '@/lib/api/dataSource';
 import {
   filterAcademicOversightData,
@@ -37,6 +38,8 @@ import {
 } from 'lucide-react';
 
 export default function AcademicOversightPage() {
+  const { can } = usePlatformAuth();
+  const canExport = can('oversight.academics.export');
   // Active filter state
   const [filter, setFilter] = useState<AcademicOversightFilterState>({
     organizationId: 'ALL',
@@ -118,16 +121,18 @@ export default function AcademicOversightPage() {
         title="Academics, Curriculum & Teaching Oversight"
         description="Cross-tenant aggregated monitoring of academic sessions, curriculum blueprints, timetables, pedagogical workflows, grading scales, and report-card publication readiness."
         actions={
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => downloadAcademicOversightReport(filteredData, filter)}
-              className="inline-flex items-center gap-2 px-3.5 py-2 bg-primary text-primary-foreground font-semibold text-xs rounded-lg hover:bg-primary/90 transition-colors shadow-xs cursor-pointer"
-            >
-              <Download className="w-4 h-4" />
-              Export Aggregate CSV
-            </button>
-          </div>
+          canExport ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => downloadAcademicOversightReport(filteredData, filter)}
+                className="inline-flex items-center gap-2 px-3.5 py-2 bg-primary text-primary-foreground font-semibold text-xs rounded-lg hover:bg-primary/90 transition-colors shadow-xs cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                Export Aggregate CSV
+              </button>
+            </div>
+          ) : undefined
         }
       />
 

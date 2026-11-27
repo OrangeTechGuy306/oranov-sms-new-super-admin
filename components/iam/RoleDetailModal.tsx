@@ -24,6 +24,7 @@ interface RoleDetailModalProps {
   role: PlatformRole | null;
   allPermissions: PlatformPermission[];
   allUsers: PlatformUser[];
+  canManageRoles?: boolean;
   onUpdateRolePermissions: (roleId: string, permissions: string[]) => { success: boolean; error?: string };
   onDeleteRole: (roleId: string) => { success: boolean; error?: string };
   onSelectUser: (user: PlatformUser) => void;
@@ -35,6 +36,7 @@ export function RoleDetailModal({
   role,
   allPermissions,
   allUsers,
+  canManageRoles = true,
   onUpdateRolePermissions,
   onDeleteRole,
   onSelectUser,
@@ -146,49 +148,51 @@ export function RoleDetailModal({
               </span>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              {!role.isSystemManaged && !isEditing && (
-                <button
-                  type="button"
-                  onClick={() => setIsEditing(true)}
-                  className="px-3 py-1.5 text-xs font-semibold bg-muted hover:bg-muted/80 rounded-lg border border-border transition-colors cursor-pointer"
-                >
-                  Edit Permissions
-                </button>
-              )}
-              {!role.isSystemManaged && isEditing && (
-                <div className="flex items-center gap-2">
+            {canManageRoles && (
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {!role.isSystemManaged && !isEditing && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setSelectedPermissions([...role.permissions]);
-                      setIsEditing(false);
-                    }}
-                    className="px-3 py-1.5 text-xs font-semibold border border-border rounded-lg hover:bg-muted cursor-pointer"
+                    onClick={() => setIsEditing(true)}
+                    className="px-3 py-1.5 text-xs font-semibold bg-muted hover:bg-muted/80 rounded-lg border border-border transition-colors cursor-pointer"
                   >
-                    Cancel
+                    Edit Permissions
                   </button>
+                )}
+                {!role.isSystemManaged && isEditing && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedPermissions([...role.permissions]);
+                        setIsEditing(false);
+                      }}
+                      className="px-3 py-1.5 text-xs font-semibold border border-border rounded-lg hover:bg-muted cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSavePermissions}
+                      className="px-3 py-1.5 text-xs font-semibold bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      Save Changes
+                    </button>
+                  </div>
+                )}
+                {!role.isSystemManaged && (
                   <button
                     type="button"
-                    onClick={handleSavePermissions}
-                    className="px-3 py-1.5 text-xs font-semibold bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center gap-1 cursor-pointer"
+                    onClick={() => setConfirmDelete(true)}
+                    className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg border border-rose-200 dark:border-rose-900 transition-colors cursor-pointer"
+                    title="Delete Custom Role"
                   >
-                    <Save className="w-3.5 h-3.5" />
-                    Save Changes
+                    <Trash2 className="w-4 h-4" />
                   </button>
-                </div>
-              )}
-              {!role.isSystemManaged && (
-                <button
-                  type="button"
-                  onClick={() => setConfirmDelete(true)}
-                  className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg border border-rose-200 dark:border-rose-900 transition-colors cursor-pointer"
-                  title="Delete Custom Role"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* System Protection Notice */}
